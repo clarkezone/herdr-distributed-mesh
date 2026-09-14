@@ -9,7 +9,7 @@ Distributed mesh support for Herdr.
 Run the example:
 
 ```powershell
-go run ./cmd/hello
+go run ./src/cmd/hello
 ```
 
 Run the tests:
