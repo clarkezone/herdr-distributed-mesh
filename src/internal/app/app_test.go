@@ -38,3 +38,22 @@ func TestRunNodeRejectsNonPositiveReconnectDelay(t *testing.T) {
 		t.Fatalf("Run() error = %q, want reconnect-delay validation", err)
 	}
 }
+
+func TestRunNodeRejectsReconnectMaximumBelowInitialDelay(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{
+			"node",
+			"-server", "server.test:50052",
+			"-reconnect-delay", "10s",
+			"-reconnect-max-delay", "5s",
+		},
+		IO{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}},
+	)
+	if err == nil {
+		t.Fatal("Run() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "reconnect-max-delay") {
+		t.Fatalf("Run() error = %q, want reconnect-max-delay validation", err)
+	}
+}

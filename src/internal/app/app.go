@@ -77,6 +77,7 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 		return err
 	}
 	return server.Run(ctx, server.Options{
+		BindingPath:       filepath.Join(network.stateDir, "node-bindings.jsonl"),
 		InstanceID:        instanceID,
 		ListenAddress:     *listen,
 		RequiredClientTag: *requiredClientTag,
@@ -92,6 +93,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
 	reconnectDelay := flags.Duration("reconnect-delay", 2*time.Second, "delay before reopening a failed stream")
+	reconnectMaximum := flags.Duration("reconnect-max-delay", time.Minute, "maximum delay before reopening a failed stream")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -104,6 +106,9 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	if *reconnectDelay <= 0 {
 		return errors.New("-reconnect-delay must be greater than zero")
 	}
+	if *reconnectMaximum < *reconnectDelay {
+		return errors.New("-reconnect-max-delay must be greater than or equal to -reconnect-delay")
+	}
 
 	instanceID, err := identity.LoadOrCreate(network.stateDir)
 	if err != nil {
@@ -113,6 +118,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 		HeartbeatInterval: *heartbeat,
 		InstanceID:        instanceID,
 		ReconnectDelay:    *reconnectDelay,
+		ReconnectMaximum:  *reconnectMaximum,
 		ServerAddress:     *serverAddress,
 		Transport:         network.config(),
 	})

@@ -22,8 +22,11 @@ credentials must not be distributed to nodes.
 The server verifies every caller through Tailscale `WhoIs` and requires
 `tag:herdr-mesh-node` for node streams and `tag:herdr-mesh-client` for control
 requests by default. These tags must be granted to the corresponding enrollment
-keys in the tailnet policy. The production listener defaults to port `50052`,
-keeping it separate from the disposable spike on `50051`.
+keys in the tailnet policy. If a scratch tailnet retains a wildcard allow ACL,
+these application-layer `WhoIs` checks are the role-authorization security
+boundary; the added ACL grants alone do not provide network isolation. The
+production listener defaults to port `50052`, keeping it separate from the
+disposable spike on `50051`.
 
 Use `docs\windows-live-validation.md` for the two-host production transport
 gate, including automated tailnet setup, role rejection, restart, network
@@ -99,4 +102,6 @@ Windows machines on the same tailnet, followed by restart and temporary network
 loss tests.
 
 That feasibility test has passed. The spike remains isolated from production
-packages so it can be removed after the production transport is validated.
+packages. Removing it is a post-gate remaining action after the production
+transport validation is complete; it is intentionally retained during this
+gate.

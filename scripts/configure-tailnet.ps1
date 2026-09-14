@@ -10,6 +10,9 @@ param(
     [ValidateRange(3600, 7776000)]
     [int]$KeyExpirySeconds = 604800,
 
+    [ValidateRange(1, 100)]
+    [int]$KeysPerRole = 2,
+
     [string]$OutputDirectory = (Join-Path $env:LOCALAPPDATA 'herdr-mesh\tailnet-setup')
 )
 
@@ -74,11 +77,90 @@ function Write-Utf8NoBomFile {
         [string]$Path,
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string]$Content
+        [string]$Content,
+        [switch]$NoClobber
     )
 
     $encoding = New-Object Text.UTF8Encoding($false)
-    [IO.File]::WriteAllText($Path, $Content, $encoding)
+    if (-not $NoClobber) {
+        [IO.File]::WriteAllText($Path, $Content, $encoding)
+        return
+    }
+
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::None
+    )
+    try {
+        $writer = New-Object IO.StreamWriter($stream, $encoding)
+        try {
+            $writer.Write($Content)
+        } finally {
+            $writer.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Write-ProtectedSecretFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$Content
+    )
+
+    $temporaryPath = "$Path.$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+        Write-Utf8NoBomFile -Path $temporaryPath -Content '' -NoClobber
+        Protect-SecretFile -Path $temporaryPath
+        Write-Utf8NoBomFile -Path $temporaryPath -Content $Content
+        [IO.File]::Move($temporaryPath, $Path)
+    } finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+    }
+}
+
+function Test-HasWildcardAllow {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Policy
+    )
+
+    if ($Policy.ContainsKey('acls')) {
+        foreach ($acl in @($Policy.acls)) {
+            if (
+                $acl.action -eq 'accept' -and
+                '*' -in @($acl.src) -and
+                (@($acl.dst) | Where-Object { $_ -eq '*' -or $_ -eq '*:*' })
+            ) {
+                return $true
+            }
+        }
+    }
+
+    if ($Policy.ContainsKey('grants')) {
+        foreach ($grant in @($Policy.grants)) {
+            if (
+                '*' -in @($grant.src) -and
+                (@($grant.dst) | Where-Object { $_ -eq '*' -or $_ -eq '*:*' }) -and
+                (
+                    -not $grant.ContainsKey('ip') -or
+                    '*' -in @($grant.ip) -or
+                    '*:*' -in @($grant.ip)
+                )
+            ) {
+                return $true
+            }
+        }
+    }
+
+    return $false
 }
 
 $token = [Environment]::GetEnvironmentVariable($ApiTokenEnvironmentVariable)
@@ -132,12 +214,26 @@ if ($policyContent -is [byte[]]) {
     $policyContent = [Text.Encoding]::UTF8.GetString($policyContent)
 }
 
-$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmssfff'
 $backupPath = Join-Path $OutputDirectory "policy-before-$timestamp.json"
 Write-Utf8NoBomFile -Path $backupPath -Content $policyContent
 
 $policyObject = $policyContent | ConvertFrom-Json
 $policy = ConvertTo-Hashtable -InputObject $policyObject
+Write-Warning (
+    'POLICY ROUND-TRIP: applying the proposed policy serializes it as JSON and ' +
+    'removes HuJSON comments and original key formatting. The untouched response ' +
+    "is backed up at '$backupPath'. This behavior is intended only for the " +
+    'scratch/hackathon tailnet workflow.'
+)
+if (Test-HasWildcardAllow -Policy $policy) {
+    Write-Warning (
+        'NETWORK ISOLATION IS NOT PROVIDED: the existing policy contains a ' +
+        'wildcard allow rule. The role grants added by this script do not restrict ' +
+        'traffic while that rule remains. The script preserves the wildcard rule; ' +
+        'review and narrow it manually only when appropriate for this tailnet.'
+    )
+}
 if (-not $policy.ContainsKey('tagOwners')) {
     $policy.tagOwners = @{}
 }
@@ -199,9 +295,41 @@ Write-Utf8NoBomFile -Path $proposedPath -Content $proposedPolicy
 
 $changesApplied = $PSCmdlet.ShouldProcess(
     $Tailnet,
-    'Update Tailscale policy and create three scoped auth keys'
+    "Update Tailscale policy and create $($roles.Count * $KeysPerRole) scoped auth keys"
 )
 if ($changesApplied) {
+    $lockPath = Join-Path $OutputDirectory '.configure-tailnet.lock'
+    try {
+        $lockStream = [IO.File]::Open(
+            $lockPath,
+            [IO.FileMode]::CreateNew,
+            [IO.FileAccess]::Write,
+            [IO.FileShare]::None
+        )
+    } catch {
+        throw "Another tailnet configuration run is using '$OutputDirectory'."
+    }
+    try {
+    $plannedSecretPaths = @()
+    $createdKeys = @()
+    try {
+    foreach ($role in $roles.Keys) {
+        for ($keyNumber = 1; $keyNumber -le $KeysPerRole; $keyNumber++) {
+            $plannedSecretPaths += Join-Path $OutputDirectory "$role-key-$keyNumber.ps1"
+        }
+    }
+    $existingSecretPaths = @($plannedSecretPaths | Where-Object {
+        Test-Path -LiteralPath $_
+    })
+    if ($existingSecretPaths.Count -gt 0) {
+        throw (
+            'Refusing to create auth keys because these numbered key files already ' +
+            "exist and may contain unconsumed secrets:`n" +
+            ($existingSecretPaths -join "`n") +
+            "`nMove or securely delete them, or choose a new OutputDirectory."
+        )
+    }
+
     Write-Host 'Updating tailnet policy with ETag protection...'
     $policyHeaders = @{
         Authorization = "Bearer $token"
@@ -217,46 +345,99 @@ if ($changesApplied) {
 
     foreach ($role in $roles.Keys) {
         $tag = $roles[$role]
-        $body = @{
-            keyType = 'auth'
-            description = "herdr mesh $role hackathon"
-            expirySeconds = $KeyExpirySeconds
-            capabilities = @{
-                devices = @{
-                    create = @{
-                        reusable = $false
-                        ephemeral = $false
-                        preauthorized = $true
-                        tags = @($tag)
+        for ($keyNumber = 1; $keyNumber -le $KeysPerRole; $keyNumber++) {
+            $body = @{
+                keyType = 'auth'
+                description = "herdr mesh $role hackathon $keyNumber"
+                expirySeconds = $KeyExpirySeconds
+                capabilities = @{
+                    devices = @{
+                        create = @{
+                            reusable = $false
+                            ephemeral = $false
+                            preauthorized = $true
+                            tags = @($tag)
+                        }
                     }
                 }
+            } | ConvertTo-Json -Depth 10
+
+            Write-Host "Creating one-off $role auth key $keyNumber of $KeysPerRole..."
+            $keyResponse = Invoke-RestMethod `
+                -Method Post `
+                -Uri "$baseUri/keys" `
+                -Headers $headers `
+                -ContentType 'application/json' `
+                -Body $body
+            if ([string]::IsNullOrWhiteSpace($keyResponse.id)) {
+                throw "Tailscale did not return an ID for the new $role auth key."
             }
-        } | ConvertTo-Json -Depth 10
 
-        Write-Host "Creating one-off $role auth key..."
-        $keyResponse = Invoke-RestMethod `
-            -Method Post `
-            -Uri "$baseUri/keys" `
-            -Headers $headers `
-            -ContentType 'application/json' `
-            -Body $body
-
-        $environmentVariable = "TS_AUTHKEY_$($role.ToUpperInvariant())"
-        if ($role -eq 'client') {
-            $environmentVariable = 'TS_AUTHKEY_CLIENT'
+            $environmentVariable = "TS_AUTHKEY_$($role.ToUpperInvariant())"
+            $secretPath = Join-Path $OutputDirectory "$role-key-$keyNumber.ps1"
+            $createdKeys += [pscustomobject]@{
+                Id = [string]$keyResponse.id
+                Path = $secretPath
+            }
+            Write-ProtectedSecretFile `
+                -Path $secretPath `
+                -Content "`$env:$environmentVariable = '$($keyResponse.key)'"
         }
-        $secretPath = Join-Path $OutputDirectory "$role-key.ps1"
-        Write-Utf8NoBomFile `
-            -Path $secretPath `
-            -Content "`$env:$environmentVariable = '$($keyResponse.key)'"
-        Protect-SecretFile -Path $secretPath
+
+        $primaryPath = Join-Path $OutputDirectory "$role-key.ps1"
+        if (Test-Path -LiteralPath $primaryPath) {
+            Write-Warning (
+                "Preserving existing primary key file '$primaryPath'. Use the " +
+                'new numbered files for this run.'
+            )
+        } else {
+            Write-ProtectedSecretFile `
+                -Path $primaryPath `
+                -Content ". `"`$PSScriptRoot\$role-key-1.ps1`""
+        }
+    }
+    } catch {
+        $originalError = $_
+        foreach ($createdKey in $createdKeys) {
+            try {
+                $encodedKeyId = [Uri]::EscapeDataString($createdKey.Id)
+                Invoke-RestMethod `
+                    -Method Delete `
+                    -Uri "$baseUri/keys/$encodedKeyId" `
+                    -Headers $headers | Out-Null
+            } catch {
+                Write-Warning "Failed to revoke auth key ID $($createdKey.Id): $_"
+            }
+            if (Test-Path -LiteralPath $createdKey.Path) {
+                Remove-Item -LiteralPath $createdKey.Path -Force
+            }
+        }
+        throw $originalError
+    }
+    } finally {
+        if ($null -ne $lockStream) {
+            $lockStream.Dispose()
+        }
+        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
     }
 }
 
 Write-Host "Existing policy backup: $backupPath"
 Write-Host "Proposed merged policy: $proposedPath"
 if ($changesApplied) {
-    Write-Host "Role key files: $OutputDirectory\server-key.ps1, node-key.ps1, client-key.ps1"
+    Write-Host (
+        "Numbered role key files: $OutputDirectory\server-key-1.ps1 through " +
+        "server-key-$KeysPerRole.ps1, with equivalent node and client files."
+    )
+    Write-Host (
+        'Primary server-key.ps1, node-key.ps1, and client-key.ps1 aliases were ' +
+        'created only where they did not already exist.'
+    )
+    Write-Warning (
+        'Auth key files are secrets. After enrollment, clear the TS_AUTHKEY_* ' +
+        'environment variables and securely delete consumed key files. Revoke any ' +
+        'unused keys before their configured expiry.'
+    )
 } else {
     Write-Host 'Preview complete; the tailnet was not changed and no auth keys were created.'
 }

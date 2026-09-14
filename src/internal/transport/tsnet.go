@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 )
@@ -64,7 +65,7 @@ func Start(ctx context.Context, config Config) (*Network, error) {
 	}
 
 	server := &tsnet.Server{
-		AuthKey:       os.Getenv(config.AuthKeyEnv),
+		AuthKey:       strings.TrimSpace(os.Getenv(config.AuthKeyEnv)),
 		Dir:           config.StateDir,
 		Hostname:      config.Hostname,
 		AdvertiseTags: config.Tags,
@@ -118,6 +119,11 @@ func (network *Network) DialGRPC(target string) (*grpc.ClientConn, error) {
 	return grpc.NewClient(
 		"passthrough:///"+target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                30 * time.Second,
+			Timeout:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
 		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 			return network.server.Dial(ctx, "tcp", address)
 		}),

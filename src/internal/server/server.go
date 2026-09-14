@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"slices"
+	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
@@ -14,12 +15,14 @@ import (
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Options struct {
+	BindingPath       string
 	RequiredClientTag string
 	InstanceID        string
 	ListenAddress     string
@@ -35,6 +38,9 @@ type service struct {
 	identifyPeer      func(context.Context) (transport.PeerIdentity, error)
 	requiredClientTag string
 	requiredNodeTag   string
+	bindNode          func(string, string) error
+	helloTimeout      time.Duration
+	heartbeatTimeout  time.Duration
 }
 
 func Run(ctx context.Context, options Options) error {
@@ -43,6 +49,17 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 	defer network.Close()
+	self := network.SelfStatus()
+	if err := self.Validate(options.Transport.Tags, time.Now()); err != nil {
+		return fmt.Errorf("validate server tsnet identity: %w", err)
+	}
+	log.Printf(
+		"server tsnet identity stable_id=%s dns=%s tags=%v key_expiry=%s",
+		self.StableID,
+		self.DNSName,
+		self.Tags,
+		formatExpiry(self.KeyExpiry),
+	)
 
 	listener, err := network.Listen(options.ListenAddress)
 	if err != nil {
@@ -50,11 +67,27 @@ func Run(ctx context.Context, options Options) error {
 	}
 	defer listener.Close()
 
-	grpcServer := grpc.NewServer()
+	bindings, err := newBindingStore(options.BindingPath)
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	)
 	api := &service{
 		instanceID:        options.InstanceID,
 		requiredClientTag: options.RequiredClientTag,
 		requiredNodeTag:   options.RequiredNodeTag,
+		bindNode:          bindings.Bind,
+		helloTimeout:      10 * time.Second,
+		heartbeatTimeout:  time.Minute,
 	}
 	api.identifyPeer = func(ctx context.Context) (transport.PeerIdentity, error) {
 		grpcPeer, ok := peer.FromContext(ctx)
@@ -95,8 +128,11 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 		return err
 	}
 
-	first, err := stream.Recv()
+	first, err := receiveNodeEnvelope(stream, service.timeoutOrDefault(service.helloTimeout, 10*time.Second))
 	if err != nil {
+		if errors.Is(err, errReceiveTimeout) {
+			return status.Errorf(codes.DeadlineExceeded, "receive hello: %v", err)
+		}
 		return status.Errorf(codes.InvalidArgument, "receive hello: %v", err)
 	}
 	hello := first.GetHello()
@@ -104,6 +140,11 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 		return status.Errorf(codes.FailedPrecondition, "invalid hello: %v", err)
 	}
 	selectedProtocol, _ := protocol.Negotiate(hello.Protocol)
+	if service.bindNode != nil {
+		if err := service.bindNode(identity.StableID, hello.InstanceId); err != nil {
+			return status.Errorf(codes.PermissionDenied, "bind mesh identity to Tailscale peer: %v", err)
+		}
+	}
 	if err := stream.Send(&agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
 			HelloAck: &agentflowv1.HelloAck{
@@ -127,11 +168,17 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	defer log.Printf("node disconnected instance_id=%s peer_id=%s", hello.InstanceId, identity.StableID)
 
 	for {
-		envelope, err := stream.Recv()
+		envelope, err := receiveNodeEnvelope(
+			stream,
+			service.timeoutOrDefault(service.heartbeatTimeout, time.Minute),
+		)
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
+			if errors.Is(err, errReceiveTimeout) {
+				return status.Errorf(codes.DeadlineExceeded, "receive heartbeat: %v", err)
+			}
 			return err
 		}
 		heartbeat := envelope.GetHeartbeat()
@@ -145,6 +192,47 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			heartbeat.CommandReady,
 		)
 	}
+}
+
+type nodeEnvelopeReceiver interface {
+	Recv() (*agentflowv1.NodeEnvelope, error)
+}
+
+type receiveResult struct {
+	envelope *agentflowv1.NodeEnvelope
+	err      error
+}
+
+var errReceiveTimeout = errors.New("receive timed out")
+
+func receiveNodeEnvelope(receiver nodeEnvelopeReceiver, timeout time.Duration) (*agentflowv1.NodeEnvelope, error) {
+	result := make(chan receiveResult, 1)
+	go func() {
+		envelope, err := receiver.Recv()
+		result <- receiveResult{envelope: envelope, err: err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case value := <-result:
+		return value.envelope, value.err
+	case <-timer.C:
+		return nil, fmt.Errorf("%w after %s", errReceiveTimeout, timeout)
+	}
+}
+
+func (service *service) timeoutOrDefault(value, defaultValue time.Duration) time.Duration {
+	if value <= 0 {
+		return defaultValue
+	}
+	return value
+}
+
+func formatExpiry(expiry *time.Time) string {
+	if expiry == nil {
+		return "none"
+	}
+	return expiry.Format(time.RFC3339)
 }
 
 func (service *service) GetServerInfo(ctx context.Context, _ *emptypb.Empty) (*agentflowv1.ServerInfo, error) {

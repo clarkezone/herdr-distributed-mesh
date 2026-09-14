@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -32,15 +33,7 @@ func TestNodeHandshakeAndHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if err := stream.Send(&agentflowv1.NodeEnvelope{
-		Body: &agentflowv1.NodeEnvelope_Hello{
-			Hello: &agentflowv1.Hello{
-				Protocol:   protocol.SupportedRange(),
-				InstanceId: "node-1",
-				Role:       agentflowv1.Role_ROLE_NODE,
-			},
-		},
-	}); err != nil {
+	if err := stream.Send(nodeHello("node-1")); err != nil {
 		t.Fatalf("Send(hello) error = %v", err)
 	}
 	response, err := stream.Recv()
@@ -79,15 +72,9 @@ func TestNodeHandshakeRejectsIncompatibleProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if err := stream.Send(&agentflowv1.NodeEnvelope{
-		Body: &agentflowv1.NodeEnvelope_Hello{
-			Hello: &agentflowv1.Hello{
-				Protocol:   &agentflowv1.ProtocolRange{Minimum: 2, Maximum: 2},
-				InstanceId: "node-1",
-				Role:       agentflowv1.Role_ROLE_NODE,
-			},
-		},
-	}); err != nil {
+	hello := nodeHello("node-1")
+	hello.GetHello().Protocol = &agentflowv1.ProtocolRange{Minimum: 2, Maximum: 2}
+	if err := stream.Send(hello); err != nil {
 		t.Fatalf("Send(hello) error = %v", err)
 	}
 	_, err = stream.Recv()
@@ -110,6 +97,86 @@ func TestGetServerInfoRequiresConfiguredTag(t *testing.T) {
 	_, err := agentflowv1.NewFleetClient(connection).GetServerInfo(ctx, &emptypb.Empty{})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("GetServerInfo() code = %s, want %s; error = %v", status.Code(err), codes.PermissionDenied, err)
+	}
+}
+
+func TestNodeConnectRequiresConfiguredTag(t *testing.T) {
+	connection := newTestConnection(t, &service{
+		instanceID:      "server-1",
+		requiredNodeTag: "tag:node",
+		identifyPeer: func(context.Context) (transport.PeerIdentity, error) {
+			return transport.PeerIdentity{StableID: "peer-1", Tags: []string{"tag:observer"}}, nil
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := agentflowv1.NewNodeControlClient(connection).Connect(ctx)
+	if err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if err := stream.Send(nodeHello("node-1")); err != nil {
+		t.Fatalf("Send(hello) error = %v", err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Recv() code = %s, want %s; error = %v", status.Code(err), codes.PermissionDenied, err)
+	}
+}
+
+func TestNodeConnectRejectsIdentityRebinding(t *testing.T) {
+	connection := newTestConnection(t, &service{
+		instanceID: "server-1",
+		identifyPeer: func(context.Context) (transport.PeerIdentity, error) {
+			return transport.PeerIdentity{StableID: "peer-1"}, nil
+		},
+		bindNode: func(stableID, instanceID string) error {
+			return errors.New("identity conflict")
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := agentflowv1.NewNodeControlClient(connection).Connect(ctx)
+	if err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if err := stream.Send(nodeHello("node-1")); err != nil {
+		t.Fatalf("Send(hello) error = %v", err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Recv() code = %s, want %s; error = %v", status.Code(err), codes.PermissionDenied, err)
+	}
+}
+
+type blockingReceiver struct {
+	release <-chan struct{}
+}
+
+func (receiver blockingReceiver) Recv() (*agentflowv1.NodeEnvelope, error) {
+	<-receiver.release
+	return nil, context.Canceled
+}
+
+func TestReceiveNodeEnvelopeTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	_, err := receiveNodeEnvelope(blockingReceiver{release: release}, time.Millisecond)
+	close(release)
+	if !errors.Is(err, errReceiveTimeout) {
+		t.Fatalf("receiveNodeEnvelope() error = %v, want timeout", err)
+	}
+}
+
+func nodeHello(instanceID string) *agentflowv1.NodeEnvelope {
+	return &agentflowv1.NodeEnvelope{
+		Body: &agentflowv1.NodeEnvelope_Hello{
+			Hello: &agentflowv1.Hello{
+				Protocol:   protocol.SupportedRange(),
+				InstanceId: instanceID,
+				Role:       agentflowv1.Role_ROLE_NODE,
+			},
+		},
 	}
 }
 

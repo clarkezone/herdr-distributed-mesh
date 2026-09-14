@@ -10,7 +10,8 @@ import (
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
-	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -41,11 +42,7 @@ func ServerInfo(ctx context.Context, options Options) error {
 	}
 	defer connection.Close()
 
-	info, err := agentflowv1.NewFleetClient(connection).GetServerInfo(
-		ctx,
-		&emptypb.Empty{},
-		grpc.WaitForReady(true),
-	)
+	info, err := getServerInfo(ctx, agentflowv1.NewFleetClient(connection))
 	if err != nil {
 		return fmt.Errorf("get server info: %w", err)
 	}
@@ -96,4 +93,25 @@ func ServerInfo(ctx context.Context, options Options) error {
 		info.Capabilities,
 	)
 	return nil
+}
+
+func getServerInfo(ctx context.Context, client agentflowv1.FleetClient) (*agentflowv1.ServerInfo, error) {
+	var lastErr error
+	for {
+		info, err := client.GetServerInfo(ctx, &emptypb.Empty{})
+		if err == nil {
+			return info, nil
+		}
+		if status.Code(err) != codes.Unavailable {
+			return nil, err
+		}
+		lastErr = err
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, lastErr
+		case <-timer.C:
+		}
+	}
 }

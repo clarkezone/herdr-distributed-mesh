@@ -29,6 +29,7 @@ go.work.sum
 
 # Local tsnet identities and state
 .tsnet*/
+doctor-result.json
 
 # Editor/IDE
 # .idea/
