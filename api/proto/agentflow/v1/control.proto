@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package agentflow.v1;
+
+option go_package = "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service NodeControl {
+  rpc Connect(stream NodeEnvelope) returns (stream NodeEnvelope);
+}
+
+service Fleet {
+  rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfo);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_NODE = 1;
+  ROLE_CONTROLLER = 2;
+  ROLE_OBSERVER = 3;
+}
+
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  COMMAND_STATUS_ACCEPTED = 1;
+  COMMAND_STATUS_RUNNING = 2;
+  COMMAND_STATUS_SUCCEEDED = 3;
+  COMMAND_STATUS_FAILED = 4;
+  COMMAND_STATUS_TIMED_OUT = 5;
+  COMMAND_STATUS_REJECTED = 6;
+  COMMAND_STATUS_INDETERMINATE = 7;
+  COMMAND_STATUS_NODE_UNAVAILABLE = 8;
+}
+
+enum ActorOrigin {
+  ACTOR_ORIGIN_UNSPECIFIED = 0;
+  ACTOR_ORIGIN_HUMAN = 1;
+  ACTOR_ORIGIN_AGENT = 2;
+  ACTOR_ORIGIN_SYSTEM = 3;
+}
+
+message ProtocolRange {
+  uint32 minimum = 1;
+  uint32 maximum = 2;
+}
+
+message Hello {
+  ProtocolRange protocol = 1;
+  string implementation_version = 2;
+  string instance_id = 3;
+  Role role = 4;
+  repeated string capabilities = 5;
+  string stream_epoch = 6;
+  uint64 last_cursor = 7;
+}
+
+message HelloAck {
+  uint32 selected_protocol = 1;
+  string server_instance_id = 2;
+  repeated string capabilities = 3;
+}
+
+message Heartbeat {
+  uint64 sequence = 1;
+  google.protobuf.Timestamp sent_at = 2;
+  bool command_ready = 3;
+}
+
+message Snapshot {
+  uint64 sequence = 1;
+  string snapshot_type = 2;
+  google.protobuf.Struct payload = 3;
+}
+
+message Event {
+  uint64 sequence = 1;
+  string event_type = 2;
+  string entity_id = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  google.protobuf.Struct payload = 5;
+}
+
+message Command {
+  string command_id = 1;
+  string idempotency_key = 2;
+  string command_type = 3;
+  string target_id = 4;
+  Actor actor = 5;
+  google.protobuf.Duration ttl = 6;
+  google.protobuf.Struct preconditions = 7;
+  google.protobuf.Struct payload = 8;
+}
+
+message Actor {
+  string actor_id = 1;
+  Role role = 2;
+  ActorOrigin origin = 3;
+  uint32 hop_count = 4;
+}
+
+message CommandAck {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+}
+
+message CommandResult {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+  google.protobuf.Struct payload = 4;
+}
+
+message NodeEnvelope {
+  oneof body {
+    Hello hello = 1;
+    HelloAck hello_ack = 2;
+    Heartbeat heartbeat = 3;
+    Snapshot snapshot = 4;
+    Event event = 5;
+    Command command = 6;
+    CommandAck command_ack = 7;
+    CommandResult command_result = 8;
+  }
+}
+
+message ServerInfo {
+  string instance_id = 1;
+  string implementation_version = 2;
+  ProtocolRange protocol = 3;
+  repeated string capabilities = 4;
+}
