@@ -47,8 +47,9 @@ type SelfStatus struct {
 }
 
 type Network struct {
-	self   SelfStatus
-	server *tsnet.Server
+	magicDNSSuffix string
+	self           SelfStatus
+	server         *tsnet.Server
 }
 
 func Start(ctx context.Context, config Config) (*Network, error) {
@@ -86,9 +87,14 @@ func Start(ctx context.Context, config Config) (*Network, error) {
 	}
 	ipv4, ipv6 := server.TailscaleIPs()
 	log.Printf("tsnet ready hostname=%s ipv4=%s ipv6=%s", config.Hostname, ipv4, ipv6)
+	magicDNSSuffix := ""
+	if status.CurrentTailnet != nil && status.CurrentTailnet.MagicDNSEnabled {
+		magicDNSSuffix = status.CurrentTailnet.MagicDNSSuffix
+	}
 	return &Network{
-		self:   makeSelfStatus(status, config.StateDir),
-		server: server,
+		magicDNSSuffix: magicDNSSuffix,
+		self:           makeSelfStatus(status, config.StateDir),
+		server:         server,
 	}, nil
 }
 
@@ -108,6 +114,7 @@ func (network *Network) DialGRPC(target string) (*grpc.ClientConn, error) {
 	if strings.TrimSpace(target) == "" {
 		return nil, errors.New("gRPC target is required")
 	}
+	target = normalizeMagicDNSTarget(target, network.magicDNSSuffix)
 	return grpc.NewClient(
 		"passthrough:///"+target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -115,6 +122,24 @@ func (network *Network) DialGRPC(target string) (*grpc.ClientConn, error) {
 			return network.server.Dial(ctx, "tcp", address)
 		}),
 	)
+}
+
+func normalizeMagicDNSTarget(target, suffix string) string {
+	host, port, err := net.SplitHostPort(target)
+	if err != nil || suffix == "" {
+		return target
+	}
+	trimmedHost := strings.TrimSuffix(host, ".")
+	dnsSuffix := strings.TrimPrefix(strings.TrimSuffix(suffix, "."), ".")
+	fullSuffix := "." + dnsSuffix
+	if !strings.HasSuffix(strings.ToLower(trimmedHost), strings.ToLower(fullSuffix)) {
+		return target
+	}
+	shortHost := trimmedHost[:len(trimmedHost)-len(fullSuffix)]
+	if shortHost == "" {
+		return target
+	}
+	return net.JoinHostPort(shortHost, port)
 }
 
 func (network *Network) IdentifyPeer(ctx context.Context, remoteAddress string) (PeerIdentity, error) {

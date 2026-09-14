@@ -10,6 +10,7 @@ import (
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -40,7 +41,11 @@ func ServerInfo(ctx context.Context, options Options) error {
 	}
 	defer connection.Close()
 
-	info, err := agentflowv1.NewFleetClient(connection).GetServerInfo(ctx, &emptypb.Empty{})
+	info, err := agentflowv1.NewFleetClient(connection).GetServerInfo(
+		ctx,
+		&emptypb.Empty{},
+		grpc.WaitForReady(true),
+	)
 	if err != nil {
 		return fmt.Errorf("get server info: %w", err)
 	}

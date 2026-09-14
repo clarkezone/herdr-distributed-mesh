@@ -31,3 +31,25 @@ func TestSelfStatusValidateRejectsExpiredKey(t *testing.T) {
 		t.Fatal("Validate() error = nil, want error")
 	}
 }
+
+func TestNormalizeMagicDNSTargetUsesShortName(t *testing.T) {
+	got := normalizeMagicDNSTarget(
+		"herdr-mesh-server.tail06f2e1.ts.net:50052",
+		"tail06f2e1.ts.net",
+	)
+	if got != "herdr-mesh-server:50052" {
+		t.Fatalf("normalizeMagicDNSTarget() = %q, want short MagicDNS target", got)
+	}
+}
+
+func TestNormalizeMagicDNSTargetPreservesOtherTargets(t *testing.T) {
+	for _, target := range []string{
+		"herdr-mesh-server:50052",
+		"100.96.176.19:50052",
+		"example.com:50052",
+	} {
+		if got := normalizeMagicDNSTarget(target, "tail06f2e1.ts.net"); got != target {
+			t.Fatalf("normalizeMagicDNSTarget(%q) = %q, want unchanged", target, got)
+		}
+	}
+}
