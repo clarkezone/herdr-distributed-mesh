@@ -100,7 +100,21 @@ function global:Invoke-RestMethod {
 }
 
 try {
-    [Environment]::SetEnvironmentVariable($tokenVariable, 'test-token')
+    [Environment]::SetEnvironmentVariable($tokenVariable, 'tskey-auth-wrong-kind')
+    try {
+        & $scriptPath `
+            -Tailnet 'example.com' `
+            -ApiTokenEnvironmentVariable $tokenVariable `
+            -OutputDirectory $firstOutput `
+            -Confirm:$false
+        throw 'Expected the enrollment auth key to be rejected.'
+    } catch {
+        Assert-True `
+            -Condition $_.Exception.Message.Contains("beginning with 'tskey-api-'") `
+            -Message 'Enrollment auth key failure did not explain the required token type.'
+    }
+
+    [Environment]::SetEnvironmentVariable($tokenVariable, ' tskey-api-test-token ')
 
     & $scriptPath `
         -Tailnet 'example.com' `

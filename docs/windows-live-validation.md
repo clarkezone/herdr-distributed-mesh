@@ -22,9 +22,14 @@ hackathon gate.
 Automate the policy and key setup from an administrator workstation:
 
 ```powershell
-$env:TAILSCALE_API_TOKEN = '<tailscale-api-access-token>'
+$env:TAILSCALE_API_TOKEN = '<tskey-api-access-token>'
 .\scripts\configure-tailnet.ps1 -Tailnet 'example.com'
 ```
+
+Use an API access token generated from the Tailscale admin console Keys page.
+Device enrollment auth keys beginning with `tskey-auth-` cannot call this API.
+The script trims surrounding whitespace and rejects the wrong key type before
+making a request.
 
 The script backs up the current policy, merges only the role tag owners and
 TCP `50052` grants using ETag protection, then creates one-off role-scoped auth

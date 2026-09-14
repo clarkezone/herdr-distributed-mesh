@@ -37,6 +37,14 @@ $token = [Environment]::GetEnvironmentVariable($ApiTokenEnvironmentVariable)
 if ([string]::IsNullOrWhiteSpace($token)) {
     throw "Environment variable $ApiTokenEnvironmentVariable is not set."
 }
+$token = $token.Trim()
+if (-not $token.StartsWith('tskey-api-', [StringComparison]::Ordinal)) {
+    throw (
+        "Environment variable $ApiTokenEnvironmentVariable must contain a " +
+        "Tailscale API access token beginning with 'tskey-api-'. Enrollment " +
+        "auth keys beginning with 'tskey-auth-' cannot call the Tailscale API."
+    )
+}
 
 $encodedTailnet = [Uri]::EscapeDataString($Tailnet)
 $baseUri = "https://api.tailscale.com/api/v2/tailnet/$encodedTailnet"
@@ -48,7 +56,19 @@ $headers = @{
 New-Item -ItemType Directory -Path $OutputDirectory -Force -WhatIf:$false | Out-Null
 
 Write-Host "Reading the current policy for tailnet $Tailnet..."
-$response = Invoke-WebRequest -Method Get -Uri "$baseUri/acl" -Headers $headers
+try {
+    $response = Invoke-WebRequest -Method Get -Uri "$baseUri/acl" -Headers $headers
+} catch {
+    $statusCode = [int]$_.Exception.Response.StatusCode
+    if ($statusCode -eq 401) {
+        throw (
+            'Tailscale rejected the API access token. Generate a current API ' +
+            'access token from the Tailscale admin console Keys page; do not ' +
+            'use a device enrollment auth key.'
+        )
+    }
+    throw
+}
 $etag = $response.Headers['ETag']
 if ([string]::IsNullOrWhiteSpace($etag)) {
     throw 'The Tailscale policy response did not include an ETag.'
