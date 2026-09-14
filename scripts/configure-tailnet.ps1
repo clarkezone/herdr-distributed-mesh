@@ -33,6 +33,54 @@ function Protect-SecretFile {
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
+function ConvertTo-Hashtable {
+    param(
+        $InputObject
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+    if ($InputObject -is [Collections.IDictionary]) {
+        $result = @{}
+        foreach ($key in $InputObject.Keys) {
+            $result[$key] = ConvertTo-Hashtable -InputObject $InputObject[$key]
+        }
+        return $result
+    }
+    if ($InputObject -is [Management.Automation.PSCustomObject]) {
+        $result = @{}
+        foreach ($property in $InputObject.PSObject.Properties) {
+            $result[$property.Name] = ConvertTo-Hashtable -InputObject $property.Value
+        }
+        return $result
+    }
+    if (
+        $InputObject -is [Collections.IEnumerable] -and
+        $InputObject -isnot [string]
+    ) {
+        $result = @()
+        foreach ($item in $InputObject) {
+            $result += ,(ConvertTo-Hashtable -InputObject $item)
+        }
+        return ,$result
+    }
+    return $InputObject
+}
+
+function Write-Utf8NoBomFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    $encoding = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
 $token = [Environment]::GetEnvironmentVariable($ApiTokenEnvironmentVariable)
 if ([string]::IsNullOrWhiteSpace($token)) {
     throw "Environment variable $ApiTokenEnvironmentVariable is not set."
@@ -57,7 +105,11 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force -WhatIf:$false | Out-
 
 Write-Host "Reading the current policy for tailnet $Tailnet..."
 try {
-    $response = Invoke-WebRequest -Method Get -Uri "$baseUri/acl" -Headers $headers
+    $response = Invoke-WebRequest `
+        -Method Get `
+        -Uri "$baseUri/acl" `
+        -Headers $headers `
+        -UseBasicParsing
 } catch {
     $statusCode = [int]$_.Exception.Response.StatusCode
     if ($statusCode -eq 401) {
@@ -69,10 +121,11 @@ try {
     }
     throw
 }
-$etag = $response.Headers['ETag']
+$etag = @($response.Headers['ETag'])[0]
 if ([string]::IsNullOrWhiteSpace($etag)) {
     throw 'The Tailscale policy response did not include an ETag.'
 }
+$etag = [string]$etag
 
 $policyContent = $response.Content
 if ($policyContent -is [byte[]]) {
@@ -81,10 +134,10 @@ if ($policyContent -is [byte[]]) {
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $backupPath = Join-Path $OutputDirectory "policy-before-$timestamp.json"
-$policyContent |
-    Set-Content -LiteralPath $backupPath -Encoding utf8NoBOM -WhatIf:$false
+Write-Utf8NoBomFile -Path $backupPath -Content $policyContent
 
-$policy = $policyContent | ConvertFrom-Json -AsHashtable
+$policyObject = $policyContent | ConvertFrom-Json
+$policy = ConvertTo-Hashtable -InputObject $policyObject
 if (-not $policy.ContainsKey('tagOwners')) {
     $policy.tagOwners = @{}
 }
@@ -142,8 +195,7 @@ Add-GrantIfMissing -Policy $policy -Source $roles.client -Destination $roles.ser
 
 $proposedPolicy = $policy | ConvertTo-Json -Depth 100
 $proposedPath = Join-Path $OutputDirectory 'policy-proposed.json'
-$proposedPolicy |
-    Set-Content -LiteralPath $proposedPath -Encoding utf8NoBOM -WhatIf:$false
+Write-Utf8NoBomFile -Path $proposedPath -Content $proposedPolicy
 
 $changesApplied = $PSCmdlet.ShouldProcess(
     $Tailnet,
@@ -194,8 +246,9 @@ if ($changesApplied) {
             $environmentVariable = 'TS_AUTHKEY_CLIENT'
         }
         $secretPath = Join-Path $OutputDirectory "$role-key.ps1"
-        "`$env:$environmentVariable = '$($keyResponse.key)'" |
-            Set-Content -LiteralPath $secretPath -Encoding utf8NoBOM
+        Write-Utf8NoBomFile `
+            -Path $secretPath `
+            -Content "`$env:$environmentVariable = '$($keyResponse.key)'"
         Protect-SecretFile -Path $secretPath
     }
 }

@@ -29,6 +29,50 @@ function Assert-Equal {
     }
 }
 
+function ConvertTo-Hashtable {
+    param(
+        $InputObject
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+    if ($InputObject -is [Collections.IDictionary]) {
+        $result = @{}
+        foreach ($key in $InputObject.Keys) {
+            $result[$key] = ConvertTo-Hashtable -InputObject $InputObject[$key]
+        }
+        return $result
+    }
+    if ($InputObject -is [Management.Automation.PSCustomObject]) {
+        $result = @{}
+        foreach ($property in $InputObject.PSObject.Properties) {
+            $result[$property.Name] = ConvertTo-Hashtable -InputObject $property.Value
+        }
+        return $result
+    }
+    if (
+        $InputObject -is [Collections.IEnumerable] -and
+        $InputObject -isnot [string]
+    ) {
+        $result = @()
+        foreach ($item in $InputObject) {
+            $result += ,(ConvertTo-Hashtable -InputObject $item)
+        }
+        return ,$result
+    }
+    return $InputObject
+}
+
+function ConvertFrom-TestJson {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Json
+    )
+
+    return ConvertTo-Hashtable -InputObject ($Json | ConvertFrom-Json)
+}
+
 $scriptPath = Join-Path $PSScriptRoot 'configure-tailnet.ps1'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "herdr-tailnet-test-$([Guid]::NewGuid())"
 $firstOutput = Join-Path $testRoot 'first'
@@ -59,7 +103,8 @@ function global:Invoke-WebRequest {
     param(
         [string]$Method,
         [string]$Uri,
-        [hashtable]$Headers
+        [hashtable]$Headers,
+        [switch]$UseBasicParsing
     )
 
     Assert-Equal -Expected 'Get' -Actual $Method -Message 'Policy request method mismatch.'
@@ -69,7 +114,7 @@ function global:Invoke-WebRequest {
         -Message 'Policy request did not use the configured API token.'
 
     return [pscustomobject]@{
-        Headers = @{ ETag = '"test-etag"' }
+        Headers = @{ ETag = @('"test-etag"') }
         Content = $global:HerdrTailnetMockPolicy
     }
 }
@@ -92,7 +137,7 @@ function global:Invoke-RestMethod {
     })
 
     if ($Uri.EndsWith('/keys')) {
-        $request = $Body | ConvertFrom-Json -AsHashtable
+        $request = ConvertFrom-TestJson -Json $Body
         $tag = $request.capabilities.devices.create.tags[0]
         $role = $tag.Replace('tag:herdr-mesh-', '')
         return @{ key = "tskey-auth-$role-test" }
@@ -131,7 +176,7 @@ try {
     Assert-Equal -Expected '"test-etag"' -Actual $policyCall.Headers['If-Match'] `
         -Message 'Policy update did not preserve the fetched ETag.'
 
-    $policy = $policyCall.Body | ConvertFrom-Json -AsHashtable
+    $policy = ConvertFrom-TestJson -Json $policyCall.Body
     foreach ($tag in @(
         'tag:herdr-mesh-server',
         'tag:herdr-mesh-node',
@@ -164,13 +209,13 @@ try {
         $keyCall = $global:HerdrTailnetMockRestCalls |
             Where-Object { $_.Uri.EndsWith('/keys') } |
             Where-Object {
-                ($_.Body | ConvertFrom-Json -AsHashtable).description -eq
+                (ConvertFrom-TestJson -Json $_.Body).description -eq
                     "herdr mesh $role hackathon"
             }
         Assert-Equal -Expected 1 -Actual @($keyCall).Count `
             -Message "Expected one key request for $role."
 
-        $keyRequest = $keyCall.Body | ConvertFrom-Json -AsHashtable
+        $keyRequest = ConvertFrom-TestJson -Json $keyCall.Body
         $create = $keyRequest.capabilities.devices.create
         Assert-Equal -Expected $false -Actual $create.reusable `
             -Message "$role key must not be reusable."
@@ -211,10 +256,10 @@ try {
         ))) -Message "WhatIf unexpectedly wrote the $role key."
     }
 
-    $secondPolicy = Get-Content `
+    $secondPolicyJson = Get-Content `
         -LiteralPath (Join-Path $secondOutput 'policy-proposed.json') `
-        -Raw |
-        ConvertFrom-Json -AsHashtable
+        -Raw
+    $secondPolicy = ConvertFrom-TestJson -Json $secondPolicyJson
     foreach ($source in @('tag:herdr-mesh-node', 'tag:herdr-mesh-client')) {
         $matchingGrants = @($secondPolicy.grants | Where-Object {
             @($_.src).Count -eq 1 -and $_.src[0] -eq $source -and

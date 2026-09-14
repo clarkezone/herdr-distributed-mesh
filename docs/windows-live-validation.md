@@ -44,6 +44,10 @@ The local mocked API test does not require a Tailscale credential:
 .\scripts\test-configure-tailnet.ps1
 ```
 
+The setup and test scripts support both Windows PowerShell 5.1 and PowerShell
+7. The API read uses basic parsing to avoid the Windows PowerShell web-content
+execution prompt.
+
 ## Build
 
 Run on both hosts:
