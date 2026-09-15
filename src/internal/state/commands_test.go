@@ -218,6 +218,80 @@ func TestCommandRecoveryExpiryAndReconciliation(t *testing.T) {
 	}
 }
 
+func TestIndeterminateReplayAcknowledgesReceiptNotKnownOutcome(t *testing.T) {
+	for _, terminal := range []struct {
+		status     pb.CommandStatus
+		detail     string
+		dispatched bool
+	}{
+		{statusSucceeded, "pong", true},
+		{statusTimedOut, "deadline_expired", true},
+		{statusRejected, "journal_full", true},
+		{statusTimedOut, "deadline_expired", false},
+		{statusUnavailable, "node_disconnected", false},
+	} {
+		t.Run(fmt.Sprintf("%s/dispatched=%t", terminal.status, terminal.dispatched), func(t *testing.T) {
+			ctx := context.Background()
+			coordinatorPath, nodePath := testPath(t), testPath(t)
+			s := openTestStore(t, coordinatorPath)
+			requireOK(t, s.Bind(ctx, "stable", "node"))
+			admitted := createTestCommand(t, s, 1)
+			j := openTestNodeJournal(t, nodePath)
+			result, claimed, err := j.Claim(ctx, admitted.Command)
+			requireOK(t, err)
+			if !claimed || result != nil {
+				t.Fatal("expected new durable node intent")
+			}
+			now := commandTestTime.Add(10 * time.Second)
+			if terminal.dispatched {
+				_, _, err = s.DispatchCommand(ctx, "node", admitted.Command.CommandId, commandTestTime)
+				requireOK(t, err)
+				_, err = s.FinishCommand(ctx, "node", "stable", probeResult(admitted.Command, terminal.status, terminal.detail), now)
+				requireOK(t, err)
+			} else if terminal.status == statusUnavailable {
+				requireOK(t, s.LoseNodeCommands(ctx, "node", now))
+			} else {
+				requireOK(t, s.ExpireCommands(ctx, now))
+			}
+			known, err := s.GetCommand(ctx, "actor", admitted.Command.CommandId)
+			requireOK(t, err)
+			requireOK(t, j.Recover(ctx))
+			pending, err := j.PendingResults(ctx)
+			requireOK(t, err)
+			if len(pending) != 1 || pending[0].Status != statusIndeterminate {
+				t.Fatal("expected retained node uncertainty replay")
+			}
+			_, err = s.FinishCommand(ctx, "node", "foreign-stable", pending[0], now)
+			requireConflict(t, err)
+			for i := 0; i < 2; i++ {
+				got, err := s.FinishCommand(ctx, "node", "stable", pending[0], now.Add(time.Duration(i)*time.Second))
+				requireOK(t, err)
+				if !proto.Equal(got, known) {
+					t.Fatal("uncertainty replay rewrote known outcome or audit")
+				}
+			}
+			if err := j.Acknowledge(ctx, pending[0].CommandId, known.Status); !errors.Is(err, ErrCommandConflict) {
+				t.Fatalf("coordinator outcome must not replace the node's receipt status: %v", err)
+			}
+			requireOK(t, j.Acknowledge(ctx, pending[0].CommandId, pending[0].Status))
+			requireOK(t, j.Close())
+			requireOK(t, s.Close())
+			j = openTestNodeJournal(t, nodePath)
+			s = openTestStore(t, coordinatorPath)
+			pending, err = j.PendingResults(ctx)
+			requireOK(t, err)
+			if len(pending) != 0 {
+				t.Fatal("acknowledged replay would recur after reconnect")
+			}
+			got, err := s.GetCommand(ctx, "actor", known.Command.CommandId)
+			requireOK(t, err)
+			if !proto.Equal(got, known) {
+				t.Fatal("known coordinator outcome was not preserved durably")
+			}
+		})
+	}
+}
+
 func TestExpiredCommandNeverDispatches(t *testing.T) {
 	ctx := context.Background()
 	s := commandStore(t)

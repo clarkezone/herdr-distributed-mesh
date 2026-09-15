@@ -574,3 +574,32 @@ func TestReplacementWaitsForRegisteredSendsAfterTransportCancellation(t *testing
 		t.Fatal("replacement failed to publish after send completion")
 	}
 }
+
+func TestIndeterminateReplayAcknowledgesReceiptWithoutRewritingKnownOutcome(t *testing.T) {
+	h := newCommandHarness(t, t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream := startManualProbeNode(t, h, ctx)
+	record := submitProbe(t, h, "known-outcome", 5*time.Second)
+	if message, err := stream.Recv(); err != nil || message.GetCommand() == nil {
+		t.Fatal("probe not dispatched", err)
+	}
+	sendResult := func(status agentflowv1.CommandStatus, detail string) {
+		t.Helper()
+		if err := stream.Send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandResult{CommandResult: &agentflowv1.CommandResult{
+			CommandId: record.Command.CommandId, Status: status, Detail: detail}}}); err != nil {
+			t.Fatal(err)
+		}
+		ack, err := stream.Recv()
+		if err != nil || ack.GetCommandAck().GetStatus() != status {
+			t.Fatalf("receipt acknowledgement does not match node result %s: %v, %v", status, ack, err)
+		}
+	}
+	sendResult(agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED, "pong")
+	before := awaitCommand(t, h, record.Command.CommandId, agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED)
+	sendResult(agentflowv1.CommandStatus_COMMAND_STATUS_INDETERMINATE, "node_restarted")
+	after := awaitCommand(t, h, record.Command.CommandId, agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED)
+	if after.Detail != "pong" || len(after.Audit) != len(before.Audit) {
+		t.Fatal("uncertain replay rewrote the known outcome or its audit")
+	}
+}

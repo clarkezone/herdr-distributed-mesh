@@ -174,9 +174,10 @@ func (s *service) finishCommand(entry *fleetEntry, result *agentflowv1.CommandRe
 	}
 	op, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	record, err := s.commands.FinishCommand(op, entry.view.InstanceId, entry.view.TailscaleStableId, result, time.Now())
+	_, err := s.commands.FinishCommand(op, entry.view.InstanceId, entry.view.TailscaleStableId, result, time.Now())
 	if err != nil {
 		return nil, s.commandErrorLocked(err)
 	}
-	return &agentflowv1.CommandAck{CommandId: result.CommandId, Status: record.Status}, nil
+	// Receipt acknowledges the node's stored result, not a reconciled coordinator status.
+	return &agentflowv1.CommandAck{CommandId: result.CommandId, Status: result.Status}, nil
 }

@@ -277,6 +277,8 @@ Tailscale enrollment secrets. Command lookup is scoped to the submitting actor.
 deadline, distinct from the CLI's `-timeout` (default 60 seconds). Dispatch intent
 commits before sending; node execution intent commits before returning `pong`.
 Node results remain pending until the coordinator commits and acknowledges them.
+Acknowledgements confirm receipt of the node's result status. Replayed uncertainty
+does not overwrite a known coordinator outcome; `ctl command` remains authoritative.
 Replacement sessions wait for the old stream and its registered sends to finish; supersession
 interrupts pending sends, and command traffic never extends heartbeat deadlines.
 Already-transmitted commands cannot be revoked by replacing a session.

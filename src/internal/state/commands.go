@@ -382,6 +382,9 @@ func (s *Store) DispatchCommand(ctx context.Context, nodeID, commandID string, n
 	return record, dispatched, nil
 }
 
+// FinishCommand returns the authoritative record, which can differ from an
+// acknowledged uncertainty replay. Wire ACKs acknowledge result.Status, not
+// record.Status; otherwise the node cannot clear its retained replay.
 func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, result *pb.CommandResult, now time.Time) (*pb.CommandRecord, error) {
 	if err := s.enter(ctx); err != nil {
 		return nil, err
@@ -410,7 +413,10 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		if err != nil {
 			return err
 		}
-		if record.Status == result.Status && (record.Detail == result.Detail || record.Status == statusIndeterminate) {
+		if result.Status == statusIndeterminate && protocol.IsTerminalCommand(record.Status) {
+			return nil
+		}
+		if record.Status == result.Status && record.Detail == result.Detail {
 			return nil
 		}
 		if record.Status != statusRunning && record.Status != statusIndeterminate {
