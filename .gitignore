@@ -27,6 +27,22 @@ go.work.sum
 # env file
 .env
 
+# Local identities and runtime state
+.tsnet*/
+doctor-result.json
+mesh.db
+mesh.db-wal
+mesh.db-shm
+mesh.db-journal
+mesh.db.lock
+journal.db
+journal.db-wal
+journal.db-shm
+journal.db-journal
+journal.db.lock
+workspace-policy.json
+*.workspace-policy.json
+
 # Editor/IDE
 # .idea/
 # .vscode/

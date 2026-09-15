@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package agentflow.v1;
+
+option go_package = "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service NodeControl {
+  rpc Connect(stream NodeEnvelope) returns (stream NodeEnvelope);
+}
+
+service Fleet {
+  rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfo);
+  rpc ListNodes(google.protobuf.Empty) returns (NodeList);
+  rpc SubmitCommand(SubmitCommandRequest) returns (CommandRecord);
+  rpc GetCommand(GetCommandRequest) returns (CommandRecord);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_NODE = 1;
+  ROLE_CONTROLLER = 2;
+  ROLE_OBSERVER = 3;
+}
+
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  COMMAND_STATUS_ACCEPTED = 1;
+  COMMAND_STATUS_RUNNING = 2;
+  COMMAND_STATUS_SUCCEEDED = 3;
+  COMMAND_STATUS_FAILED = 4;
+  COMMAND_STATUS_TIMED_OUT = 5;
+  COMMAND_STATUS_REJECTED = 6;
+  COMMAND_STATUS_INDETERMINATE = 7;
+  COMMAND_STATUS_NODE_UNAVAILABLE = 8;
+}
+
+enum ActorOrigin {
+  ACTOR_ORIGIN_UNSPECIFIED = 0;
+  ACTOR_ORIGIN_HUMAN = 1;
+  ACTOR_ORIGIN_AGENT = 2;
+  ACTOR_ORIGIN_SYSTEM = 3;
+}
+
+message ProtocolRange {
+  uint32 minimum = 1;
+  uint32 maximum = 2;
+}
+
+message Hello {
+  ProtocolRange protocol = 1;
+  string implementation_version = 2;
+  string instance_id = 3;
+  Role role = 4;
+  repeated string capabilities = 5;
+  string stream_epoch = 6;
+  uint64 last_cursor = 7;
+}
+
+message HelloAck {
+  uint32 selected_protocol = 1;
+  string server_instance_id = 2;
+  repeated string capabilities = 3;
+}
+
+message Heartbeat {
+  uint64 sequence = 1;
+  google.protobuf.Timestamp sent_at = 2;
+  bool command_ready = 3;
+  bool workspace_ready = 4;
+  bool worktree_ready = 5;
+}
+
+message Snapshot {
+  uint64 sequence = 1;
+  string snapshot_type = 2;
+  google.protobuf.Struct payload = 3;
+}
+
+message Event {
+  uint64 sequence = 1;
+  string event_type = 2;
+  string entity_id = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  google.protobuf.Struct payload = 5;
+}
+
+message Command {
+  string command_id = 1;
+  string idempotency_key = 2;
+  string command_type = 3;
+  string target_id = 4;
+  Actor actor = 5;
+  google.protobuf.Duration ttl = 6;
+  google.protobuf.Struct preconditions = 7;
+  google.protobuf.Struct payload = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  WorkspaceEnsure workspace_ensure = 10;
+  WorktreeCreate worktree_create = 11;
+}
+
+message WorktreeCreate {
+  string project_id = 1;
+  string binding_revision = 2;
+  string name = 3;
+  string branch = 4;
+  string base_commit = 5;
+}
+
+message WorktreeCreateResult {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  string name = 4;
+  string branch = 5;
+  string base_commit = 6;
+}
+
+// Device-independent identity only. Paths and environment never cross the mesh.
+message WorkspaceEnsure {
+  string project_id = 1;
+  string binding_revision = 2;
+}
+
+message WorkspaceEnsureResult {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  bool created = 4;
+}
+
+// The actor and command ID are assigned by the authenticated coordinator.
+message SubmitCommandRequest {
+  string node_instance_id = 1;
+  string idempotency_key = 2;
+  string command_type = 3;
+  google.protobuf.Duration ttl = 4;
+  WorkspaceEnsure workspace_ensure = 5;
+  WorktreeCreate worktree_create = 6;
+}
+
+message GetCommandRequest {
+  string command_id = 1;
+}
+
+message CommandAudit {
+  CommandStatus status = 1;
+  string detail = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}
+
+message CommandRecord {
+  Command command = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  repeated CommandAudit audit = 6;
+  WorkspaceEnsureResult workspace_ensure = 7;
+  WorktreeCreateResult worktree_create = 8;
+}
+
+message Actor {
+  string actor_id = 1;
+  Role role = 2;
+  ActorOrigin origin = 3;
+  uint32 hop_count = 4;
+}
+
+message CommandAck {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+}
+
+message CommandResult {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+  google.protobuf.Struct payload = 4;
+  WorkspaceEnsureResult workspace_ensure = 5;
+  WorktreeCreateResult worktree_create = 6;
+}
+
+message NodeEnvelope {
+  oneof body {
+    Hello hello = 1;
+    HelloAck hello_ack = 2;
+    Heartbeat heartbeat = 3;
+    Snapshot snapshot = 4;
+    Event event = 5;
+    Command command = 6;
+    CommandAck command_ack = 7;
+    CommandResult command_result = 8;
+    HerdrState herdr_state = 9;
+  }
+}
+
+message ServerInfo {
+  string instance_id = 1;
+  string implementation_version = 2;
+  ProtocolRange protocol = 3;
+  repeated string capabilities = 4;
+}
+
+// Read-only allowlisted projection. No terminal text, titles, paths, or metadata.
+message HerdrEntity {
+  string id = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string agent_status = 4;
+  bool focused = 5;
+}
+
+message HerdrState {
+  // disabled, waiting, ready, or unavailable
+  string status = 1;
+  string version = 2;
+  uint32 protocol = 3;
+  uint64 sequence = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  // A sanitized category, never raw local API error text.
+  string error_code = 6;
+  repeated HerdrEntity workspaces = 7;
+  repeated HerdrEntity tabs = 8;
+  repeated HerdrEntity panes = 9;
+  repeated HerdrEntity agents = 10;
+}
+
+message NodeView {
+  string instance_id = 1;
+  string tailscale_stable_id = 2;
+  bool connected = 3;
+  google.protobuf.Timestamp last_seen = 4;
+  HerdrState herdr = 5;
+  bool stale = 6;
+  google.protobuf.Timestamp herdr_received_at = 7;
+  // Only negotiated allowlisted command types are available, not general execution.
+  bool command_ready = 8;
+  bool workspace_ready = 9;
+  bool worktree_ready = 10;
+}
+
+message NodeList {
+  repeated NodeView nodes = 1;
+}
