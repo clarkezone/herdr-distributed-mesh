@@ -79,7 +79,7 @@ func readNodeEntries(ctx context.Context, tx *sql.Tx, nodeID, filter string, arg
 			if err := decodeCommandMessage(resultBytes, entry.result); err != nil {
 				return nil, err
 			}
-			if err := protocol.ValidateProbeResult(entry.result); err != nil {
+			if err := protocol.ValidateResultForCommand(entry.result, entry.command); err != nil {
 				return nil, err
 			}
 			if entry.result.CommandId != id || entry.result.Status != status {
@@ -112,8 +112,8 @@ func matchingNodeCommand(original, proposed *pb.Command) bool {
 	return proto.Equal(a, b)
 }
 
-func writeNodeResult(ctx context.Context, tx *sql.Tx, result *pb.CommandResult) error {
-	if err := protocol.ValidateProbeResult(result); err != nil {
+func writeNodeResult(ctx context.Context, tx *sql.Tx, command *pb.Command, result *pb.CommandResult) error {
+	if err := protocol.ValidateResultForCommand(result, command); err != nil {
 		return err
 	}
 	payload, err := marshalCommandMessage(result)
@@ -132,6 +132,8 @@ func interruptedNodeResult(id string) *pb.CommandResult {
 // Claim returns nil,true only after committing the execution intent. An existing
 // RUNNING intent is durably marked indeterminate, never granted to an executor.
 // Remaining wire TTL is not identity; the fixed absolute expiry is.
+// New workspace commands are rejected while any retained operation for their
+// project is running or indeterminate, including acknowledged uncertainty.
 func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.CommandResult, bool, error) {
 	if err := j.store.enter(ctx); err != nil {
 		return nil, false, err
@@ -153,7 +155,7 @@ func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.Comma
 				return nil
 			}
 			result = interruptedNodeResult(command.CommandId)
-			return writeNodeResult(ctx, tx, result)
+			return writeNodeResult(ctx, tx, entry.command, result)
 		}
 		if !errors.Is(err, ErrCommandNotFound) {
 			return err
@@ -168,6 +170,26 @@ func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.Comma
 		payload, err := marshalCommandMessage(command)
 		if err != nil {
 			return err
+		}
+		if command.CommandType == protocol.WorkspaceEnsureCommandType {
+			entries, err := readNodeEntries(ctx, tx, j.nodeID, "WHERE status IN (?, ?)", []any{statusRunning, statusIndeterminate})
+			if err != nil {
+				return err
+			}
+			for _, prior := range entries {
+				if prior.command.CommandType != protocol.WorkspaceEnsureCommandType ||
+					prior.command.WorkspaceEnsure.ProjectId != command.WorkspaceEnsure.ProjectId {
+					continue
+				}
+				result = &pb.CommandResult{CommandId: command.CommandId, Status: statusRejected, Detail: "project_unresolved"}
+				resultBytes, err := marshalCommandMessage(result)
+				if err != nil {
+					return err
+				}
+				_, err = tx.ExecContext(ctx, "INSERT INTO node_commands(command_id, status, delivered, command, result) VALUES (?, ?, 0, ?, ?)",
+					command.CommandId, result.Status, payload, resultBytes)
+				return err
+			}
 		}
 		_, err = tx.ExecContext(ctx, "INSERT INTO node_commands(command_id, status, delivered, command) VALUES (?, ?, 0, ?)",
 			command.CommandId, statusRunning, payload)
@@ -187,12 +209,15 @@ func (j *NodeJournal) Complete(ctx context.Context, result *pb.CommandResult) er
 		return err
 	}
 	defer j.store.leave()
-	if err := protocol.ValidateProbeResult(result); err != nil {
+	if err := protocol.ValidateCommandResult(result); err != nil {
 		return err
 	}
 	return j.store.transaction(ctx, func(tx *sql.Tx) error {
 		entry, err := readNodeEntry(ctx, tx, j.nodeID, result.CommandId)
 		if err != nil {
+			return err
+		}
+		if err := protocol.ValidateResultForCommand(result, entry.command); err != nil {
 			return err
 		}
 		if entry.result != nil {
@@ -201,7 +226,7 @@ func (j *NodeJournal) Complete(ctx context.Context, result *pb.CommandResult) er
 			}
 			return nil
 		}
-		return writeNodeResult(ctx, tx, result)
+		return writeNodeResult(ctx, tx, entry.command, result)
 	})
 }
 
@@ -262,7 +287,7 @@ func (j *NodeJournal) Recover(ctx context.Context) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := writeNodeResult(ctx, tx, interruptedNodeResult(entry.command.CommandId)); err != nil {
+			if err := writeNodeResult(ctx, tx, entry.command, interruptedNodeResult(entry.command.CommandId)); err != nil {
 				return err
 			}
 		}

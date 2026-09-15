@@ -345,7 +345,7 @@ func TestCoordinatorMigrationPreservesVersionOneData(t *testing.T) {
 	downgradeToVersionOne(t, s)
 	requireOK(t, s.Close())
 	s = openTestStore(t, path)
-	if version := rowCount(t, s, "PRAGMA user_version"); version != 2 {
+	if version := rowCount(t, s, "PRAGMA user_version"); version != 3 {
 		t.Fatalf("migration version = %d", version)
 	}
 	fleet, err := s.LoadFleet(ctx)

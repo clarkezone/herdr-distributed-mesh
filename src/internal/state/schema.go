@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 )
 
 type databaseKind int
@@ -90,9 +92,9 @@ func (s *Store) inspectSchema(ctx context.Context, ownerID string, created bool,
 	if err := s.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&application); err != nil {
 		return 0, err
 	}
-	maxVersion := 2
+	maxVersion := 3
 	if kind == nodeKind {
-		maxVersion = 1
+		maxVersion = 2
 	}
 	if version < 0 || version > maxVersion {
 		return 0, fmt.Errorf("unsupported state schema version %d", version)
@@ -129,7 +131,7 @@ func (s *Store) inspectSchema(ctx context.Context, ownerID string, created bool,
 		}
 		identityQuery = "SELECT node_instance_id FROM node_metadata WHERE singleton = 1"
 		countQuery = "SELECT count(*) FROM node_metadata"
-	} else if version == 2 {
+	} else if version >= 2 {
 		schemas = append(schemas,
 			struct{ name, kind, sql string }{"commands", "table", commandsSchema},
 			struct{ name, kind, sql string }{"commands_target_status", "index", commandTargetIndex},
@@ -181,8 +183,30 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 				return err
 			}
 		}
-		_, err := readNodeEntries(ctx, tx, ownerID, "", nil)
+		entries, err := readNodeEntries(ctx, tx, ownerID, "", nil)
+		if err != nil {
+			return err
+		}
+		if version == 1 {
+			for _, entry := range entries {
+				if err := protocol.ValidateProbeCommand(entry.command, ownerID); err != nil {
+					return fmt.Errorf("invalid legacy node command: %w", err)
+				}
+			}
+		}
+		// The version fences probe-only binaries without rewriting retained bytes.
+		if version < 2 {
+			_, err = tx.ExecContext(ctx, "PRAGMA user_version = 2")
+		}
 		return err
+	}
+	if version > 0 && version < 3 {
+		if err := validateLegacyBindings(ctx, tx); err != nil {
+			return err
+		}
+		if _, err := readFleet(ctx, tx); err != nil {
+			return err
+		}
 	}
 	if version == 0 {
 		for _, statement := range []string{metadataSchema, bindingsSchema, latestNodesSchema} {
@@ -202,6 +226,37 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 			}
 		}
 	}
-	_, err := readCommands(ctx, tx, "", nil)
+	records, err := readCommands(ctx, tx, "", nil)
+	if err != nil {
+		return err
+	}
+	if version > 0 && version < 3 {
+		for _, record := range records {
+			if err := protocol.ValidateProbeCommand(record.Command, record.Command.TargetId); err != nil {
+				return fmt.Errorf("invalid legacy coordinator command: %w", err)
+			}
+		}
+	}
+	if version < 3 {
+		_, err = tx.ExecContext(ctx, "PRAGMA user_version = 3")
+	}
 	return err
+}
+
+func validateLegacyBindings(ctx context.Context, tx *sql.Tx) (err error) {
+	rows, err := tx.QueryContext(ctx, "SELECT stable_id, instance_id FROM bindings")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	for rows.Next() {
+		var stableID, instanceID string
+		if err := rows.Scan(&stableID, &instanceID); err != nil {
+			return err
+		}
+		if emptyID(stableID) || emptyID(instanceID) {
+			return errors.New("legacy database contains an empty identity binding")
+		}
+	}
+	return rows.Err()
 }

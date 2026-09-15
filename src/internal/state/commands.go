@@ -72,34 +72,47 @@ func validateCommand(command *pb.Command, target string) error {
 	if command == nil || proto.Size(command) > maxCommandBytes {
 		return errors.New("command is nil or oversized")
 	}
-	return protocol.ValidateProbeCommand(command, target)
+	return protocol.ValidateCommand(command, target)
 }
 
-func validCommandOutcome(status pb.CommandStatus, detail string) bool {
+func validCommandOutcome(commandType string, status pb.CommandStatus, detail string) bool {
 	switch status {
 	case statusAccepted:
 		return detail == "accepted"
 	case statusRunning:
 		return detail == "dispatched"
 	case statusSucceeded:
+		if commandType == protocol.WorkspaceEnsureCommandType {
+			return detail == "workspace_created" || detail == "workspace_present"
+		}
 		return detail == "pong"
 	case statusTimedOut:
 		return detail == "deadline_expired"
 	case statusRejected:
+		if commandType == protocol.WorkspaceEnsureCommandType {
+			switch detail {
+			case "journal_full", "project_unresolved", "project_not_authorized", "precondition_failed",
+				"ambiguous_workspace", "herdr_unavailable", "authorization_changed":
+				return true
+			}
+			return false
+		}
 		return detail == "journal_full"
 	case statusIndeterminate:
 		return detail == "node_restarted" || detail == "server_restarted" ||
-			detail == "node_disconnected" || detail == "deadline_expired"
+			detail == "node_disconnected" || detail == "deadline_expired" ||
+			(commandType == protocol.WorkspaceEnsureCommandType && detail == "herdr_outcome_unknown")
 	case statusUnavailable:
 		return detail == "node_disconnected" || detail == "server_restarted"
 	}
 	return false
 }
 
-func validCommandTransition(from, to pb.CommandStatus) bool {
+func validCommandTransition(commandType string, from, to pb.CommandStatus, detail string) bool {
 	switch from {
 	case statusAccepted:
-		return to == statusRunning || to == statusTimedOut || to == statusUnavailable
+		return to == statusRunning || to == statusTimedOut || to == statusUnavailable ||
+			(commandType == protocol.WorkspaceEnsureCommandType && to == statusRejected && detail == "authorization_changed")
 	case statusRunning:
 		return to == statusSucceeded || to == statusTimedOut || to == statusRejected || to == statusIndeterminate
 	case statusIndeterminate:
@@ -115,6 +128,13 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 	if err := validateCommand(record.Command, record.Command.TargetId); err != nil {
 		return err
 	}
+	if record.Status == statusSucceeded {
+		if err := protocol.ValidateResultForCommand(recordResult(record), record.Command); err != nil {
+			return err
+		}
+	} else if record.WorkspaceEnsure != nil {
+		return errors.New("stored unsuccessful command contains workspace success data")
+	}
 	if record.CreatedAt == nil || record.CreatedAt.CheckValid() != nil ||
 		record.UpdatedAt == nil || record.UpdatedAt.CheckValid() != nil ||
 		len(record.Audit) == 0 || len(record.Audit) > maxCommandAudit ||
@@ -129,7 +149,7 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 	var previous *pb.CommandAudit
 	for _, event := range record.Audit {
 		if event == nil || event.OccurredAt == nil || event.OccurredAt.CheckValid() != nil ||
-			!validCommandOutcome(event.Status, event.Detail) {
+			!validCommandOutcome(record.Command.CommandType, event.Status, event.Detail) {
 			return errors.New("stored command audit event is invalid")
 		}
 		if previous == nil {
@@ -137,7 +157,7 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 				return errors.New("stored command admission audit is invalid")
 			}
 		} else if event.OccurredAt.AsTime().Before(previous.OccurredAt.AsTime()) ||
-			!validCommandTransition(previous.Status, event.Status) {
+			!validCommandTransition(record.Command.CommandType, previous.Status, event.Status, event.Detail) {
 			return errors.New("stored command audit order or transition is invalid")
 		}
 		previous = event
@@ -146,6 +166,13 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 		return errors.New("stored command outcome disagrees with audit")
 	}
 	return nil
+}
+
+func recordResult(record *pb.CommandRecord) *pb.CommandResult {
+	return &pb.CommandResult{
+		CommandId: record.Command.CommandId, Status: record.Status, Detail: record.Detail,
+		WorkspaceEnsure: record.WorkspaceEnsure,
+	}
 }
 
 // Filters are package-owned SQL fragments only; all caller values are parameters.
@@ -320,7 +347,8 @@ func (s *Store) CreateCommand(ctx context.Context, command *pb.Command, now time
 }
 
 func transitionCommand(ctx context.Context, tx *sql.Tx, record *pb.CommandRecord, status pb.CommandStatus, detail string, now time.Time) error {
-	if !validCommandTransition(record.Status, status) || !validCommandOutcome(status, detail) {
+	if !validCommandTransition(record.Command.CommandType, record.Status, status, detail) ||
+		!validCommandOutcome(record.Command.CommandType, status, detail) {
 		return ErrCommandConflict
 	}
 	if len(record.Audit) >= maxCommandAudit {
@@ -341,6 +369,42 @@ func transitionCommand(ctx context.Context, tx *sql.Tx, record *pb.CommandRecord
 	}
 	_, err = tx.ExecContext(ctx, "UPDATE commands SET status = ?, record = ? WHERE command_id = ?", status, payload, record.Command.CommandId)
 	return err
+}
+
+// RejectCommand revokes only accepted workspace admissions before dispatch.
+// Already changed records are returned without rewriting their outcome or audit.
+func (s *Store) RejectCommand(ctx context.Context, nodeID, commandID, detail string, now time.Time) (*pb.CommandRecord, error) {
+	if err := s.enter(ctx); err != nil {
+		return nil, err
+	}
+	defer s.leave()
+	if emptyID(nodeID) || emptyID(commandID) || detail != "authorization_changed" {
+		return nil, errors.New("invalid pre-dispatch authorization rejection")
+	}
+	if _, err := commandTime(now); err != nil {
+		return nil, err
+	}
+	var record *pb.CommandRecord
+	err := s.transaction(ctx, func(tx *sql.Tx) (err error) {
+		record, err = readCommand(ctx, tx, "WHERE c.command_id = ?", commandID)
+		if err != nil {
+			return err
+		}
+		if record.Command.TargetId != nodeID {
+			return ErrIdentityConflict
+		}
+		if record.Command.CommandType != protocol.WorkspaceEnsureCommandType {
+			return ErrCommandConflict
+		}
+		if record.Status != statusAccepted {
+			return nil
+		}
+		return transitionCommand(ctx, tx, record, statusRejected, detail, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
 }
 
 func (s *Store) DispatchCommand(ctx context.Context, nodeID, commandID string, now time.Time) (*pb.CommandRecord, bool, error) {
@@ -393,7 +457,7 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 	if emptyID(nodeID) || emptyID(stableID) {
 		return nil, errors.New("result node and stable IDs must not be empty")
 	}
-	if err := protocol.ValidateProbeResult(result); err != nil {
+	if err := protocol.ValidateCommandResult(result); err != nil {
 		return nil, err
 	}
 	if _, err := commandTime(now); err != nil {
@@ -413,14 +477,20 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		if err != nil {
 			return err
 		}
+		if err := protocol.ValidateResultForCommand(result, record.Command); err != nil {
+			return err
+		}
 		if result.Status == statusIndeterminate && protocol.IsTerminalCommand(record.Status) {
 			return nil
 		}
-		if record.Status == result.Status && record.Detail == result.Detail {
+		if proto.Equal(recordResult(record), result) {
 			return nil
 		}
 		if record.Status != statusRunning && record.Status != statusIndeterminate {
 			return ErrCommandConflict
+		}
+		if result.WorkspaceEnsure != nil {
+			record.WorkspaceEnsure = proto.Clone(result.WorkspaceEnsure).(*pb.WorkspaceEnsureResult)
 		}
 		return transitionCommand(ctx, tx, record, result.Status, result.Detail, now)
 	})

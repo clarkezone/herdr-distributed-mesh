@@ -117,8 +117,9 @@ filename and use that executable for the restarted roles.
 Use your existing node hostname if it was explicitly configured. Do not run
 two processes sharing a state directory. On Windows the socket argument is
 Herdr's marker path, mapped to a **local named pipe**, not a TCP endpoint.
-Custom sessions require their own socket path. No Herdr processes are launched
-or modified by the mesh.
+Custom sessions require their own socket path. Read-only integration does not
+launch or modify Herdr processes; workspace creation requires the separate
+explicit project policies described below.
 
 Query from a client-tagged identity (reuse your enrolled controller state):
 
@@ -141,8 +142,8 @@ Only entity IDs, workspace/tab relationships, focus flags, and agent status are
 forwarded. Titles, labels, paths, terminal output, agent names/session metadata,
 and custom tokens are excluded on the node. The server also validates the
 projection and rejects unknown protobuf fields. This is not a complete layout
-or terminal mirror and **does not support remote Herdr mutation or arbitrary
-command execution**.
+or terminal mirror. Observation alone enables **no remote Herdr mutation or
+arbitrary command execution**.
 
 Herdr protocol 18 is the initial supported local contract. The observer waits for
 subscription acknowledgement before taking its baseline. Events trigger
@@ -191,7 +192,7 @@ policy is unchanged: disconnected observations expire after 15 minutes without
 a heartbeat, even across restarts. Expiry never removes the durable identity
 binding. Admitted command transitions have a separate durable journal, described
 below. Project bindings and mutation-specific execution safety remain subsequent
-work; remote Herdr mutations remain disabled.
+work beyond the scoped workspace-ensure operation below.
 
 The dedicated coordinator directory is private to the current user (plus
 SYSTEM on Windows), including database sidecars. Keep it on a local filesystem.
@@ -218,18 +219,20 @@ Remove-Item Env:\HERDR_MESH_TEST_SOCKET
 
 The remaining two-host restart/NIC/sleep/hostname-collision runbook is
 `docs\windows-live-validation.md`. That gate is deferred, not passed, and remains
-required before the two-machine demo. Remote mutations, durable event history,
-the fuller standalone CLI, and MCP remain later phases.
+required before the two-machine demo. Worktree creation, broader mutations,
+durable event history, the fuller standalone CLI, and MCP remain later phases.
 
 ## Journaled command-safety probe
 
-The only admitted command is **`node.ping.v1`**, which returns `pong`. It never
+Without workspace policies, the only admitted command is **`node.ping.v1`**, which returns `pong`. It never
 calls Herdr or executes shell commands. This exercises the command delivery and
 recovery path before introducing actual workspace/worktree mutations.
 
 Upgrade the server first, preserving its enrolled state. Coordinator schema 1
-upgrades transactionally to schema 2, preserving bindings and observations.
-Older binaries cannot read schema 2; take an offline backup before upgrading.
+upgrades transactionally through schema 2 to schema 3, preserving bindings,
+observations, and probe records. The node journal similarly upgrades from schema 1
+to schema 2. Older journal-aware binaries reject these newer schemas; take an
+offline backup before upgrading.
 Restart the node with the new binary, its existing hostname/state/socket flags,
 and **`-enable-probes`**. Probes are off by default and do not require Herdr.
 An enabled node requires a coordinator advertising `commands.node-ping.v1`.
@@ -295,8 +298,110 @@ Back up the whole node state offline, just as for the coordinator.
 
 The durable audit covers **admitted command transitions**, not all denied
 requests. Denials are not a durable security audit. This is a probe-only safety
-foundation, not completion of mutation authorization, project scoping,
-precondition checks, reconciliation, the fuller CLI, or MCP.
+foundation when no workspace policy is configured, not arbitrary mutation
+authorization, automated reconciliation, the fuller CLI, or MCP.
+
+## Project-scoped workspace ensure
+
+`ctl ensure-workspace` is the first real Herdr mutation. It ensures a workspace
+for one **explicitly bound local Git checkout**: reuse the matching workspace, or
+create one with `focus:false`. It does not create worktrees, clone repositories,
+send prompts, inject commands/environment variables, rename or close workspaces.
+Creating a Herdr workspace may start its normal local terminal; only bind
+checkouts whose local startup behavior you trust.
+
+Enable it by supplying **both** a coordinator and node `-workspace-policy` file.
+No policy means no workspace mutations. Policies are immutable for a process
+lifetime; edit them locally and restart the corresponding role to apply changes.
+They contain explicit actor allowlists, never wildcard grants.
+Keep policies outside the repository; `*.workspace-policy.json` is also ignored
+to help prevent accidental commits of machine-local bindings.
+
+Coordinator policy (no checkout paths):
+
+```json
+{
+  "projects": [
+    {
+      "project_id": "AgentFlow",
+      "node_id": "replace-with-mesh-node-instance-id",
+      "binding_revision": "r1",
+      "actor_ids": ["replace-with-client-tailscale-stable-id"]
+    }
+  ]
+}
+```
+
+Node policy repeats those exact fields and adds `"path": "C:\\dev\\AgentFlow"`
+to the project entry. Use a real existing Git checkout on that node, not this
+example path. `node_id` comes from `ctl nodes`; the actor is the client's
+**Tailscale stable ID**, not its hostname, account name, or mesh instance ID.
+The doctor reports that identity with its local diagnostics. Do not run it using
+state currently owned by the dashboard or another process.
+
+The project ID is a stable logical key, such as the established AI Core project
+key; it is not inferred from a checkout path or workspace label. These policies
+are explicit local bindings, not automatic vault synchronization. Local paths,
+enrollment credentials, and machine runtime state must not enter shared AI Core
+memory. Each policy is limited to 64 KiB and 128 bindings; duplicate bindings,
+checkout aliases, unknown JSON fields, mismatched node IDs, and invalid paths
+fail startup. Node bindings pin directory identity and recheck it before use.
+Change `binding_revision` on **both** policies whenever changing a binding.
+
+Upgrade/restart the server first with its existing identity flags plus
+`-workspace-policy '<server.workspace-policy.json>'`. Restart the node with its
+existing identity/socket flags plus `-workspace-policy '<node.workspace-policy.json>'`.
+A node policy requires `-herdr-socket`, enables the durable journal automatically,
+and also retains ping support; `-enable-probes` is not additionally required.
+The existing dashboard can remain running with its own enrolled state.
+
+From an unused enrolled client identity:
+
+```powershell
+.\herdr-mesh.exe ctl ensure-workspace `
+  -server '<server-magic-dns-name>:50052' `
+  -state-dir '<unused-enrolled-client-state-dir>' `
+  -node '<mesh-node-instance-id>' `
+  -project AgentFlow `
+  -binding-revision r1 `
+  -idempotency-key ensure-AgentFlow-1 `
+  -ttl 30s `
+  -json
+```
+
+Preserve any explicitly configured client hostname. Success returns
+`workspace_ensure` with `project_id`, `binding_revision`, `workspace_id`, and
+`created`. Neither paths nor Herdr labels, terminal data, or raw errors are
+returned. Human output includes the same identifiers. `ctl command` retrieves
+the durable outcome; retries must retain the same actor, key, target, binding,
+and TTL. Reusing that key returns the original operation, not a new check after
+someone closes its workspace.
+
+`ctl nodes -json` exposes `workspace_ready` separately from probe `command_ready`.
+Admission requires negotiated workspace support and a fresh ready Herdr baseline.
+The coordinator rechecks the client's and node's WhoIs roles before dispatch;
+the production node checks the actual coordinator peer again before its effect.
+Both sides enforce the project's actor/revision binding. Workspace execution is
+serialized on the node without blocking heartbeats or observer traffic.
+
+**Uncertainty is not retried.** A timeout, malformed response, or connection loss
+after attempting creation can mean Herdr created the workspace. The command is
+then `INDETERMINATE`; after interrupted intent, restart also remains indeterminate.
+The node durably rejects new workspace keys for that project as
+`project_unresolved`, across actors and binding revisions, until explicit future
+reconciliation tooling resolves the ambiguity. Changing keys, resetting the
+journal, or rebinding the same project is not a safe workaround.
+
+Matching uses local checkout identity, never labels. Multiple existing matches
+fail as `ambiguous_workspace`. Herdr has no atomic ensure/idempotency API:
+external local clients can still race creation, and filesystem validation cannot
+eliminate the gap before path-based IPC. Avoid concurrent external creation or
+checkout replacement while ensuring a workspace. This milestone does not claim
+global uniqueness, automatic reconciliation, or an exactly-once Herdr effect.
+
+Workspace coverage includes fake local IPC with the real node/journals on
+Windows; it does not mutate existing user workspaces or replace the deferred
+two-host disruption validation.
 
 ## Windows tsnet feasibility spike
 

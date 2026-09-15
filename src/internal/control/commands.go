@@ -24,11 +24,30 @@ func Ping(ctx context.Context, options Options, nodeID, key string, ttl time.Dur
 	if err != nil {
 		return err
 	}
-	log.Printf("probe idempotency key=%s target_node=%s", key, nodeID)
+	return submitAndWait(ctx, options, request)
+}
+
+func EnsureWorkspace(ctx context.Context, options Options, nodeID, key, projectID, revision string, ttl time.Duration) error {
+	if options.RequiredServerTag == "" {
+		return errors.New("command requests require an expected server tag")
+	}
+	request, err := protocol.NormalizeCommandRequest(&agentflowv1.SubmitCommandRequest{
+		NodeInstanceId: nodeID, IdempotencyKey: key, CommandType: protocol.WorkspaceEnsureCommandType, Ttl: durationpb.New(ttl),
+		WorkspaceEnsure: &agentflowv1.WorkspaceEnsure{ProjectId: projectID, BindingRevision: revision},
+	})
+	if err != nil {
+		return err
+	}
+	return submitAndWait(ctx, options, request)
+}
+
+func submitAndWait(ctx context.Context, options Options, request *agentflowv1.SubmitCommandRequest) error {
+	key := request.IdempotencyKey
+	log.Printf("command type=%s idempotency_key=%s target_node=%s", request.CommandType, key, request.NodeInstanceId)
 	return withFleet(ctx, options, func(client agentflowv1.FleetClient, _ transport.SelfStatus) error {
 		record, err := retryUnavailable(ctx, func() (*agentflowv1.CommandRecord, error) { return client.SubmitCommand(ctx, request) })
 		if err != nil {
-			return fmt.Errorf("submit probe (retry with the same key %q): %w", key, err)
+			return fmt.Errorf("submit command (retry with the same key %q): %w", key, err)
 		}
 		record, err = waitCommand(ctx, client, record)
 		if err != nil {
@@ -38,7 +57,7 @@ func Ping(ctx context.Context, options Options, nodeID, key string, ttl time.Dur
 			return err
 		}
 		if record.Status != agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED {
-			return fmt.Errorf("probe ended with %s; use the same key or command ID to inspect this operation", record.Status)
+			return fmt.Errorf("command ended with %s; use the same key or command ID to inspect this operation", record.Status)
 		}
 		return nil
 	})
@@ -101,5 +120,12 @@ func writeCommand(options Options, record *agentflowv1.CommandRecord) error {
 	}
 	_, err := fmt.Fprintf(options.Output, "command=%s node=%s key=%s status=%s detail=%s audit_events=%d\n",
 		record.Command.CommandId, record.Command.TargetId, record.Command.IdempotencyKey, record.Status, record.Detail, len(record.Audit))
+	if err != nil {
+		return err
+	}
+	if workspace := record.WorkspaceEnsure; workspace != nil {
+		_, err = fmt.Fprintf(options.Output, "project=%s binding_revision=%s workspace=%s created=%t\n",
+			workspace.ProjectId, workspace.BindingRevision, workspace.WorkspaceId, workspace.Created)
+	}
 	return err
 }

@@ -256,7 +256,13 @@ func (s *Store) enter(ctx context.Context) error {
 func (s *Store) leave() { <-s.gate }
 
 func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err error) {
-	tx, err := s.conn.BeginTx(ctx, nil)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Keep rollback synchronous with ownership of the pinned connection.
+	// Caller cancellation still governs SQL operations and the commit decision,
+	// but must not start database/sql's asynchronous transaction rollback.
+	tx, err := s.conn.BeginTx(context.WithoutCancel(ctx), nil)
 	if err != nil {
 		return err
 	}
@@ -266,6 +272,9 @@ func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err er
 		}
 	}()
 	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -418,52 +427,57 @@ func (s *Store) LoadFleet(ctx context.Context) (fleet []*agentflowv1.NodeView, e
 	}
 	defer s.leave()
 	err = s.transaction(ctx, func(tx *sql.Tx) (err error) {
-		var count int
-		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM latest_nodes").Scan(&count); err != nil {
-			return err
-		}
-		if count > maxNodes {
-			return errors.New("stored fleet exceeds the 128-node limit")
-		}
-		// CASE bounds the blob before the driver allocates a Go byte slice.
-		rows, err := tx.QueryContext(ctx, `SELECT n.instance_id, b.stable_id,
-			CASE WHEN typeof(n.payload) = 'blob' AND length(n.payload) BETWEEN 1 AND ?
-				THEN n.payload ELSE NULL END
-			FROM latest_nodes n LEFT JOIN bindings b ON b.instance_id = n.instance_id
-			ORDER BY n.instance_id LIMIT ?`, maxNodeBytes, maxNodes+1)
-		if err != nil {
-			return err
-		}
-		defer func() { err = errors.Join(err, rows.Close()) }()
-		fleet = make([]*agentflowv1.NodeView, 0, count)
-		for rows.Next() {
-			var instanceID string
-			var stableID sql.NullString
-			var payload []byte
-			if err := rows.Scan(&instanceID, &stableID, &payload); err != nil {
-				return err
-			}
-			if len(fleet) == maxNodes || !stableID.Valid || len(payload) == 0 || len(payload) > maxNodeBytes {
-				return errors.New("stored node has invalid binding or payload bounds")
-			}
-			view := new(agentflowv1.NodeView)
-			if err := (proto.UnmarshalOptions{RecursionLimit: 64}).Unmarshal(payload, view); err != nil {
-				return fmt.Errorf("decode stored node: %w", err)
-			}
-			if err := validateNode(view); err != nil {
-				return err
-			}
-			if instanceID != view.InstanceId || stableID.String != view.TailscaleStableId {
-				return fmt.Errorf("%w: stored node does not match its binding", ErrIdentityConflict)
-			}
-			fleet = append(fleet, view)
-		}
-		return rows.Err()
+		fleet, err = readFleet(ctx, tx)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return fleet, nil
+}
+
+func readFleet(ctx context.Context, tx *sql.Tx) (fleet []*agentflowv1.NodeView, err error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM latest_nodes").Scan(&count); err != nil {
+		return nil, err
+	}
+	if count > maxNodes {
+		return nil, errors.New("stored fleet exceeds the 128-node limit")
+	}
+	// CASE bounds the blob before the driver allocates a Go byte slice.
+	rows, err := tx.QueryContext(ctx, `SELECT n.instance_id, b.stable_id,
+			CASE WHEN typeof(n.payload) = 'blob' AND length(n.payload) BETWEEN 1 AND ?
+				THEN n.payload ELSE NULL END
+			FROM latest_nodes n LEFT JOIN bindings b ON b.instance_id = n.instance_id
+			ORDER BY n.instance_id LIMIT ?`, maxNodeBytes, maxNodes+1)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	fleet = make([]*agentflowv1.NodeView, 0, count)
+	for rows.Next() {
+		var instanceID string
+		var stableID sql.NullString
+		var payload []byte
+		if err := rows.Scan(&instanceID, &stableID, &payload); err != nil {
+			return nil, err
+		}
+		if len(fleet) == maxNodes || !stableID.Valid || len(payload) == 0 || len(payload) > maxNodeBytes {
+			return nil, errors.New("stored node has invalid binding or payload bounds")
+		}
+		view := new(agentflowv1.NodeView)
+		if err := (proto.UnmarshalOptions{RecursionLimit: 64}).Unmarshal(payload, view); err != nil {
+			return nil, fmt.Errorf("decode stored node: %w", err)
+		}
+		if err := validateNode(view); err != nil {
+			return nil, err
+		}
+		if instanceID != view.InstanceId || stableID.String != view.TailscaleStableId {
+			return nil, fmt.Errorf("%w: stored node does not match its binding", ErrIdentityConflict)
+		}
+		fleet = append(fleet, view)
+	}
+	return fleet, rows.Err()
 }
 
 // Close waits for active operations, closes SQLite before releasing ownership,

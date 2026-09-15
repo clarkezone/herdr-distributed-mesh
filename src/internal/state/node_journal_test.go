@@ -305,7 +305,7 @@ func TestNodeJournalCorruptionRefused(t *testing.T) {
 			case "missing metadata":
 				_, err = j.store.conn.ExecContext(ctx, "DELETE FROM node_metadata")
 			case "future version":
-				_, err = j.store.conn.ExecContext(ctx, "PRAGMA user_version = 2")
+				_, err = j.store.conn.ExecContext(ctx, "PRAGMA user_version = 3")
 			}
 			requireOK(t, err)
 			if kind != "missing metadata" && kind != "future version" {

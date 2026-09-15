@@ -29,8 +29,10 @@ const (
 type fleetEntry struct {
 	view          *agentflowv1.NodeView
 	done          chan struct{}
-	outbound      chan *agentflowv1.NodeEnvelope
+	outbound      chan queuedCommand
 	probes        bool
+	workspaces    bool
+	peerContext   context.Context
 	streamDone    <-chan struct{}
 	supersedeOnce sync.Once
 	sendMu        sync.Mutex
@@ -217,6 +219,7 @@ func (f *fleetStore) restore(views []*agentflowv1.NodeView, now time.Time) error
 		// A persisted observation is not evidence of a live stream in this process.
 		copy.Connected, copy.Stale = false, true
 		copy.CommandReady = false
+		copy.WorkspaceReady = false
 		nodes[copy.InstanceId] = &fleetEntry{view: copy, done: make(chan struct{})}
 	}
 	f.nodes = nodes
@@ -290,6 +293,7 @@ func (f *fleetStore) beginSession(ctx context.Context, instanceID, stableID stri
 		entry, err := f.beginLocked(instanceID, stableID, enabled, now)
 		if entry != nil {
 			entry.streamDone = ctx.Done()
+			entry.peerContext = context.WithoutCancel(ctx)
 		}
 		f.mu.Unlock()
 		return entry, err
@@ -318,7 +322,7 @@ func (f *fleetStore) beginLocked(instanceID, stableID string, enabled bool, now 
 			Herdr: &agentflowv1.HerdrState{Status: herdrStatus},
 		},
 		done:     make(chan struct{}),
-		outbound: make(chan *agentflowv1.NodeEnvelope, 16),
+		outbound: make(chan queuedCommand, 16),
 	}
 	if err := f.save(entry.view); err != nil {
 		return nil, err
@@ -340,6 +344,7 @@ func (f *fleetStore) end(entry *fleetEntry) error {
 		copy := proto.Clone(entry.view).(*agentflowv1.NodeView)
 		copy.Connected, copy.Stale = false, true
 		copy.CommandReady = false
+		copy.WorkspaceReady = false
 		if err := f.save(copy); err != nil {
 			return err
 		}
@@ -360,6 +365,7 @@ func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time, ready ...bool) 
 	copy := proto.Clone(entry.view).(*agentflowv1.NodeView)
 	copy.LastSeen = timestamppb.New(now)
 	copy.CommandReady = len(ready) > 0 && ready[0] && entry.probes
+	copy.WorkspaceReady = copy.CommandReady && len(ready) > 1 && ready[1] && entry.workspaces && freshHerdr(copy, now)
 	if err := f.save(copy); err != nil {
 		return err
 	}
@@ -439,6 +445,9 @@ func (f *fleetStore) update(entry *fleetEntry, state *agentflowv1.HerdrState, no
 	copy := proto.Clone(entry.view).(*agentflowv1.NodeView)
 	copy.Herdr = proto.Clone(state).(*agentflowv1.HerdrState)
 	copy.HerdrReceivedAt = timestamppb.New(now)
+	if state.Status != "ready" {
+		copy.WorkspaceReady = false
+	}
 	if err := f.save(copy); err != nil {
 		return err
 	}
@@ -457,10 +466,17 @@ func (f *fleetStore) list(now time.Time) (*agentflowv1.NodeList, error) {
 		view := proto.Clone(entry.view).(*agentflowv1.NodeView)
 		view.Stale = !view.Connected || view.Herdr.Status != "ready" ||
 			view.HerdrReceivedAt == nil || now.Sub(view.HerdrReceivedAt.AsTime()) > herdrStaleAfter
+		view.WorkspaceReady = view.WorkspaceReady && freshHerdr(view, now) && f.current(entry)
 		list.Nodes = append(list.Nodes, view)
 	}
+
 	sort.Slice(list.Nodes, func(i, j int) bool { return list.Nodes[i].InstanceId < list.Nodes[j].InstanceId })
 	return list, nil
+}
+
+func freshHerdr(view *agentflowv1.NodeView, now time.Time) bool {
+	return view.Connected && view.Herdr.GetStatus() == "ready" && view.HerdrReceivedAt != nil &&
+		now.Sub(view.HerdrReceivedAt.AsTime()) < herdrStaleAfter
 }
 
 func (s *service) ListNodes(ctx context.Context, _ *emptypb.Empty) (*agentflowv1.NodeList, error) {

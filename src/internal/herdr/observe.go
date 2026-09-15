@@ -1,6 +1,6 @@
-// Package herdr observes a local Herdr session without modifying it. Only
-// validated identifiers, focus flags, agent statuses, and version information
-// are exposed; event payloads are never applied to the published state.
+// Package herdr provides allowlisted local observation and explicitly bound
+// workspace ensure. Observe is read-only and exposes only validated identifiers,
+// focus flags, agent statuses, and version information, never raw event payloads.
 package herdr
 
 import (

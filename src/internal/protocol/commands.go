@@ -32,12 +32,28 @@ func NewCommandID() string {
 func ValidCommandID(id string) bool { return commandID.MatchString(id) }
 
 func NormalizeProbeRequest(request *agentflowv1.SubmitCommandRequest) (*agentflowv1.SubmitCommandRequest, error) {
+	if request == nil || request.CommandType != ProbeCommandType {
+		return nil, errors.New("only the read-only node.ping.v1 probe is allowed")
+	}
+	return NormalizeCommandRequest(request)
+}
+
+func NormalizeCommandRequest(request *agentflowv1.SubmitCommandRequest) (*agentflowv1.SubmitCommandRequest, error) {
 	if request == nil || len(request.ProtoReflect().GetUnknown()) != 0 ||
 		!commandToken.MatchString(request.NodeInstanceId) || !commandToken.MatchString(request.IdempotencyKey) {
 		return nil, errors.New("node ID and idempotency key must be bounded identifier tokens")
 	}
-	if request.CommandType != ProbeCommandType {
-		return nil, errors.New("only the read-only node.ping.v1 probe is allowed")
+	switch request.CommandType {
+	case ProbeCommandType:
+		if request.WorkspaceEnsure != nil {
+			return nil, errors.New("probe must not contain workspace arguments")
+		}
+	case WorkspaceEnsureCommandType:
+		if err := ValidateWorkspaceEnsure(request.WorkspaceEnsure); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New("unsupported command type")
 	}
 	copy := proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
 	if copy.Ttl == nil {
@@ -58,10 +74,29 @@ func validTTL(ttl *durationpb.Duration) error {
 }
 
 func ValidateProbeCommand(command *agentflowv1.Command, nodeID string) error {
-	if command == nil || !ValidCommandID(command.CommandId) || command.CommandType != ProbeCommandType ||
+	if command == nil || command.CommandType != ProbeCommandType {
+		return errors.New("invalid probe type")
+	}
+	return ValidateCommand(command, nodeID)
+}
+
+func ValidateCommand(command *agentflowv1.Command, nodeID string) error {
+	if command == nil || !ValidCommandID(command.CommandId) ||
 		command.TargetId != nodeID || !commandToken.MatchString(command.TargetId) ||
 		!commandToken.MatchString(command.IdempotencyKey) || len(command.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid or unsupported node command")
+	}
+	switch command.CommandType {
+	case ProbeCommandType:
+		if command.WorkspaceEnsure != nil {
+			return errors.New("probe must not contain workspace arguments")
+		}
+	case WorkspaceEnsureCommandType:
+		if err := ValidateWorkspaceEnsure(command.WorkspaceEnsure); err != nil {
+			return err
+		}
+	default:
+		return errors.New("unsupported command type")
 	}
 	if command.Actor == nil || !commandToken.MatchString(command.Actor.ActorId) ||
 		command.Actor.Role != agentflowv1.Role_ROLE_CONTROLLER || command.Actor.Origin != agentflowv1.ActorOrigin_ACTOR_ORIGIN_UNSPECIFIED ||
@@ -69,7 +104,7 @@ func ValidateProbeCommand(command *agentflowv1.Command, nodeID string) error {
 		return errors.New("invalid command actor")
 	}
 	if command.Payload != nil || command.Preconditions != nil {
-		return errors.New("probe payloads and preconditions are not supported")
+		return errors.New("untyped payloads and preconditions are not supported")
 	}
 	if command.ExpiresAt == nil || command.ExpiresAt.CheckValid() != nil || len(command.ExpiresAt.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("command expiry is required")
@@ -89,7 +124,7 @@ func IsTerminalCommand(status agentflowv1.CommandStatus) bool {
 }
 
 func ValidateProbeResult(result *agentflowv1.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid command result")
 	}
 	valid := false

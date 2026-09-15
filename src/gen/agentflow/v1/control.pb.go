@@ -401,12 +401,13 @@ func (x *HelloAck) GetCapabilities() []string {
 }
 
 type Heartbeat struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sequence      uint64                 `protobuf:"varint,1,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	SentAt        *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
-	CommandReady  bool                   `protobuf:"varint,3,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Sequence       uint64                 `protobuf:"varint,1,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	SentAt         *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	CommandReady   bool                   `protobuf:"varint,3,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
+	WorkspaceReady bool                   `protobuf:"varint,4,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Heartbeat) Reset() {
@@ -456,6 +457,13 @@ func (x *Heartbeat) GetSentAt() *timestamppb.Timestamp {
 func (x *Heartbeat) GetCommandReady() bool {
 	if x != nil {
 		return x.CommandReady
+	}
+	return false
+}
+
+func (x *Heartbeat) GetWorkspaceReady() bool {
+	if x != nil {
+		return x.WorkspaceReady
 	}
 	return false
 }
@@ -597,18 +605,19 @@ func (x *Event) GetPayload() *structpb.Struct {
 }
 
 type Command struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	CommandId      string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	CommandType    string                 `protobuf:"bytes,3,opt,name=command_type,json=commandType,proto3" json:"command_type,omitempty"`
-	TargetId       string                 `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	Actor          *Actor                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
-	Ttl            *durationpb.Duration   `protobuf:"bytes,6,opt,name=ttl,proto3" json:"ttl,omitempty"`
-	Preconditions  *structpb.Struct       `protobuf:"bytes,7,opt,name=preconditions,proto3" json:"preconditions,omitempty"`
-	Payload        *structpb.Struct       `protobuf:"bytes,8,opt,name=payload,proto3" json:"payload,omitempty"`
-	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CommandId       string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	IdempotencyKey  string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	CommandType     string                 `protobuf:"bytes,3,opt,name=command_type,json=commandType,proto3" json:"command_type,omitempty"`
+	TargetId        string                 `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Actor           *Actor                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
+	Ttl             *durationpb.Duration   `protobuf:"bytes,6,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	Preconditions   *structpb.Struct       `protobuf:"bytes,7,opt,name=preconditions,proto3" json:"preconditions,omitempty"`
+	Payload         *structpb.Struct       `protobuf:"bytes,8,opt,name=payload,proto3" json:"payload,omitempty"`
+	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	WorkspaceEnsure *WorkspaceEnsure       `protobuf:"bytes,10,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Command) Reset() {
@@ -704,20 +713,149 @@ func (x *Command) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Command) GetWorkspaceEnsure() *WorkspaceEnsure {
+	if x != nil {
+		return x.WorkspaceEnsure
+	}
+	return nil
+}
+
+// Device-independent identity only. Paths and environment never cross the mesh.
+type WorkspaceEnsure struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *WorkspaceEnsure) Reset() {
+	*x = WorkspaceEnsure{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceEnsure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceEnsure) ProtoMessage() {}
+
+func (x *WorkspaceEnsure) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceEnsure.ProtoReflect.Descriptor instead.
+func (*WorkspaceEnsure) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *WorkspaceEnsure) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WorkspaceEnsure) GetBindingRevision() string {
+	if x != nil {
+		return x.BindingRevision
+	}
+	return ""
+}
+
+type WorkspaceEnsureResult struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	WorkspaceId     string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Created         bool                   `protobuf:"varint,4,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *WorkspaceEnsureResult) Reset() {
+	*x = WorkspaceEnsureResult{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceEnsureResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceEnsureResult) ProtoMessage() {}
+
+func (x *WorkspaceEnsureResult) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceEnsureResult.ProtoReflect.Descriptor instead.
+func (*WorkspaceEnsureResult) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *WorkspaceEnsureResult) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WorkspaceEnsureResult) GetBindingRevision() string {
+	if x != nil {
+		return x.BindingRevision
+	}
+	return ""
+}
+
+func (x *WorkspaceEnsureResult) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *WorkspaceEnsureResult) GetCreated() bool {
+	if x != nil {
+		return x.Created
+	}
+	return false
+}
+
 // The actor and command ID are assigned by the authenticated coordinator.
 type SubmitCommandRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	CommandType    string                 `protobuf:"bytes,3,opt,name=command_type,json=commandType,proto3" json:"command_type,omitempty"`
-	Ttl            *durationpb.Duration   `protobuf:"bytes,4,opt,name=ttl,proto3" json:"ttl,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId  string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	IdempotencyKey  string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	CommandType     string                 `protobuf:"bytes,3,opt,name=command_type,json=commandType,proto3" json:"command_type,omitempty"`
+	Ttl             *durationpb.Duration   `protobuf:"bytes,4,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	WorkspaceEnsure *WorkspaceEnsure       `protobuf:"bytes,5,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SubmitCommandRequest) Reset() {
 	*x = SubmitCommandRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[7]
+	mi := &file_agentflow_v1_control_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -729,7 +867,7 @@ func (x *SubmitCommandRequest) String() string {
 func (*SubmitCommandRequest) ProtoMessage() {}
 
 func (x *SubmitCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[7]
+	mi := &file_agentflow_v1_control_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -742,7 +880,7 @@ func (x *SubmitCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitCommandRequest.ProtoReflect.Descriptor instead.
 func (*SubmitCommandRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{7}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SubmitCommandRequest) GetNodeInstanceId() string {
@@ -773,6 +911,13 @@ func (x *SubmitCommandRequest) GetTtl() *durationpb.Duration {
 	return nil
 }
 
+func (x *SubmitCommandRequest) GetWorkspaceEnsure() *WorkspaceEnsure {
+	if x != nil {
+		return x.WorkspaceEnsure
+	}
+	return nil
+}
+
 type GetCommandRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -782,7 +927,7 @@ type GetCommandRequest struct {
 
 func (x *GetCommandRequest) Reset() {
 	*x = GetCommandRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[8]
+	mi := &file_agentflow_v1_control_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +939,7 @@ func (x *GetCommandRequest) String() string {
 func (*GetCommandRequest) ProtoMessage() {}
 
 func (x *GetCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[8]
+	mi := &file_agentflow_v1_control_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +952,7 @@ func (x *GetCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCommandRequest.ProtoReflect.Descriptor instead.
 func (*GetCommandRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{8}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetCommandRequest) GetCommandId() string {
@@ -828,7 +973,7 @@ type CommandAudit struct {
 
 func (x *CommandAudit) Reset() {
 	*x = CommandAudit{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[9]
+	mi := &file_agentflow_v1_control_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -840,7 +985,7 @@ func (x *CommandAudit) String() string {
 func (*CommandAudit) ProtoMessage() {}
 
 func (x *CommandAudit) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[9]
+	mi := &file_agentflow_v1_control_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -853,7 +998,7 @@ func (x *CommandAudit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandAudit.ProtoReflect.Descriptor instead.
 func (*CommandAudit) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{9}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CommandAudit) GetStatus() CommandStatus {
@@ -878,20 +1023,21 @@ func (x *CommandAudit) GetOccurredAt() *timestamppb.Timestamp {
 }
 
 type CommandRecord struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Command       *Command               `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
-	Status        CommandStatus          `protobuf:"varint,2,opt,name=status,proto3,enum=agentflow.v1.CommandStatus" json:"status,omitempty"`
-	Detail        string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Audit         []*CommandAudit        `protobuf:"bytes,6,rep,name=audit,proto3" json:"audit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Command         *Command               `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	Status          CommandStatus          `protobuf:"varint,2,opt,name=status,proto3,enum=agentflow.v1.CommandStatus" json:"status,omitempty"`
+	Detail          string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Audit           []*CommandAudit        `protobuf:"bytes,6,rep,name=audit,proto3" json:"audit,omitempty"`
+	WorkspaceEnsure *WorkspaceEnsureResult `protobuf:"bytes,7,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CommandRecord) Reset() {
 	*x = CommandRecord{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[10]
+	mi := &file_agentflow_v1_control_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +1049,7 @@ func (x *CommandRecord) String() string {
 func (*CommandRecord) ProtoMessage() {}
 
 func (x *CommandRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[10]
+	mi := &file_agentflow_v1_control_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +1062,7 @@ func (x *CommandRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandRecord.ProtoReflect.Descriptor instead.
 func (*CommandRecord) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{10}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CommandRecord) GetCommand() *Command {
@@ -961,6 +1107,13 @@ func (x *CommandRecord) GetAudit() []*CommandAudit {
 	return nil
 }
 
+func (x *CommandRecord) GetWorkspaceEnsure() *WorkspaceEnsureResult {
+	if x != nil {
+		return x.WorkspaceEnsure
+	}
+	return nil
+}
+
 type Actor struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
@@ -973,7 +1126,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[11]
+	mi := &file_agentflow_v1_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -985,7 +1138,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[11]
+	mi := &file_agentflow_v1_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -998,7 +1151,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{11}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Actor) GetActorId() string {
@@ -1040,7 +1193,7 @@ type CommandAck struct {
 
 func (x *CommandAck) Reset() {
 	*x = CommandAck{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[12]
+	mi := &file_agentflow_v1_control_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1205,7 @@ func (x *CommandAck) String() string {
 func (*CommandAck) ProtoMessage() {}
 
 func (x *CommandAck) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[12]
+	mi := &file_agentflow_v1_control_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +1218,7 @@ func (x *CommandAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandAck.ProtoReflect.Descriptor instead.
 func (*CommandAck) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{12}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CommandAck) GetCommandId() string {
@@ -1090,18 +1243,19 @@ func (x *CommandAck) GetDetail() string {
 }
 
 type CommandResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	Status        CommandStatus          `protobuf:"varint,2,opt,name=status,proto3,enum=agentflow.v1.CommandStatus" json:"status,omitempty"`
-	Detail        string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
-	Payload       *structpb.Struct       `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CommandId       string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Status          CommandStatus          `protobuf:"varint,2,opt,name=status,proto3,enum=agentflow.v1.CommandStatus" json:"status,omitempty"`
+	Detail          string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	Payload         *structpb.Struct       `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
+	WorkspaceEnsure *WorkspaceEnsureResult `protobuf:"bytes,5,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[13]
+	mi := &file_agentflow_v1_control_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1113,7 +1267,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[13]
+	mi := &file_agentflow_v1_control_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1126,7 +1280,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{13}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CommandResult) GetCommandId() string {
@@ -1157,6 +1311,13 @@ func (x *CommandResult) GetPayload() *structpb.Struct {
 	return nil
 }
 
+func (x *CommandResult) GetWorkspaceEnsure() *WorkspaceEnsureResult {
+	if x != nil {
+		return x.WorkspaceEnsure
+	}
+	return nil
+}
+
 type NodeEnvelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Body:
@@ -1177,7 +1338,7 @@ type NodeEnvelope struct {
 
 func (x *NodeEnvelope) Reset() {
 	*x = NodeEnvelope{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[14]
+	mi := &file_agentflow_v1_control_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1189,7 +1350,7 @@ func (x *NodeEnvelope) String() string {
 func (*NodeEnvelope) ProtoMessage() {}
 
 func (x *NodeEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[14]
+	mi := &file_agentflow_v1_control_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1202,7 +1363,7 @@ func (x *NodeEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeEnvelope.ProtoReflect.Descriptor instead.
 func (*NodeEnvelope) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{14}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *NodeEnvelope) GetBody() isNodeEnvelope_Body {
@@ -1363,7 +1524,7 @@ type ServerInfo struct {
 
 func (x *ServerInfo) Reset() {
 	*x = ServerInfo{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[15]
+	mi := &file_agentflow_v1_control_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1375,7 +1536,7 @@ func (x *ServerInfo) String() string {
 func (*ServerInfo) ProtoMessage() {}
 
 func (x *ServerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[15]
+	mi := &file_agentflow_v1_control_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1388,7 +1549,7 @@ func (x *ServerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerInfo.ProtoReflect.Descriptor instead.
 func (*ServerInfo) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{15}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ServerInfo) GetInstanceId() string {
@@ -1433,7 +1594,7 @@ type HerdrEntity struct {
 
 func (x *HerdrEntity) Reset() {
 	*x = HerdrEntity{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[16]
+	mi := &file_agentflow_v1_control_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1445,7 +1606,7 @@ func (x *HerdrEntity) String() string {
 func (*HerdrEntity) ProtoMessage() {}
 
 func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[16]
+	mi := &file_agentflow_v1_control_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1458,7 +1619,7 @@ func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HerdrEntity.ProtoReflect.Descriptor instead.
 func (*HerdrEntity) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{16}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *HerdrEntity) GetId() string {
@@ -1516,7 +1677,7 @@ type HerdrState struct {
 
 func (x *HerdrState) Reset() {
 	*x = HerdrState{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[17]
+	mi := &file_agentflow_v1_control_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1528,7 +1689,7 @@ func (x *HerdrState) String() string {
 func (*HerdrState) ProtoMessage() {}
 
 func (x *HerdrState) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[17]
+	mi := &file_agentflow_v1_control_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1541,7 +1702,7 @@ func (x *HerdrState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HerdrState.ProtoReflect.Descriptor instead.
 func (*HerdrState) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{17}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *HerdrState) GetStatus() string {
@@ -1624,14 +1785,15 @@ type NodeView struct {
 	Stale             bool                   `protobuf:"varint,6,opt,name=stale,proto3" json:"stale,omitempty"`
 	HerdrReceivedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=herdr_received_at,json=herdrReceivedAt,proto3" json:"herdr_received_at,omitempty"`
 	// Only negotiated allowlisted command types are available, not general execution.
-	CommandReady  bool `protobuf:"varint,8,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CommandReady   bool `protobuf:"varint,8,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
+	WorkspaceReady bool `protobuf:"varint,9,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *NodeView) Reset() {
 	*x = NodeView{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[18]
+	mi := &file_agentflow_v1_control_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1643,7 +1805,7 @@ func (x *NodeView) String() string {
 func (*NodeView) ProtoMessage() {}
 
 func (x *NodeView) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[18]
+	mi := &file_agentflow_v1_control_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1656,7 +1818,7 @@ func (x *NodeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeView.ProtoReflect.Descriptor instead.
 func (*NodeView) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{18}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *NodeView) GetInstanceId() string {
@@ -1715,6 +1877,13 @@ func (x *NodeView) GetCommandReady() bool {
 	return false
 }
 
+func (x *NodeView) GetWorkspaceReady() bool {
+	if x != nil {
+		return x.WorkspaceReady
+	}
+	return false
+}
+
 type NodeList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Nodes         []*NodeView            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
@@ -1724,7 +1893,7 @@ type NodeList struct {
 
 func (x *NodeList) Reset() {
 	*x = NodeList{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	mi := &file_agentflow_v1_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1736,7 +1905,7 @@ func (x *NodeList) String() string {
 func (*NodeList) ProtoMessage() {}
 
 func (x *NodeList) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	mi := &file_agentflow_v1_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1749,7 +1918,7 @@ func (x *NodeList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeList.ProtoReflect.Descriptor instead.
 func (*NodeList) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{19}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *NodeList) GetNodes() []*NodeView {
@@ -1780,11 +1949,12 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\bHelloAck\x12+\n" +
 	"\x11selected_protocol\x18\x01 \x01(\rR\x10selectedProtocol\x12,\n" +
 	"\x12server_instance_id\x18\x02 \x01(\tR\x10serverInstanceId\x12\"\n" +
-	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"\x81\x01\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"\xaa\x01\n" +
 	"\tHeartbeat\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x123\n" +
 	"\asent_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12#\n" +
-	"\rcommand_ready\x18\x03 \x01(\bR\fcommandReady\"~\n" +
+	"\rcommand_ready\x18\x03 \x01(\bR\fcommandReady\x12'\n" +
+	"\x0fworkspace_ready\x18\x04 \x01(\bR\x0eworkspaceReady\"~\n" +
 	"\bSnapshot\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12#\n" +
 	"\rsnapshot_type\x18\x02 \x01(\tR\fsnapshotType\x121\n" +
@@ -1796,7 +1966,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\tentity_id\x18\x03 \x01(\tR\bentityId\x12;\n" +
 	"\voccurred_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"occurredAt\x121\n" +
-	"\apayload\x18\x05 \x01(\v2\x17.google.protobuf.StructR\apayload\"\x96\x03\n" +
+	"\apayload\x18\x05 \x01(\v2\x17.google.protobuf.StructR\apayload\"\xe0\x03\n" +
 	"\aCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12'\n" +
@@ -1808,12 +1978,25 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\rpreconditions\x18\a \x01(\v2\x17.google.protobuf.StructR\rpreconditions\x121\n" +
 	"\apayload\x18\b \x01(\v2\x17.google.protobuf.StructR\apayload\x129\n" +
 	"\n" +
-	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xb9\x01\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12H\n" +
+	"\x10workspace_ensure\x18\n" +
+	" \x01(\v2\x1d.agentflow.v1.WorkspaceEnsureR\x0fworkspaceEnsure\"[\n" +
+	"\x0fWorkspaceEnsure\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
+	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\"\x9e\x01\n" +
+	"\x15WorkspaceEnsureResult\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
+	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x18\n" +
+	"\acreated\x18\x04 \x01(\bR\acreated\"\x83\x02\n" +
 	"\x14SubmitCommandRequest\x12(\n" +
 	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +
 	"\fcommand_type\x18\x03 \x01(\tR\vcommandType\x12+\n" +
-	"\x03ttl\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\"2\n" +
+	"\x03ttl\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x12H\n" +
+	"\x10workspace_ensure\x18\x05 \x01(\v2\x1d.agentflow.v1.WorkspaceEnsureR\x0fworkspaceEnsure\"2\n" +
 	"\x11GetCommandRequest\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\"\x98\x01\n" +
@@ -1821,7 +2004,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12;\n" +
 	"\voccurred_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"occurredAt\"\xb5\x02\n" +
+	"occurredAt\"\x85\x03\n" +
 	"\rCommandRecord\x12/\n" +
 	"\acommand\x18\x01 \x01(\v2\x15.agentflow.v1.CommandR\acommand\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
@@ -1830,7 +2013,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x120\n" +
-	"\x05audit\x18\x06 \x03(\v2\x1a.agentflow.v1.CommandAuditR\x05audit\"\x9a\x01\n" +
+	"\x05audit\x18\x06 \x03(\v2\x1a.agentflow.v1.CommandAuditR\x05audit\x12N\n" +
+	"\x10workspace_ensure\x18\a \x01(\v2#.agentflow.v1.WorkspaceEnsureResultR\x0fworkspaceEnsure\"\x9a\x01\n" +
 	"\x05Actor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12&\n" +
 	"\x04role\x18\x02 \x01(\x0e2\x12.agentflow.v1.RoleR\x04role\x121\n" +
@@ -1841,13 +2025,14 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xae\x01\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xfe\x01\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
 	"\x06detail\x18\x03 \x01(\tR\x06detail\x121\n" +
-	"\apayload\x18\x04 \x01(\v2\x17.google.protobuf.StructR\apayload\"\x89\x04\n" +
+	"\apayload\x18\x04 \x01(\v2\x17.google.protobuf.StructR\apayload\x12N\n" +
+	"\x10workspace_ensure\x18\x05 \x01(\v2#.agentflow.v1.WorkspaceEnsureResultR\x0fworkspaceEnsure\"\x89\x04\n" +
 	"\fNodeEnvelope\x12+\n" +
 	"\x05hello\x18\x01 \x01(\v2\x13.agentflow.v1.HelloH\x00R\x05hello\x125\n" +
 	"\thello_ack\x18\x02 \x01(\v2\x16.agentflow.v1.HelloAckH\x00R\bhelloAck\x127\n" +
@@ -1890,7 +2075,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x04tabs\x18\b \x03(\v2\x19.agentflow.v1.HerdrEntityR\x04tabs\x12/\n" +
 	"\x05panes\x18\t \x03(\v2\x19.agentflow.v1.HerdrEntityR\x05panes\x121\n" +
 	"\x06agents\x18\n" +
-	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xe5\x02\n" +
+	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\x8e\x03\n" +
 	"\bNodeView\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12.\n" +
@@ -1900,7 +2085,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x05herdr\x18\x05 \x01(\v2\x18.agentflow.v1.HerdrStateR\x05herdr\x12\x14\n" +
 	"\x05stale\x18\x06 \x01(\bR\x05stale\x12F\n" +
 	"\x11herdr_received_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fherdrReceivedAt\x12#\n" +
-	"\rcommand_ready\x18\b \x01(\bR\fcommandReady\"8\n" +
+	"\rcommand_ready\x18\b \x01(\bR\fcommandReady\x12'\n" +
+	"\x0fworkspace_ready\x18\t \x01(\bR\x0eworkspaceReady\"8\n" +
 	"\bNodeList\x12,\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes*S\n" +
 	"\x04Role\x12\x14\n" +
@@ -1945,7 +2131,7 @@ func file_agentflow_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_agentflow_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_agentflow_v1_control_proto_goTypes = []any{
 	(Role)(0),                     // 0: agentflow.v1.Role
 	(CommandStatus)(0),            // 1: agentflow.v1.CommandStatus
@@ -1957,83 +2143,89 @@ var file_agentflow_v1_control_proto_goTypes = []any{
 	(*Snapshot)(nil),              // 7: agentflow.v1.Snapshot
 	(*Event)(nil),                 // 8: agentflow.v1.Event
 	(*Command)(nil),               // 9: agentflow.v1.Command
-	(*SubmitCommandRequest)(nil),  // 10: agentflow.v1.SubmitCommandRequest
-	(*GetCommandRequest)(nil),     // 11: agentflow.v1.GetCommandRequest
-	(*CommandAudit)(nil),          // 12: agentflow.v1.CommandAudit
-	(*CommandRecord)(nil),         // 13: agentflow.v1.CommandRecord
-	(*Actor)(nil),                 // 14: agentflow.v1.Actor
-	(*CommandAck)(nil),            // 15: agentflow.v1.CommandAck
-	(*CommandResult)(nil),         // 16: agentflow.v1.CommandResult
-	(*NodeEnvelope)(nil),          // 17: agentflow.v1.NodeEnvelope
-	(*ServerInfo)(nil),            // 18: agentflow.v1.ServerInfo
-	(*HerdrEntity)(nil),           // 19: agentflow.v1.HerdrEntity
-	(*HerdrState)(nil),            // 20: agentflow.v1.HerdrState
-	(*NodeView)(nil),              // 21: agentflow.v1.NodeView
-	(*NodeList)(nil),              // 22: agentflow.v1.NodeList
-	(*timestamppb.Timestamp)(nil), // 23: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 24: google.protobuf.Struct
-	(*durationpb.Duration)(nil),   // 25: google.protobuf.Duration
-	(*emptypb.Empty)(nil),         // 26: google.protobuf.Empty
+	(*WorkspaceEnsure)(nil),       // 10: agentflow.v1.WorkspaceEnsure
+	(*WorkspaceEnsureResult)(nil), // 11: agentflow.v1.WorkspaceEnsureResult
+	(*SubmitCommandRequest)(nil),  // 12: agentflow.v1.SubmitCommandRequest
+	(*GetCommandRequest)(nil),     // 13: agentflow.v1.GetCommandRequest
+	(*CommandAudit)(nil),          // 14: agentflow.v1.CommandAudit
+	(*CommandRecord)(nil),         // 15: agentflow.v1.CommandRecord
+	(*Actor)(nil),                 // 16: agentflow.v1.Actor
+	(*CommandAck)(nil),            // 17: agentflow.v1.CommandAck
+	(*CommandResult)(nil),         // 18: agentflow.v1.CommandResult
+	(*NodeEnvelope)(nil),          // 19: agentflow.v1.NodeEnvelope
+	(*ServerInfo)(nil),            // 20: agentflow.v1.ServerInfo
+	(*HerdrEntity)(nil),           // 21: agentflow.v1.HerdrEntity
+	(*HerdrState)(nil),            // 22: agentflow.v1.HerdrState
+	(*NodeView)(nil),              // 23: agentflow.v1.NodeView
+	(*NodeList)(nil),              // 24: agentflow.v1.NodeList
+	(*timestamppb.Timestamp)(nil), // 25: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),       // 26: google.protobuf.Struct
+	(*durationpb.Duration)(nil),   // 27: google.protobuf.Duration
+	(*emptypb.Empty)(nil),         // 28: google.protobuf.Empty
 }
 var file_agentflow_v1_control_proto_depIdxs = []int32{
 	3,  // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
 	0,  // 1: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
-	23, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
-	24, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
-	23, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	24, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
-	14, // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
-	25, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
-	24, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
-	24, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
-	23, // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
-	25, // 11: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
-	1,  // 12: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
-	23, // 13: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
-	9,  // 14: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
-	1,  // 15: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
-	23, // 16: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
-	23, // 17: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 18: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
-	0,  // 19: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
-	2,  // 20: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
-	1,  // 21: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
-	1,  // 22: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
-	24, // 23: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
-	4,  // 24: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
-	5,  // 25: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
-	6,  // 26: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
-	7,  // 27: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
-	8,  // 28: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
-	9,  // 29: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
-	15, // 30: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
-	16, // 31: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
-	20, // 32: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
-	3,  // 33: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
-	23, // 34: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
-	19, // 35: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
-	19, // 36: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
-	19, // 37: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
-	19, // 38: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
-	23, // 39: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
-	20, // 40: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
-	23, // 41: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
-	21, // 42: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
-	17, // 43: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
-	26, // 44: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
-	26, // 45: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
-	10, // 46: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
-	11, // 47: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
-	17, // 48: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
-	18, // 49: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
-	22, // 50: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
-	13, // 51: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
-	13, // 52: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
-	48, // [48:53] is the sub-list for method output_type
-	43, // [43:48] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	25, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
+	26, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
+	25, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	26, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
+	16, // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
+	27, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
+	26, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
+	26, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
+	25, // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 11: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	27, // 12: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
+	10, // 13: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	1,  // 14: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
+	25, // 15: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
+	9,  // 16: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
+	1,  // 17: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
+	25, // 18: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
+	25, // 19: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 20: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
+	11, // 21: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	0,  // 22: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
+	2,  // 23: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
+	1,  // 24: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
+	1,  // 25: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
+	26, // 26: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
+	11, // 27: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	4,  // 28: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
+	5,  // 29: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
+	6,  // 30: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
+	7,  // 31: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
+	8,  // 32: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
+	9,  // 33: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
+	17, // 34: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
+	18, // 35: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
+	22, // 36: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
+	3,  // 37: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
+	25, // 38: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
+	21, // 39: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
+	21, // 40: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
+	21, // 41: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
+	21, // 42: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
+	25, // 43: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
+	22, // 44: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
+	25, // 45: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	23, // 46: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
+	19, // 47: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
+	28, // 48: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
+	28, // 49: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
+	12, // 50: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
+	13, // 51: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
+	19, // 52: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
+	20, // 53: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
+	24, // 54: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
+	15, // 55: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
+	15, // 56: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
+	52, // [52:57] is the sub-list for method output_type
+	47, // [47:52] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_agentflow_v1_control_proto_init() }
@@ -2041,7 +2233,7 @@ func file_agentflow_v1_control_proto_init() {
 	if File_agentflow_v1_control_proto != nil {
 		return
 	}
-	file_agentflow_v1_control_proto_msgTypes[14].OneofWrappers = []any{
+	file_agentflow_v1_control_proto_msgTypes[16].OneofWrappers = []any{
 		(*NodeEnvelope_Hello)(nil),
 		(*NodeEnvelope_HelloAck)(nil),
 		(*NodeEnvelope_Heartbeat)(nil),
@@ -2058,7 +2250,7 @@ func file_agentflow_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentflow_v1_control_proto_rawDesc), len(file_agentflow_v1_control_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

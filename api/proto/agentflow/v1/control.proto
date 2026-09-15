@@ -71,6 +71,7 @@ message Heartbeat {
   uint64 sequence = 1;
   google.protobuf.Timestamp sent_at = 2;
   bool command_ready = 3;
+  bool workspace_ready = 4;
 }
 
 message Snapshot {
@@ -97,6 +98,20 @@ message Command {
   google.protobuf.Struct preconditions = 7;
   google.protobuf.Struct payload = 8;
   google.protobuf.Timestamp expires_at = 9;
+  WorkspaceEnsure workspace_ensure = 10;
+}
+
+// Device-independent identity only. Paths and environment never cross the mesh.
+message WorkspaceEnsure {
+  string project_id = 1;
+  string binding_revision = 2;
+}
+
+message WorkspaceEnsureResult {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  bool created = 4;
 }
 
 // The actor and command ID are assigned by the authenticated coordinator.
@@ -105,6 +120,7 @@ message SubmitCommandRequest {
   string idempotency_key = 2;
   string command_type = 3;
   google.protobuf.Duration ttl = 4;
+  WorkspaceEnsure workspace_ensure = 5;
 }
 
 message GetCommandRequest {
@@ -124,6 +140,7 @@ message CommandRecord {
   google.protobuf.Timestamp created_at = 4;
   google.protobuf.Timestamp updated_at = 5;
   repeated CommandAudit audit = 6;
+  WorkspaceEnsureResult workspace_ensure = 7;
 }
 
 message Actor {
@@ -144,6 +161,7 @@ message CommandResult {
   CommandStatus status = 2;
   string detail = 3;
   google.protobuf.Struct payload = 4;
+  WorkspaceEnsureResult workspace_ensure = 5;
 }
 
 message NodeEnvelope {
@@ -201,6 +219,7 @@ message NodeView {
   google.protobuf.Timestamp herdr_received_at = 7;
   // Only negotiated allowlisted command types are available, not general execution.
   bool command_ready = 8;
+  bool workspace_ready = 9;
 }
 
 message NodeList {

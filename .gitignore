@@ -40,6 +40,8 @@ journal.db-wal
 journal.db-shm
 journal.db-journal
 journal.db.lock
+workspace-policy.json
+*.workspace-policy.json
 
 # Editor/IDE
 # .idea/

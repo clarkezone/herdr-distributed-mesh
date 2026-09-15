@@ -12,6 +12,7 @@ import (
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
@@ -24,6 +25,7 @@ import (
 )
 
 type Options struct {
+	WorkspacePolicy    *projects.Policy
 	BindingPath        string
 	DatabasePath       string
 	RequiredClientTag  string
@@ -48,9 +50,13 @@ type service struct {
 	heartbeatTimeout   time.Duration
 	fleet              fleetStore
 	commands           *state.Store
+	workspacePolicy    *projects.Policy
 }
 
 func Run(ctx context.Context, options Options) (result error) {
+	if options.WorkspacePolicy != nil && (options.RequiredCommandTag == "" || options.RequiredNodeTag == "") {
+		return errors.New("workspace operations require explicit command and node role tags")
+	}
 	store, restored, err := openCoordinatorState(ctx, options)
 	if err != nil {
 		return err
@@ -65,6 +71,7 @@ func Run(ctx context.Context, options Options) (result error) {
 		helloTimeout:       10 * time.Second,
 		heartbeatTimeout:   time.Minute,
 		commands:           store,
+		workspacePolicy:    options.WorkspacePolicy,
 	}
 	api.fleet.storage = store
 	api.fleet.commands = store
@@ -203,6 +210,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	}()
 	service.fleet.mu.Lock()
 	entry.probes = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProbeCapability)
+	entry.workspaces = entry.probes && herdrEnabled && service.workspacePolicy != nil && slices.Contains(hello.Capabilities, protocol.WorkspaceEnsureCapability)
 	service.fleet.mu.Unlock()
 	if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
@@ -262,7 +270,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			if !time.Now().Before(heartbeatDeadline) {
 				return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
 			}
-			outbound, err := service.prepareCommand(entry, pending.GetCommand())
+			outbound, err := service.prepareCommand(entry, pending)
 			if err != nil {
 				return err
 			}
@@ -319,7 +327,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			heartbeatSequence = heartbeat.Sequence
 			heartbeatDeadline = time.Now().Add(heartbeatTimeout)
 			heartbeatTimer.Reset(heartbeatTimeout)
-			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady); err != nil {
+			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady); err != nil {
 				return err
 			}
 			log.Printf(
@@ -418,6 +426,9 @@ func (service *service) capabilities() []string {
 	values := slices.Clone(protocol.ServerCapabilities)
 	if service.commands != nil {
 		values = append(values, protocol.ProbeCapability)
+		if service.workspacePolicy != nil {
+			values = append(values, protocol.WorkspaceEnsureCapability)
+		}
 	}
 	return values
 }

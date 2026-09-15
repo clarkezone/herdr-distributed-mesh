@@ -170,13 +170,13 @@ func TestImportAtomicIdempotent(t *testing.T) {
 
 func TestIdentityAndVersionMismatchDoNotChangeDatabase(t *testing.T) {
 	ctx := context.Background()
-	for _, version := range []int{2, 3} {
+	for _, version := range []int{3, 4} {
 		t.Run(fmt.Sprintf("version%d", version), func(t *testing.T) {
 			path := testPath(t)
 			s := openTestStore(t, path)
 			requireOK(t, s.Bind(ctx, "stable", "instance"))
-			if version == 3 {
-				_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 3")
+			if version == 4 {
+				_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 4")
 				requireOK(t, err)
 			}
 			requireOK(t, s.Close())
@@ -187,7 +187,7 @@ func TestIdentityAndVersionMismatchDoNotChangeDatabase(t *testing.T) {
 				_ = other.Close()
 				t.Fatal("incompatible database opened")
 			}
-			if version == 2 {
+			if version == 3 {
 				requireConflict(t, err)
 			}
 			after, err := os.ReadFile(path)
@@ -200,7 +200,7 @@ func TestIdentityAndVersionMismatchDoNotChangeDatabase(t *testing.T) {
 			if errors.Is(err, ErrLocked) {
 				t.Fatal("failed startup leaked lock")
 			}
-			if version == 2 {
+			if version == 3 {
 				requireOK(t, err)
 				requireOK(t, retry.Close())
 			} else if err == nil {

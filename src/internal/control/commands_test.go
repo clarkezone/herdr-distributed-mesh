@@ -3,7 +3,9 @@ package control
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -60,5 +62,40 @@ func TestCommandTimeoutPreservesIdentity(t *testing.T) {
 	}
 	if err := writeCommand(Options{JSON: true, Output: failedWriter{}}, initial); err == nil {
 		t.Fatal("output error suppressed")
+	}
+}
+
+func TestWorkspaceCommandOutputIsOneTypedObject(t *testing.T) {
+	record := &agentflowv1.CommandRecord{
+		Command: &agentflowv1.Command{CommandId: protocol.NewCommandID(), TargetId: "node-1", IdempotencyKey: "ensure-1", CommandType: protocol.WorkspaceEnsureCommandType},
+		Status:  agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED, Detail: "workspace_present",
+		WorkspaceEnsure: &agentflowv1.WorkspaceEnsureResult{ProjectId: "AgentFlow", BindingRevision: "r1", WorkspaceId: "w1"},
+	}
+	var output bytes.Buffer
+	if err := writeCommand(Options{JSON: true, Output: &output}, record); err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(&output)
+	var value struct {
+		Workspace struct {
+			ProjectID   string `json:"project_id"`
+			WorkspaceID string `json:"workspace_id"`
+			Created     bool   `json:"created"`
+		} `json:"workspace_ensure"`
+	}
+	if err := decoder.Decode(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value.Workspace.ProjectID != "AgentFlow" || value.Workspace.WorkspaceID != "w1" || value.Workspace.Created {
+		t.Fatal("incorrect typed workspace JSON")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		t.Fatal("stdout was not a single JSON object")
+	}
+	if err := writeCommand(Options{Output: &output}, record); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "project=AgentFlow binding_revision=r1 workspace=w1 created=false") {
+		t.Fatal("workspace human output missing identifiers")
 	}
 }

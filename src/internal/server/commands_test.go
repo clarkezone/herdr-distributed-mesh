@@ -189,6 +189,9 @@ func awaitCommand(t *testing.T, h *commandHarness, id string, want agentflowv1.C
 		if record.Status == want {
 			return record
 		}
+		if protocol.IsTerminalCommand(record.Status) && record.Status != agentflowv1.CommandStatus_COMMAND_STATUS_INDETERMINATE {
+			t.Fatalf("command status=%s detail=%s, want %s", record.Status, record.Detail, want)
+		}
 		select {
 		case <-ctx.Done():
 			t.Fatalf("command status=%s, want %s", record.Status, want)

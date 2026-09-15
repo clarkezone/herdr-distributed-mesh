@@ -13,6 +13,7 @@ import (
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdr"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
@@ -33,6 +34,13 @@ type Options struct {
 	ReconnectMaximum   time.Duration
 	ServerAddress      string
 	Transport          transport.Config
+	// WorkspacePolicy opts into local workspace mutations. It requires a journal,
+	// explicit Herdr socket, and expected server tag; nil permits replay only.
+	WorkspacePolicy *projects.Policy
+	// VerifyServerPeer refreshes authorization of the actual stream peer before
+	// workspace effects in RunSession. A nil verifier fails closed. Run always
+	// overrides this callback with its production WhoIs and required-tag check.
+	VerifyServerPeer func(context.Context, string) error
 }
 
 func Run(ctx context.Context, options Options) (err error) {
@@ -57,6 +65,9 @@ func Run(ctx context.Context, options Options) (err error) {
 		return err
 	}
 	defer network.Close()
+	// Always override any injected verifier in production with fresh WhoIs of
+	// the actual stream peer, not the configured server address or DNS identity.
+	options.VerifyServerPeer = workspacePeerTagVerifier(network.IdentifyPeer, options.RequiredServerTag)
 	self := network.SelfStatus()
 	if err := self.Validate(options.Transport.Tags, time.Now()); err != nil {
 		return fmt.Errorf("validate node tsnet identity: %w", err)
@@ -129,8 +140,22 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 }
 
 func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlClient, options Options, journal commandJournal, execute func()) (bool, error) {
+	return runSessionWithExecutor(ctx, client, options, journal, execute, nil)
+}
+
+func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlClient, options Options, journal commandJournal, execute func(), ensure workspaceExecutor) (registered bool, sessionErr error) {
 	sessionContext, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Run retains its journal across reconnects. The previous session joins its
+	// executor before returning, so abandoned intents are now safe to recover.
+	if journal != nil {
+		operation, stop := context.WithTimeout(sessionContext, journalOperationTimeout)
+		err := journal.Recover(operation)
+		stop()
+		if err != nil {
+			return false, storageError("recover", err)
+		}
+	}
 
 	stream, err := client.Connect(sessionContext)
 	if err != nil {
@@ -148,6 +173,9 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 	}
 	if journal != nil {
 		advertised = append(advertised, protocol.ProbeCapability)
+		if options.WorkspacePolicy != nil && options.HerdrSocket != "" {
+			advertised = append(advertised, protocol.WorkspaceEnsureCapability)
+		}
 	}
 	if err := send(&agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_Hello{
@@ -180,9 +208,18 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 		return false, status.Error(codes.FailedPrecondition, "server does not support read-only Herdr state; upgrade server first")
 	}
 	commandReady := journal != nil && slices.Contains(ack.Capabilities, protocol.ProbeCapability)
-	handler := &commandHandler{journal: journal, nodeID: options.InstanceID, execute: execute}
+	// Keep terminal replay available when a policy is removed. New claims still
+	// require the local policy before any effect.
+	workspaceNegotiated := journal != nil && slices.Contains(ack.Capabilities, protocol.WorkspaceEnsureCapability)
+	if options.WorkspacePolicy != nil && !workspaceNegotiated {
+		return false, status.Error(codes.FailedPrecondition, "server does not support workspace ensure; upgrade server first")
+	}
+	handler := &commandHandler{journal: journal, nodeID: options.InstanceID, execute: execute,
+		workspacePolicy: options.WorkspacePolicy, workspaceNegotiated: workspaceNegotiated,
+		herdrConfig: herdr.Config{SocketPath: options.HerdrSocket}, ensureWorkspace: ensure,
+		verifyCoordinator: streamPeerVerifier(stream.Context(), options.VerifyServerPeer)}
 	var pending []*agentflowv1.CommandResult
-	if commandReady {
+	if commandReady || workspaceNegotiated {
 		operation, stop := context.WithTimeout(sessionContext, journalOperationTimeout)
 		pending, err = journal.PendingResults(operation)
 		stop()
@@ -220,6 +257,48 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 	}()
 	defer func() { cancel(); <-receiveDone; _ = stream.CloseSend() }()
 
+	type commandWork struct {
+		command    *agentflowv1.Command
+		receivedAt time.Time
+	}
+	type commandOutcome struct {
+		result *agentflowv1.CommandResult
+		err    error
+	}
+	work := make(chan commandWork, 16)
+	outcomes := make(chan commandOutcome, 1)
+	workerDone := make(chan struct{})
+	var workerErr error
+	// The worker owns execution only; this goroutine remains the sole sender.
+	go func() {
+		defer close(workerDone)
+		for {
+			select {
+			case <-sessionContext.Done():
+				return
+			case item := <-work:
+				result, err := handler.handle(sessionContext, item.command, item.receivedAt)
+				workerErr = err
+				select {
+				case outcomes <- commandOutcome{result: result, err: err}:
+				case <-sessionContext.Done():
+					return
+				}
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+	defer func() {
+		cancel()
+		<-workerDone
+		var fatal *journalError
+		if errors.As(workerErr, &fatal) {
+			sessionErr = errors.Join(sessionErr, workerErr)
+		}
+	}()
+
 	updates := make(chan *agentflowv1.HerdrState, 1)
 	observerErr := make(chan error, 1)
 	if options.HerdrSocket != "" {
@@ -252,12 +331,14 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 		replay = replayTicker.C
 	}
 	var sequence uint64
+	var localState *agentflowv1.HerdrState
 	sendHeartbeat := func(timestamp time.Time) error {
 		sequence++
 		return send(&agentflowv1.NodeEnvelope{
 			Body: &agentflowv1.NodeEnvelope_Heartbeat{
 				Heartbeat: &agentflowv1.Heartbeat{
 					Sequence: sequence, SentAt: timestamppb.New(timestamp), CommandReady: commandReady,
+					WorkspaceReady: workspaceNegotiated && options.WorkspacePolicy != nil && workspaceBaselineReady(localState, time.Now()),
 				},
 			},
 		})
@@ -279,20 +360,34 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 		if envelope.GetCommand() == nil && envelope.GetCommandAck() == nil {
 			return nil
 		}
-		if !commandReady {
-			return status.Error(codes.FailedPrecondition, "server sent command traffic without negotiated probe readiness")
+		if !commandReady && !workspaceNegotiated {
+			return status.Error(codes.FailedPrecondition, "server sent command traffic without negotiated readiness")
 		}
 		if len(envelope.ProtoReflect().GetUnknown()) != 0 {
 			return status.Error(codes.InvalidArgument, "unknown command envelope fields")
 		}
 		if command := envelope.GetCommand(); command != nil {
-			result, err := handler.handle(sessionContext, command, message.receivedAt)
-			if err != nil {
-				return err
+			if err := protocol.ValidateCommand(command, options.InstanceID); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid command: %v", err)
 			}
-			return send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandResult{CommandResult: result}})
+			if (command.CommandType == protocol.ProbeCommandType && !commandReady) ||
+				(command.CommandType == protocol.WorkspaceEnsureCommandType && !workspaceNegotiated) {
+				return status.Error(codes.FailedPrecondition, "command capability was not negotiated")
+			}
+			select {
+			case work <- commandWork{command: command, receivedAt: message.receivedAt}:
+				return nil
+			default:
+				return status.Error(codes.ResourceExhausted, "command queue full; reconnect required")
+			}
 		}
 		return handler.acknowledge(sessionContext, envelope.GetCommandAck())
+	}
+	sendOutcome := func(outcome commandOutcome) error {
+		if outcome.err != nil {
+			return outcome.err
+		}
+		return send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandResult{CommandResult: outcome.result}})
 	}
 	for {
 		// Prioritize due heartbeats before each bounded unit of command/replay work.
@@ -306,12 +401,17 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 		select {
 		case <-sessionContext.Done():
 			return true, sessionContext.Err()
+		case outcome := <-outcomes:
+			if err := sendOutcome(outcome); err != nil {
+				return true, err
+			}
 		case err := <-observerErr:
 			if err == nil {
 				err = errors.New("Herdr observer stopped unexpectedly")
 			}
 			return true, fmt.Errorf("observe Herdr: %w", err)
 		case state := <-updates:
+			localState = state
 			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_HerdrState{HerdrState: state}}); err != nil {
 				return true, fmt.Errorf("send Herdr state: %w", err)
 			}
@@ -331,7 +431,7 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 			result := pending[0]
 			pending[0] = nil
 			pending = pending[1:]
-			if err := protocol.ValidateProbeResult(result); err != nil {
+			if err := protocol.ValidateCommandResult(result); err != nil {
 				return true, storageError("pending result", err)
 			}
 			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandResult{CommandResult: result}}); err != nil {
@@ -346,6 +446,14 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 			}
 		}
 	}
+}
+
+func workspaceBaselineReady(state *agentflowv1.HerdrState, now time.Time) bool {
+	if state == nil || state.Status != "ready" || state.ObservedAt == nil || state.ObservedAt.CheckValid() != nil {
+		return false
+	}
+	age := now.Sub(state.ObservedAt.AsTime())
+	return age >= 0 && age <= 30*time.Second
 }
 
 func reconnectDelay(base, maximum time.Duration, attempt int, jitter float64) time.Duration {
