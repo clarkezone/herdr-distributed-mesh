@@ -27,8 +27,52 @@ const (
 )
 
 type fleetEntry struct {
-	view *agentflowv1.NodeView
-	done chan struct{}
+	view          *agentflowv1.NodeView
+	done          chan struct{}
+	outbound      chan *agentflowv1.NodeEnvelope
+	probes        bool
+	streamDone    <-chan struct{}
+	supersedeOnce sync.Once
+	sendMu        sync.Mutex
+	sends         sync.WaitGroup
+	drained       chan struct{}
+}
+
+func (e *fleetEntry) supersede() {
+	e.sendMu.Lock()
+	defer e.sendMu.Unlock()
+	e.supersedeOnce.Do(func() {
+		close(e.done)
+		e.drained = make(chan struct{})
+		go func() {
+			e.sends.Wait()
+			close(e.drained)
+		}()
+	})
+}
+
+func (e *fleetEntry) registerSend() bool {
+	e.sendMu.Lock()
+	defer e.sendMu.Unlock()
+	select {
+	case <-e.done:
+		return false
+	default:
+		e.sends.Add(1)
+		return true
+	}
+}
+
+func (f *fleetStore) current(entry *fleetEntry) bool {
+	if f.nodes[entry.view.InstanceId] != entry {
+		return false
+	}
+	select {
+	case <-entry.done:
+		return false
+	default:
+		return true
+	}
 }
 
 type fleetStore struct {
@@ -37,6 +81,41 @@ type fleetStore struct {
 	storage    fleetPersistence
 	storageErr error
 	fatal      chan error
+	commands   commandLifecycle
+}
+
+type commandLifecycle interface {
+	LoseNodeCommands(context.Context, string, time.Time) error
+	ExpireCommands(context.Context, time.Time) error
+}
+
+func (f *fleetStore) loseCommands(nodeID string, now time.Time) error {
+	if f.commands == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := f.commands.LoseNodeCommands(ctx, nodeID, now); err != nil {
+		return f.failLocked(err)
+	}
+	return nil
+}
+
+func (f *fleetStore) expireCommands(now time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.storageErr != nil {
+		return storageUnavailable()
+	}
+	if f.commands == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := f.commands.ExpireCommands(ctx, now); err != nil {
+		return f.failLocked(err)
+	}
+	return nil
 }
 
 type fleetPersistence interface {
@@ -137,6 +216,7 @@ func (f *fleetStore) restore(views []*agentflowv1.NodeView, now time.Time) error
 		copy := proto.Clone(view).(*agentflowv1.NodeView)
 		// A persisted observation is not evidence of a live stream in this process.
 		copy.Connected, copy.Stale = false, true
+		copy.CommandReady = false
 		nodes[copy.InstanceId] = &fleetEntry{view: copy, done: make(chan struct{})}
 	}
 	f.nodes = nodes
@@ -170,8 +250,53 @@ func validateStoredNode(view *agentflowv1.NodeView) error {
 }
 
 func (f *fleetStore) begin(instanceID, stableID string, enabled bool, now time.Time) (*fleetEntry, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	return f.beginSession(context.Background(), instanceID, stableID, enabled, now)
+}
+
+func (f *fleetStore) beginSession(ctx context.Context, instanceID, stableID string, enabled bool, now time.Time) (*fleetEntry, error) {
+	wait, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for {
+		if err := wait.Err(); err != nil {
+			return nil, status.FromContextError(err).Err()
+		}
+		f.mu.Lock()
+		old := f.nodes[instanceID]
+		if old != nil && old.streamDone != nil {
+			// Retirement prevents new sends; both transport and registered sends must finish.
+			old.supersede()
+			terminated := false
+			select {
+			case <-old.streamDone:
+				select {
+				case <-old.drained:
+					terminated = true
+				default:
+				}
+			default:
+			}
+			if !terminated {
+				f.mu.Unlock()
+				for _, done := range []<-chan struct{}{old.streamDone, old.drained} {
+					select {
+					case <-done:
+					case <-wait.Done():
+						return nil, status.FromContextError(wait.Err()).Err()
+					}
+				}
+				continue
+			}
+		}
+		entry, err := f.beginLocked(instanceID, stableID, enabled, now)
+		if entry != nil {
+			entry.streamDone = ctx.Done()
+		}
+		f.mu.Unlock()
+		return entry, err
+	}
+}
+
+func (f *fleetStore) beginLocked(instanceID, stableID string, enabled bool, now time.Time) (*fleetEntry, error) {
 	if f.nodes == nil {
 		f.nodes = make(map[string]*fleetEntry)
 	}
@@ -192,13 +317,17 @@ func (f *fleetStore) begin(instanceID, stableID string, enabled bool, now time.T
 			Connected: true, LastSeen: timestamppb.New(now),
 			Herdr: &agentflowv1.HerdrState{Status: herdrStatus},
 		},
-		done: make(chan struct{}),
+		done:     make(chan struct{}),
+		outbound: make(chan *agentflowv1.NodeEnvelope, 16),
 	}
 	if err := f.save(entry.view); err != nil {
 		return nil, err
 	}
+	if err := f.loseCommands(instanceID, now); err != nil {
+		return nil, err
+	}
 	if old != nil && old.view.Connected {
-		close(old.done)
+		old.supersede()
 	}
 	f.nodes[instanceID] = entry
 	return entry, nil
@@ -210,7 +339,11 @@ func (f *fleetStore) end(entry *fleetEntry) error {
 	if f.nodes[entry.view.InstanceId] == entry {
 		copy := proto.Clone(entry.view).(*agentflowv1.NodeView)
 		copy.Connected, copy.Stale = false, true
+		copy.CommandReady = false
 		if err := f.save(copy); err != nil {
+			return err
+		}
+		if err := f.loseCommands(copy.InstanceId, time.Now()); err != nil {
 			return err
 		}
 		entry.view = copy
@@ -218,14 +351,15 @@ func (f *fleetStore) end(entry *fleetEntry) error {
 	return nil
 }
 
-func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time) error {
+func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time, ready ...bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.nodes[entry.view.InstanceId] != entry {
+	if !f.current(entry) {
 		return status.Error(codes.Aborted, "node stream superseded")
 	}
 	copy := proto.Clone(entry.view).(*agentflowv1.NodeView)
 	copy.LastSeen = timestamppb.New(now)
+	copy.CommandReady = len(ready) > 0 && ready[0] && entry.probes
 	if err := f.save(copy); err != nil {
 		return err
 	}
@@ -287,7 +421,7 @@ func (f *fleetStore) update(entry *fleetEntry, state *agentflowv1.HerdrState, no
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.nodes[entry.view.InstanceId] != entry {
+	if !f.current(entry) {
 		return status.Error(codes.Aborted, "node stream superseded")
 	}
 	if state.Sequence <= entry.view.Herdr.Sequence {

@@ -15,6 +15,7 @@ import (
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdr"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -23,18 +24,33 @@ import (
 var capabilities = []string{"node.heartbeat.v1"}
 
 type Options struct {
-	HeartbeatInterval time.Duration
-	HerdrSocket       string
-	InstanceID        string
-	ReconnectDelay    time.Duration
-	ReconnectMaximum  time.Duration
-	ServerAddress     string
-	Transport         transport.Config
+	CommandJournalPath string
+	RequiredServerTag  string
+	HeartbeatInterval  time.Duration
+	HerdrSocket        string
+	InstanceID         string
+	ReconnectDelay     time.Duration
+	ReconnectMaximum   time.Duration
+	ServerAddress      string
+	Transport          transport.Config
 }
 
-func Run(ctx context.Context, options Options) error {
+func Run(ctx context.Context, options Options) (err error) {
 	if options.ReconnectMaximum <= 0 {
 		options.ReconnectMaximum = time.Minute
+	}
+	journal, err := openJournal(ctx, options)
+	if err != nil {
+		return err
+	}
+	var commands commandJournal
+	if journal != nil {
+		commands = journal
+		defer func() {
+			if closeErr := journal.Close(); closeErr != nil {
+				err = errors.Join(err, storageError("close", closeErr))
+			}
+		}()
 	}
 	network, err := transport.Start(ctx, options.Transport)
 	if err != nil {
@@ -53,7 +69,13 @@ func Run(ctx context.Context, options Options) error {
 		formatExpiry(self.KeyExpiry),
 	)
 
-	connection, err := network.DialGRPC(options.ServerAddress)
+	dial := network.DialGRPC
+	if commands != nil {
+		dial = func(target string) (*grpc.ClientConn, error) {
+			return network.DialGRPCWithPeerTag(target, options.RequiredServerTag)
+		}
+	}
+	connection, err := dial(options.ServerAddress)
 	if err != nil {
 		return err
 	}
@@ -62,7 +84,11 @@ func Run(ctx context.Context, options Options) error {
 	client := agentflowv1.NewNodeControlClient(connection)
 	attempt := 0
 	for {
-		registered, err := runSession(ctx, client, options)
+		registered, err := runSessionWithJournal(ctx, client, options, commands, nil)
+		var journalFailure *journalError
+		if errors.As(err, &journalFailure) {
+			return err
+		}
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -86,6 +112,10 @@ func Run(ctx context.Context, options Options) error {
 }
 
 func isPermanentSessionError(err error) bool {
+	var journalFailure *journalError
+	if errors.As(err, &journalFailure) {
+		return true
+	}
 	switch status.Code(err) {
 	case codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.InvalidArgument:
 		return true
@@ -95,6 +125,10 @@ func isPermanentSessionError(err error) bool {
 }
 
 func runSession(ctx context.Context, client agentflowv1.NodeControlClient, options Options) (bool, error) {
+	return RunSession(ctx, client, options)
+}
+
+func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlClient, options Options, journal commandJournal, execute func()) (bool, error) {
 	sessionContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -111,6 +145,9 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 	advertised := slices.Clone(capabilities)
 	if options.HerdrSocket != "" {
 		advertised = append(advertised, protocol.HerdrReadCapability)
+	}
+	if journal != nil {
+		advertised = append(advertised, protocol.ProbeCapability)
 	}
 	if err := send(&agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_Hello{
@@ -142,6 +179,17 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 	if options.HerdrSocket != "" && !slices.Contains(ack.Capabilities, protocol.HerdrReadCapability) {
 		return false, status.Error(codes.FailedPrecondition, "server does not support read-only Herdr state; upgrade server first")
 	}
+	commandReady := journal != nil && slices.Contains(ack.Capabilities, protocol.ProbeCapability)
+	handler := &commandHandler{journal: journal, nodeID: options.InstanceID, execute: execute}
+	var pending []*agentflowv1.CommandResult
+	if commandReady {
+		operation, stop := context.WithTimeout(sessionContext, journalOperationTimeout)
+		pending, err = journal.PendingResults(operation)
+		stop()
+		if err != nil {
+			return true, storageError("pending results", err)
+		}
+	}
 	log.Printf(
 		"node registered instance_id=%s server_instance_id=%s protocol=%d",
 		options.InstanceID,
@@ -149,16 +197,28 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 		ack.SelectedProtocol,
 	)
 
-	receiveErr := make(chan error, 1)
+	type incomingMessage struct {
+		envelope   *agentflowv1.NodeEnvelope
+		receivedAt time.Time
+		err        error
+	}
+	incoming := make(chan incomingMessage, 16)
+	receiveDone := make(chan struct{})
 	go func() {
+		defer close(receiveDone)
 		for {
-			_, err := stream.Recv()
+			envelope, err := stream.Recv()
+			select {
+			case incoming <- incomingMessage{envelope: envelope, receivedAt: time.Now(), err: err}:
+			case <-sessionContext.Done():
+				return
+			}
 			if err != nil {
-				receiveErr <- err
 				return
 			}
 		}
 	}()
+	defer func() { cancel(); <-receiveDone; _ = stream.CloseSend() }()
 
 	updates := make(chan *agentflowv1.HerdrState, 1)
 	observerErr := make(chan error, 1)
@@ -179,23 +239,72 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 		defer func() { cancel(); <-done }()
 	}
 
-	ticker := time.NewTicker(options.HeartbeatInterval)
+	heartbeatInterval := options.HeartbeatInterval
+	if heartbeatInterval <= 0 {
+		heartbeatInterval = 5 * time.Second
+	}
+	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
+	replayTicker := time.NewTicker(5 * time.Millisecond)
+	defer replayTicker.Stop()
+	var replay <-chan time.Time
+	if len(pending) > 0 {
+		replay = replayTicker.C
+	}
 	var sequence uint64
 	sendHeartbeat := func(timestamp time.Time) error {
 		sequence++
 		return send(&agentflowv1.NodeEnvelope{
 			Body: &agentflowv1.NodeEnvelope_Heartbeat{
 				Heartbeat: &agentflowv1.Heartbeat{
-					Sequence: sequence, SentAt: timestamppb.New(timestamp), CommandReady: false,
+					Sequence: sequence, SentAt: timestamppb.New(timestamp), CommandReady: commandReady,
 				},
 			},
 		})
 	}
+	if err := sendHeartbeat(time.Now()); err != nil {
+		return true, fmt.Errorf("send initial heartbeat: %w", err)
+	}
+	handleIncoming := func(message incomingMessage) error {
+		if message.err != nil {
+			if errors.Is(message.err, io.EOF) {
+				return errors.New("server closed the node control stream")
+			}
+			return fmt.Errorf("receive server message: %w", message.err)
+		}
+		envelope := message.envelope
+		if envelope == nil {
+			return status.Error(codes.InvalidArgument, "empty server envelope")
+		}
+		if envelope.GetCommand() == nil && envelope.GetCommandAck() == nil {
+			return nil
+		}
+		if !commandReady {
+			return status.Error(codes.FailedPrecondition, "server sent command traffic without negotiated probe readiness")
+		}
+		if len(envelope.ProtoReflect().GetUnknown()) != 0 {
+			return status.Error(codes.InvalidArgument, "unknown command envelope fields")
+		}
+		if command := envelope.GetCommand(); command != nil {
+			result, err := handler.handle(sessionContext, command, message.receivedAt)
+			if err != nil {
+				return err
+			}
+			return send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandResult{CommandResult: result}})
+		}
+		return handler.acknowledge(sessionContext, envelope.GetCommandAck())
+	}
 	for {
+		// Prioritize due heartbeats before each bounded unit of command/replay work.
+		select {
+		case timestamp := <-ticker.C:
+			if err := sendHeartbeat(timestamp); err != nil {
+				return true, fmt.Errorf("send heartbeat: %w", err)
+			}
+		default:
+		}
 		select {
 		case <-sessionContext.Done():
-			_ = stream.CloseSend()
 			return true, sessionContext.Err()
 		case err := <-observerErr:
 			if err == nil {
@@ -203,22 +312,34 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 			}
 			return true, fmt.Errorf("observe Herdr: %w", err)
 		case state := <-updates:
-			// Give a due heartbeat priority even during continuous refresh traffic.
-			select {
-			case timestamp := <-ticker.C:
-				if err := sendHeartbeat(timestamp); err != nil {
-					return true, fmt.Errorf("send heartbeat: %w", err)
-				}
-			default:
-			}
 			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_HerdrState{HerdrState: state}}); err != nil {
 				return true, fmt.Errorf("send Herdr state: %w", err)
 			}
-		case err := <-receiveErr:
-			if errors.Is(err, io.EOF) {
-				return true, errors.New("server closed the node control stream")
+		case message := <-incoming:
+			if err := handleIncoming(message); err != nil {
+				return true, err
 			}
-			return true, fmt.Errorf("receive server message: %w", err)
+		case <-replay:
+			// Drain one incoming acknowledgement before replay, never the whole queue.
+			select {
+			case message := <-incoming:
+				if err := handleIncoming(message); err != nil {
+					return true, err
+				}
+			default:
+			}
+			result := pending[0]
+			pending[0] = nil
+			pending = pending[1:]
+			if err := protocol.ValidateProbeResult(result); err != nil {
+				return true, storageError("pending result", err)
+			}
+			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandResult{CommandResult: result}}); err != nil {
+				return true, fmt.Errorf("replay command result: %w", err)
+			}
+			if len(pending) == 0 {
+				replay = nil
+			}
 		case timestamp := <-ticker.C:
 			if err := sendHeartbeat(timestamp); err != nil {
 				return true, fmt.Errorf("send heartbeat: %w", err)

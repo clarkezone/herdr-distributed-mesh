@@ -50,7 +50,7 @@ func (s *sessionServer) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	}
 }
 
-func sessionClient(t *testing.T, api *sessionServer) agentflowv1.NodeControlClient {
+func sessionClient(t *testing.T, api agentflowv1.NodeControlServer) agentflowv1.NodeControlClient {
 	t.Helper()
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()

@@ -1,4 +1,5 @@
-// Package state persists coordinator identity bindings and bounded fleet snapshots.
+// Package state persists coordinator identity bindings, bounded fleet snapshots,
+// and coordinator/node command journals.
 package state
 
 import (
@@ -47,11 +48,15 @@ type Store struct {
 // must be dedicated to coordinator state: its permissions are made private.
 // The startup context does not own the returned store's lifetime.
 func Open(ctx context.Context, path string, serverInstanceID string) (_ *Store, err error) {
+	return openStore(ctx, path, serverInstanceID, coordinatorKind)
+}
+
+func openStore(ctx context.Context, path, ownerID string, kind databaseKind) (_ *Store, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if emptyID(serverInstanceID) {
-		return nil, errors.New("server instance ID must not be empty")
+	if emptyID(ownerID) {
+		return nil, errors.New("database owner instance ID must not be empty")
 	}
 	if strings.TrimSpace(path) == "" || strings.Contains(path, ":memory:") ||
 		strings.Contains(strings.TrimPrefix(path, filepath.VolumeName(path)), ":") {
@@ -149,7 +154,7 @@ func Open(ctx context.Context, path string, serverInstanceID string) (_ *Store, 
 	if err != nil {
 		return nil, fmt.Errorf("connect state database: %w", err)
 	}
-	if err := s.initialize(ctx, serverInstanceID, created); err != nil {
+	if err := s.initialize(ctx, ownerID, created, kind); err != nil {
 		return nil, fmt.Errorf("initialize state database: %w", err)
 	}
 	return s, nil
@@ -169,7 +174,7 @@ func checkRegular(path string) error {
 	return nil
 }
 
-func (s *Store) initialize(ctx context.Context, serverID string, created bool) error {
+func (s *Store) initialize(ctx context.Context, ownerID string, created bool, kind databaseKind) error {
 	if _, err := s.conn.ExecContext(ctx, "PRAGMA busy_timeout = 3000"); err != nil {
 		return err
 	}
@@ -180,43 +185,9 @@ func (s *Store) initialize(ctx context.Context, serverID string, created bool) e
 	if check != "ok" {
 		return errors.New("database integrity check failed")
 	}
-	var version int
-	if err := s.conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+	version, err := s.inspectSchema(ctx, ownerID, created, kind)
+	if err != nil {
 		return err
-	}
-	if version != 0 && version != 1 {
-		return fmt.Errorf("unsupported state schema version %d", version)
-	}
-	if version == 0 && !created {
-		return errors.New("existing state database has no initialized schema; refusing to initialize or reset it")
-	}
-	if version == 1 {
-		for _, table := range []string{"metadata", "bindings", "latest_nodes"} {
-			var count int
-			if err := s.conn.QueryRowContext(ctx,
-				"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = ? AND tbl_name = ?",
-				table, table).Scan(&count); err != nil {
-				return fmt.Errorf("inspect state schema: %w", err)
-			}
-			if count != 1 {
-				return fmt.Errorf("state database is corrupt: required table %s is missing", table)
-			}
-		}
-		var identity string
-		if err := s.conn.QueryRowContext(ctx, "SELECT server_instance_id FROM metadata WHERE singleton = 1").Scan(&identity); err != nil {
-			return fmt.Errorf("state database server identity is missing or invalid: %w", err)
-		}
-		if identity != serverID {
-			return fmt.Errorf("%w: database belongs to another server", ErrIdentityConflict)
-		}
-	} else {
-		var tables int
-		if err := s.conn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").Scan(&tables); err != nil {
-			return err
-		}
-		if tables != 0 {
-			return errors.New("unversioned database is not empty")
-		}
 	}
 	for _, setting := range []struct {
 		sql  string
@@ -259,49 +230,7 @@ func (s *Store) initialize(ctx context.Context, serverID string, created bool) e
 		}
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		if version == 0 {
-			for _, statement := range []string{
-				`CREATE TABLE metadata (
-					singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-					server_instance_id TEXT NOT NULL CHECK (length(server_instance_id) > 0)
-				) STRICT`,
-				`CREATE TABLE bindings (
-					stable_id TEXT PRIMARY KEY NOT NULL CHECK (length(stable_id) > 0),
-					instance_id TEXT NOT NULL UNIQUE CHECK (length(instance_id) > 0)
-				) STRICT`,
-				`CREATE TABLE latest_nodes (
-					instance_id TEXT PRIMARY KEY NOT NULL REFERENCES bindings(instance_id),
-					payload BLOB NOT NULL CHECK (length(payload) BETWEEN 1 AND 266240)
-				) STRICT`,
-				"PRAGMA user_version = 1",
-			} {
-				if _, err := tx.ExecContext(ctx, statement); err != nil {
-					return err
-				}
-			}
-			if _, err := tx.ExecContext(ctx, "INSERT INTO metadata(singleton, server_instance_id) VALUES (1, ?)", serverID); err != nil {
-				return err
-			}
-		}
-		var count int
-		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM metadata").Scan(&count); err != nil {
-			return err
-		}
-		if count != 1 {
-			return errors.New("invalid server metadata")
-		}
-		rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
-		if err != nil {
-			return err
-		}
-		invalid := rows.Next()
-		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-			return err
-		}
-		if invalid {
-			return errors.New("database foreign key check failed")
-		}
-		return nil
+		return initializeSchema(ctx, tx, ownerID, version, kind)
 	})
 }
 

@@ -112,6 +112,18 @@ func (network *Network) Listen(address string) (net.Listener, error) {
 }
 
 func (network *Network) DialGRPC(target string) (*grpc.ClientConn, error) {
+	return network.dialGRPC(target, "")
+}
+
+// DialGRPCWithPeerTag authorizes every underlying connection, including gRPC redials.
+func (network *Network) DialGRPCWithPeerTag(target, tag string) (*grpc.ClientConn, error) {
+	if strings.TrimSpace(tag) == "" {
+		return nil, errors.New("required server tag must not be empty")
+	}
+	return network.dialGRPC(target, tag)
+}
+
+func (network *Network) dialGRPC(target, tag string) (*grpc.ClientConn, error) {
 	if strings.TrimSpace(target) == "" {
 		return nil, errors.New("gRPC target is required")
 	}
@@ -125,9 +137,34 @@ func (network *Network) DialGRPC(target string) (*grpc.ClientConn, error) {
 			PermitWithoutStream: true,
 		}),
 		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
-			return network.server.Dial(ctx, "tcp", address)
+			connection, err := network.server.Dial(ctx, "tcp", address)
+			if err != nil || tag == "" {
+				return connection, err
+			}
+			return authorizePeerConnection(ctx, connection, tag, network.IdentifyPeer)
 		}),
 	)
+}
+
+func authorizePeerConnection(ctx context.Context, connection net.Conn, tag string, identify func(context.Context, string) (PeerIdentity, error)) (net.Conn, error) {
+	reject := func(err error) (net.Conn, error) {
+		return nil, errors.Join(err, connection.Close())
+	}
+	if strings.TrimSpace(tag) == "" {
+		return reject(errors.New("server-tag check: required server tag must not be empty"))
+	}
+	address := connection.RemoteAddr()
+	if address == nil {
+		return reject(errors.New("server-tag check: connected peer has no remote address"))
+	}
+	identity, err := identify(ctx, address.String())
+	if err != nil {
+		return reject(fmt.Errorf("server-tag check for connected peer %q: %w", address, err))
+	}
+	if !slices.Contains(identity.Tags, tag) {
+		return reject(fmt.Errorf("server-tag check: connected peer %q lacks required tag %q", address, tag))
+	}
+	return connection, nil
 }
 
 func normalizeMagicDNSTarget(target, suffix string) string {

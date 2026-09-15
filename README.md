@@ -141,7 +141,8 @@ Only entity IDs, workspace/tab relationships, focus flags, and agent status are
 forwarded. Titles, labels, paths, terminal output, agent names/session metadata,
 and custom tokens are excluded on the node. The server also validates the
 projection and rejects unknown protobuf fields. This is not a complete layout
-or terminal mirror and **does not support remote mutation or command execution**.
+or terminal mirror and **does not support remote Herdr mutation or arbitrary
+command execution**.
 
 Herdr protocol 18 is the initial supported local contract. The observer waits for
 subscription acknowledgement before taking its baseline. Events trigger
@@ -188,8 +189,9 @@ require explicit operator attention and never trigger an automatic reset.
 This stores **latest observations, not event history**. The existing retention
 policy is unchanged: disconnected observations expire after 15 minutes without
 a heartbeat, even across restarts. Expiry never removes the durable identity
-binding. Command journals, project bindings, and remote execution safety are
-subsequent work; remote mutations remain disabled.
+binding. Admitted command transitions have a separate durable journal, described
+below. Project bindings and mutation-specific execution safety remain subsequent
+work; remote Herdr mutations remain disabled.
 
 The dedicated coordinator directory is private to the current user (plus
 SYSTEM on Windows), including database sidecars. Keep it on a local filesystem.
@@ -218,6 +220,81 @@ The remaining two-host restart/NIC/sleep/hostname-collision runbook is
 `docs\windows-live-validation.md`. That gate is deferred, not passed, and remains
 required before the two-machine demo. Remote mutations, durable event history,
 the fuller standalone CLI, and MCP remain later phases.
+
+## Journaled command-safety probe
+
+The only admitted command is **`node.ping.v1`**, which returns `pong`. It never
+calls Herdr or executes shell commands. This exercises the command delivery and
+recovery path before introducing actual workspace/worktree mutations.
+
+Upgrade the server first, preserving its enrolled state. Coordinator schema 1
+upgrades transactionally to schema 2, preserving bindings and observations.
+Older binaries cannot read schema 2; take an offline backup before upgrading.
+Restart the node with the new binary, its existing hostname/state/socket flags,
+and **`-enable-probes`**. Probes are off by default and do not require Herdr.
+An enabled node requires a coordinator advertising `commands.node-ping.v1`.
+Its protected journal lives at `<node-state-dir>\commands\journal.db`.
+
+Probe-enabled nodes and probe CLI clients verify the actual connected peer has
+`tag:herdr-mesh-server`, including every reconnect. Change this only with
+`-required-server-tag` when using a different server tag. The server independently
+requires `-required-command-tag` (default `tag:herdr-mesh-client`) and assigns the
+actor from authenticated WhoIs identity, not request input. This default permits
+client-tagged identities to ping, not to perform arbitrary operations.
+
+From an **unused enrolled client identity**, submit a probe and wait for its
+outcome, or retrieve an earlier command:
+
+```powershell
+.\herdr-mesh.exe ctl ping `
+  -server '<server-magic-dns-name>:50052' `
+  -state-dir '<unused-enrolled-client-state-dir>' `
+  -node '<instance-id-from-ctl-nodes>' `
+  -idempotency-key smoke-ping-1 `
+  -json
+
+.\herdr-mesh.exe ctl command `
+  -server '<server-magic-dns-name>:50052' `
+  -state-dir '<same-client-state-dir>' `
+  -id '<command-id-from-ping>' `
+  -json
+```
+
+Keep any explicitly configured client hostname unchanged. Do not share the
+dashboard's state directory while it is running. `ctl nodes -json` reports
+`command_ready`; this means a negotiated, opted-in **probe** session, not general
+mutation readiness. Older read-only nodes remain usable for monitoring.
+
+The CLI prints its idempotency key to stderr before submitting; JSON stdout is
+one command record with status and audit transitions. If the connection fails
+or the CLI wait times out, repeat `ctl ping` with the **same client identity,
+node, idempotency key, and TTL**. A matching retry returns the existing command,
+even if the node is now offline; changing the request under that key fails.
+Omitting the key generates a new one. Keys are request identifiers, never
+Tailscale enrollment secrets. Command lookup is scoped to the submitting actor.
+
+`-ttl` defaults to 10 seconds and cannot exceed 30 seconds. It is an execution
+deadline, distinct from the CLI's `-timeout` (default 60 seconds). Dispatch intent
+commits before sending; node execution intent commits before returning `pong`.
+Node results remain pending until the coordinator commits and acknowledges them.
+Replacement sessions wait for the old stream and its registered sends to finish; supersession
+interrupts pending sends, and command traffic never extends heartbeat deadlines.
+Already-transmitted commands cannot be revoked by replacing a session.
+Restarted nodes replay known results, not execution. Interrupted execution or a
+lost result can produce **INDETERMINATE**, not a fabricated failure/success.
+A later authenticated result can reconcile that status; query the same command
+instead of assuming a fresh idempotency key is a safe retry for future mutations.
+
+Each coordinator and node journal retains at most **4,096 commands**, including
+deduplication tombstones. Capacity failures are explicit; records are never
+silently evicted. Retention/maintenance tooling remains future work. Do not
+delete or replace journals to recover capacity: that discards retry protection.
+Back up the whole node state offline, just as for the coordinator.
+
+The durable audit covers **admitted command transitions**, not all denied
+requests. Denials are not a durable security audit. This is a probe-only safety
+foundation, not completion of mutation authorization, project scoping,
+precondition checks, reconciliation, the fuller CLI, or MCP.
 
 ## Windows tsnet feasibility spike
 

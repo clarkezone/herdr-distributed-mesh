@@ -16,6 +16,8 @@ service NodeControl {
 service Fleet {
   rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfo);
   rpc ListNodes(google.protobuf.Empty) returns (NodeList);
+  rpc SubmitCommand(SubmitCommandRequest) returns (CommandRecord);
+  rpc GetCommand(GetCommandRequest) returns (CommandRecord);
 }
 
 enum Role {
@@ -94,6 +96,34 @@ message Command {
   google.protobuf.Duration ttl = 6;
   google.protobuf.Struct preconditions = 7;
   google.protobuf.Struct payload = 8;
+  google.protobuf.Timestamp expires_at = 9;
+}
+
+// The actor and command ID are assigned by the authenticated coordinator.
+message SubmitCommandRequest {
+  string node_instance_id = 1;
+  string idempotency_key = 2;
+  string command_type = 3;
+  google.protobuf.Duration ttl = 4;
+}
+
+message GetCommandRequest {
+  string command_id = 1;
+}
+
+message CommandAudit {
+  CommandStatus status = 1;
+  string detail = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}
+
+message CommandRecord {
+  Command command = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  repeated CommandAudit audit = 6;
 }
 
 message Actor {
@@ -169,6 +199,8 @@ message NodeView {
   HerdrState herdr = 5;
   bool stale = 6;
   google.protobuf.Timestamp herdr_received_at = 7;
+  // Only negotiated allowlisted command types are available, not general execution.
+  bool command_ready = 8;
 }
 
 message NodeList {

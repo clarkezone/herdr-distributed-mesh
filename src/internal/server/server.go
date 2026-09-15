@@ -24,27 +24,30 @@ import (
 )
 
 type Options struct {
-	BindingPath       string
-	DatabasePath      string
-	RequiredClientTag string
-	InstanceID        string
-	ListenAddress     string
-	RequiredNodeTag   string
-	Transport         transport.Config
+	BindingPath        string
+	DatabasePath       string
+	RequiredClientTag  string
+	RequiredCommandTag string
+	InstanceID         string
+	ListenAddress      string
+	RequiredNodeTag    string
+	Transport          transport.Config
 }
 
 type service struct {
 	agentflowv1.UnimplementedNodeControlServer
 	agentflowv1.UnimplementedFleetServer
 
-	instanceID        string
-	identifyPeer      func(context.Context) (transport.PeerIdentity, error)
-	requiredClientTag string
-	requiredNodeTag   string
-	bindNode          func(string, string) error
-	helloTimeout      time.Duration
-	heartbeatTimeout  time.Duration
-	fleet             fleetStore
+	instanceID         string
+	identifyPeer       func(context.Context) (transport.PeerIdentity, error)
+	requiredClientTag  string
+	requiredCommandTag string
+	requiredNodeTag    string
+	bindNode           func(string, string) error
+	helloTimeout       time.Duration
+	heartbeatTimeout   time.Duration
+	fleet              fleetStore
+	commands           *state.Store
 }
 
 func Run(ctx context.Context, options Options) (result error) {
@@ -54,14 +57,17 @@ func Run(ctx context.Context, options Options) (result error) {
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
 	api := &service{
-		instanceID:        options.InstanceID,
-		requiredClientTag: options.RequiredClientTag,
-		requiredNodeTag:   options.RequiredNodeTag,
-		bindNode:          durableBinder(store),
-		helloTimeout:      10 * time.Second,
-		heartbeatTimeout:  time.Minute,
+		instanceID:         options.InstanceID,
+		requiredClientTag:  options.RequiredClientTag,
+		requiredCommandTag: options.RequiredCommandTag,
+		requiredNodeTag:    options.RequiredNodeTag,
+		bindNode:           durableBinder(store),
+		helloTimeout:       10 * time.Second,
+		heartbeatTimeout:   time.Minute,
+		commands:           store,
 	}
 	api.fleet.storage = store
+	api.fleet.commands = store
 	api.fleet.fatal = make(chan error, 1)
 	if err := api.fleet.restore(restored, time.Now()); err != nil {
 		return fmt.Errorf("restore durable fleet: %w", err)
@@ -117,35 +123,45 @@ func Run(ctx context.Context, options Options) (result error) {
 
 func serveCoordinator(ctx context.Context, listener net.Listener, grpcServer *grpc.Server, fleet *fleetStore) error {
 	defer grpcServer.Stop()
+	expiry := time.NewTicker(500 * time.Millisecond)
+	defer expiry.Stop()
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- grpcServer.Serve(listener)
 	}()
 
-	select {
-	case <-ctx.Done():
-		log.Printf("stopping mesh server")
-		grpcServer.Stop()
-		err := <-serveErr
-		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			return fmt.Errorf("serve gRPC: %w", err)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("stopping mesh server")
+			grpcServer.Stop()
+			err := <-serveErr
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				return fmt.Errorf("serve gRPC: %w", err)
+			}
+			fleet.mu.Lock()
+			persistenceErr := fleet.storageErr
+			fleet.mu.Unlock()
+			if persistenceErr != nil {
+				return fmt.Errorf("coordinator persistence failed during shutdown: %w", persistenceErr)
+			}
+			return nil
+		case err := <-fleet.fatal:
+			grpcServer.Stop()
+			<-serveErr
+			return fmt.Errorf("coordinator stopped after persistence failure: %w", err)
+		case err := <-serveErr:
+			if err != nil {
+				return fmt.Errorf("serve gRPC: %w", err)
+			}
+			return nil
+		case now := <-expiry.C:
+			if err := fleet.expireCommands(now); err != nil {
+				grpcServer.Stop()
+				<-serveErr
+				return err
+			}
 		}
-		fleet.mu.Lock()
-		persistenceErr := fleet.storageErr
-		fleet.mu.Unlock()
-		if persistenceErr != nil {
-			return fmt.Errorf("coordinator persistence failed during shutdown: %w", persistenceErr)
-		}
-		return nil
-	case err := <-fleet.fatal:
-		grpcServer.Stop()
-		<-serveErr
-		return fmt.Errorf("coordinator stopped after persistence failure: %w", err)
-	case err := <-serveErr:
-		if err != nil {
-			return fmt.Errorf("serve gRPC: %w", err)
-		}
-		return nil
 	}
 }
 
@@ -176,7 +192,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 		}
 	}
 	herdrEnabled := slices.Contains(hello.Capabilities, protocol.HerdrReadCapability)
-	entry, err := service.fleet.begin(hello.InstanceId, identity.StableID, herdrEnabled, time.Now())
+	entry, err := service.fleet.beginSession(stream.Context(), hello.InstanceId, identity.StableID, herdrEnabled, time.Now())
 	if err != nil {
 		return err
 	}
@@ -185,15 +201,18 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			result = err
 		}
 	}()
-	if err := stream.Send(&agentflowv1.NodeEnvelope{
+	service.fleet.mu.Lock()
+	entry.probes = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProbeCapability)
+	service.fleet.mu.Unlock()
+	if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
 			HelloAck: &agentflowv1.HelloAck{
 				SelectedProtocol: selectedProtocol,
 				ServerInstanceId: service.instanceID,
-				Capabilities:     slices.Clone(protocol.ServerCapabilities),
+				Capabilities:     service.capabilities(),
 			},
 		},
-	}); err != nil {
+	}, entry); err != nil {
 		return status.Errorf(codes.Unavailable, "send hello acknowledgement: %v", err)
 	}
 
@@ -207,49 +226,132 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	)
 	defer log.Printf("node disconnected instance_id=%s peer_id=%s", hello.InstanceId, identity.StableID)
 
-	heartbeatDeadline := time.Now().Add(service.timeoutOrDefault(service.heartbeatTimeout, time.Minute))
+	heartbeatTimeout := service.timeoutOrDefault(service.heartbeatTimeout, time.Minute)
+	heartbeatDeadline := time.Now().Add(heartbeatTimeout)
+	heartbeatTimer := time.NewTimer(heartbeatTimeout)
+	defer heartbeatTimer.Stop()
+	sessionContext, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	received := make(chan receiveResult, 1)
+	go func() {
+		for {
+			envelope, err := stream.Recv()
+			select {
+			case received <- receiveResult{envelope: envelope, err: err}:
+			case <-sessionContext.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 	var heartbeatSequence uint64
 	for {
 		if !time.Now().Before(heartbeatDeadline) {
 			return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
 		}
-		envelope, err := receiveNodeEnvelopeUntil(
-			stream,
-			time.Until(heartbeatDeadline), entry.done,
-		)
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			if errors.Is(err, errReceiveTimeout) {
-				return status.Errorf(codes.DeadlineExceeded, "receive heartbeat: %v", err)
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-entry.done:
+			return status.Error(codes.Aborted, "node stream superseded")
+		case <-heartbeatTimer.C:
+			return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
+		case pending := <-entry.outbound:
+			if !time.Now().Before(heartbeatDeadline) {
+				return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
 			}
-			return err
-		}
-		heartbeat := envelope.GetHeartbeat()
-		if heartbeat == nil {
-			if state := envelope.GetHerdrState(); state != nil && herdrEnabled {
-				if err := service.fleet.update(entry, state, time.Now()); err != nil {
+			outbound, err := service.prepareCommand(entry, pending.GetCommand())
+			if err != nil {
+				return err
+			}
+			if outbound != nil {
+				if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_Command{Command: outbound}}, entry); err != nil {
 					return err
 				}
-				continue
 			}
-			return status.Error(codes.InvalidArgument, "expected heartbeat or negotiated read-only Herdr state")
+		case result := <-received:
+			if !time.Now().Before(heartbeatDeadline) {
+				return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
+			}
+			envelope, err := result.envelope, result.err
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				if errors.Is(err, errReceiveTimeout) {
+					return status.Errorf(codes.DeadlineExceeded, "receive heartbeat: %v", err)
+				}
+				return err
+			}
+			heartbeat := envelope.GetHeartbeat()
+			if heartbeat == nil {
+				if state := envelope.GetHerdrState(); state != nil && herdrEnabled {
+					if err := service.fleet.update(entry, state, time.Now()); err != nil {
+						return err
+					}
+					continue
+				}
+				if envelope.GetCommandAck() != nil && entry.probes {
+					ack := envelope.GetCommandAck()
+					if !protocol.ValidCommandID(ack.CommandId) || ack.Status != agentflowv1.CommandStatus_COMMAND_STATUS_ACCEPTED ||
+						(ack.Detail != "" && ack.Detail != "accepted") || len(ack.ProtoReflect().GetUnknown()) != 0 {
+						return status.Error(codes.InvalidArgument, "invalid command acknowledgement")
+					}
+					continue
+				}
+				if envelope.GetCommandResult() != nil && entry.probes {
+					ack, err := service.finishCommand(entry, envelope.GetCommandResult())
+					if err != nil {
+						return err
+					}
+					if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandAck{CommandAck: ack}}, entry); err != nil {
+						return err
+					}
+					continue
+				}
+				return status.Error(codes.InvalidArgument, "expected heartbeat or negotiated read-only Herdr state")
+			}
+			if heartbeat.Sequence <= heartbeatSequence || heartbeat.SentAt == nil || heartbeat.SentAt.CheckValid() != nil {
+				return status.Error(codes.InvalidArgument, "invalid heartbeat sequence or timestamp")
+			}
+			heartbeatSequence = heartbeat.Sequence
+			heartbeatDeadline = time.Now().Add(heartbeatTimeout)
+			heartbeatTimer.Reset(heartbeatTimeout)
+			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady); err != nil {
+				return err
+			}
+			log.Printf(
+				"node heartbeat instance_id=%s sequence=%d command_ready=%t",
+				hello.InstanceId,
+				heartbeat.Sequence,
+				heartbeat.CommandReady,
+			)
 		}
-		if heartbeat.Sequence <= heartbeatSequence || heartbeat.SentAt == nil || heartbeat.SentAt.CheckValid() != nil {
-			return status.Error(codes.InvalidArgument, "invalid heartbeat sequence or timestamp")
-		}
-		heartbeatSequence = heartbeat.Sequence
-		heartbeatDeadline = time.Now().Add(service.timeoutOrDefault(service.heartbeatTimeout, time.Minute))
-		if err := service.fleet.heartbeat(entry, time.Now()); err != nil {
-			return err
-		}
-		log.Printf(
-			"node heartbeat instance_id=%s sequence=%d command_ready=%t",
-			hello.InstanceId,
-			heartbeat.Sequence,
-			heartbeat.CommandReady,
-		)
+	}
+}
+
+func sendNodeEnvelope(stream grpc.BidiStreamingServer[agentflowv1.NodeEnvelope, agentflowv1.NodeEnvelope], envelope *agentflowv1.NodeEnvelope, entry *fleetEntry) error {
+	if !entry.registerSend() {
+		return status.Error(codes.Aborted, "node stream superseded")
+	}
+	done := make(chan error, 1)
+	go func() {
+		defer entry.sends.Done()
+		done <- stream.Send(envelope)
+	}()
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	case <-entry.done:
+		return status.Error(codes.Aborted, "node stream superseded")
+	case <-timer.C:
+		return status.Error(codes.DeadlineExceeded, "node send deadline exceeded")
 	}
 }
 
@@ -308,8 +410,16 @@ func (service *service) GetServerInfo(ctx context.Context, _ *emptypb.Empty) (*a
 		InstanceId:            service.instanceID,
 		ImplementationVersion: buildinfo.Version,
 		Protocol:              protocol.SupportedRange(),
-		Capabilities:          slices.Clone(protocol.ServerCapabilities),
+		Capabilities:          service.capabilities(),
 	}, nil
+}
+
+func (service *service) capabilities() []string {
+	values := slices.Clone(protocol.ServerCapabilities)
+	if service.commands != nil {
+		values = append(values, protocol.ProbeCapability)
+	}
+	return values
 }
 
 func (service *service) authorizePeer(ctx context.Context, requiredTag string) (transport.PeerIdentity, error) {

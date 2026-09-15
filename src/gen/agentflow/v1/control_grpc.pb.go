@@ -118,6 +118,8 @@ var NodeControl_ServiceDesc = grpc.ServiceDesc{
 const (
 	Fleet_GetServerInfo_FullMethodName = "/agentflow.v1.Fleet/GetServerInfo"
 	Fleet_ListNodes_FullMethodName     = "/agentflow.v1.Fleet/ListNodes"
+	Fleet_SubmitCommand_FullMethodName = "/agentflow.v1.Fleet/SubmitCommand"
+	Fleet_GetCommand_FullMethodName    = "/agentflow.v1.Fleet/GetCommand"
 )
 
 // FleetClient is the client API for Fleet service.
@@ -126,6 +128,8 @@ const (
 type FleetClient interface {
 	GetServerInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ServerInfo, error)
 	ListNodes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*NodeList, error)
+	SubmitCommand(ctx context.Context, in *SubmitCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error)
+	GetCommand(ctx context.Context, in *GetCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error)
 }
 
 type fleetClient struct {
@@ -156,12 +160,34 @@ func (c *fleetClient) ListNodes(ctx context.Context, in *emptypb.Empty, opts ...
 	return out, nil
 }
 
+func (c *fleetClient) SubmitCommand(ctx context.Context, in *SubmitCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommandRecord)
+	err := c.cc.Invoke(ctx, Fleet_SubmitCommand_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fleetClient) GetCommand(ctx context.Context, in *GetCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommandRecord)
+	err := c.cc.Invoke(ctx, Fleet_GetCommand_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FleetServer is the server API for Fleet service.
 // All implementations must embed UnimplementedFleetServer
 // for forward compatibility.
 type FleetServer interface {
 	GetServerInfo(context.Context, *emptypb.Empty) (*ServerInfo, error)
 	ListNodes(context.Context, *emptypb.Empty) (*NodeList, error)
+	SubmitCommand(context.Context, *SubmitCommandRequest) (*CommandRecord, error)
+	GetCommand(context.Context, *GetCommandRequest) (*CommandRecord, error)
 	mustEmbedUnimplementedFleetServer()
 }
 
@@ -177,6 +203,12 @@ func (UnimplementedFleetServer) GetServerInfo(context.Context, *emptypb.Empty) (
 }
 func (UnimplementedFleetServer) ListNodes(context.Context, *emptypb.Empty) (*NodeList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
+}
+func (UnimplementedFleetServer) SubmitCommand(context.Context, *SubmitCommandRequest) (*CommandRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitCommand not implemented")
+}
+func (UnimplementedFleetServer) GetCommand(context.Context, *GetCommandRequest) (*CommandRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCommand not implemented")
 }
 func (UnimplementedFleetServer) mustEmbedUnimplementedFleetServer() {}
 func (UnimplementedFleetServer) testEmbeddedByValue()               {}
@@ -235,6 +267,42 @@ func _Fleet_ListNodes_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fleet_SubmitCommand_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitCommandRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).SubmitCommand(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_SubmitCommand_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).SubmitCommand(ctx, req.(*SubmitCommandRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fleet_GetCommand_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCommandRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).GetCommand(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_GetCommand_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).GetCommand(ctx, req.(*GetCommandRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fleet_ServiceDesc is the grpc.ServiceDesc for Fleet service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -249,6 +317,14 @@ var Fleet_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNodes",
 			Handler:    _Fleet_ListNodes_Handler,
+		},
+		{
+			MethodName: "SubmitCommand",
+			Handler:    _Fleet_SubmitCommand_Handler,
+		},
+		{
+			MethodName: "GetCommand",
+			Handler:    _Fleet_GetCommand_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

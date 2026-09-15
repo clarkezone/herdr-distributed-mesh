@@ -17,11 +17,12 @@ import (
 )
 
 type Options struct {
-	Diagnose      bool
-	JSON          bool
-	Output        io.Writer
-	ServerAddress string
-	Transport     transport.Config
+	Diagnose          bool
+	JSON              bool
+	Output            io.Writer
+	ServerAddress     string
+	RequiredServerTag string
+	Transport         transport.Config
 }
 
 func ServerInfo(ctx context.Context, options Options) error {
@@ -43,7 +44,12 @@ func withFleet(ctx context.Context, options Options, query func(agentflowv1.Flee
 			return fmt.Errorf("validate local tsnet identity: %w", err)
 		}
 	}
-	connection, err := network.DialGRPC(options.ServerAddress)
+	var connection *grpc.ClientConn
+	if options.RequiredServerTag != "" {
+		connection, err = network.DialGRPCWithPeerTag(options.ServerAddress, options.RequiredServerTag)
+	} else {
+		connection, err = network.DialGRPC(options.ServerAddress)
+	}
 	if err != nil {
 		return err
 	}

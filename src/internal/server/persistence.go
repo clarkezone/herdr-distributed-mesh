@@ -30,6 +30,9 @@ func openCoordinatorState(ctx context.Context, options Options) (*state.Store, [
 	if err := store.ImportBindings(ctx, bindings); err != nil {
 		return fail(fmt.Errorf("import legacy identity bindings: %w", err))
 	}
+	if err := store.RecoverCommands(ctx, time.Now()); err != nil {
+		return fail(fmt.Errorf("recover command journal: %w", err))
+	}
 	views, err := store.LoadFleet(ctx)
 	if err != nil {
 		return fail(fmt.Errorf("load durable fleet: %w", err))

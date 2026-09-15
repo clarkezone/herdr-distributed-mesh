@@ -69,9 +69,13 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 	network := addNetworkFlags(flags, "herdr-mesh-server", "server", "TS_AUTHKEY_SERVER", "tag:herdr-mesh-server")
 	listen := flags.String("listen", ":"+defaultPort, "tsnet TCP listen address")
 	requiredClientTag := flags.String("required-client-tag", "tag:herdr-mesh-client", "Tailscale tag required for fleet read requests")
+	requiredCommandTag := flags.String("required-command-tag", "tag:herdr-mesh-client", "Tailscale tag required for safe probe admission and command history")
 	requiredNodeTag := flags.String("required-node-tag", "tag:herdr-mesh-node", "Tailscale tag required for node streams")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*requiredCommandTag) == "" {
+		return errors.New("-required-command-tag must not be empty")
 	}
 
 	instanceID, err := identity.LoadOrCreate(network.stateDir)
@@ -79,13 +83,14 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 		return err
 	}
 	return server.Run(ctx, server.Options{
-		BindingPath:       filepath.Join(network.stateDir, "node-bindings.jsonl"),
-		DatabasePath:      filepath.Join(network.stateDir, "coordinator", "mesh.db"),
-		InstanceID:        instanceID,
-		ListenAddress:     *listen,
-		RequiredClientTag: *requiredClientTag,
-		RequiredNodeTag:   *requiredNodeTag,
-		Transport:         network.config(),
+		BindingPath:        filepath.Join(network.stateDir, "node-bindings.jsonl"),
+		DatabasePath:       filepath.Join(network.stateDir, "coordinator", "mesh.db"),
+		InstanceID:         instanceID,
+		ListenAddress:      *listen,
+		RequiredClientTag:  *requiredClientTag,
+		RequiredCommandTag: *requiredCommandTag,
+		RequiredNodeTag:    *requiredNodeTag,
+		Transport:          network.config(),
 	})
 }
 
@@ -96,6 +101,8 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
 	herdrSocket := flags.String("herdr-socket", "", "opt-in read-only Herdr socket marker path (Windows named pipe); empty disables integration")
+	enableProbes := flags.Bool("enable-probes", false, "opt in to durably journaled read-only node ping commands; no Herdr mutations")
+	requiredServerTag := flags.String("required-server-tag", "tag:herdr-mesh-server", "Tailscale tag required on the coordinator when probes are enabled")
 	reconnectDelay := flags.Duration("reconnect-delay", 2*time.Second, "delay before reopening a failed stream")
 	reconnectMaximum := flags.Duration("reconnect-max-delay", time.Minute, "maximum delay before reopening a failed stream")
 	if err := flags.Parse(args); err != nil {
@@ -113,31 +120,42 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	if *reconnectMaximum < *reconnectDelay {
 		return errors.New("-reconnect-max-delay must be greater than or equal to -reconnect-delay")
 	}
+	journalPath := ""
+	if *enableProbes {
+		if strings.TrimSpace(*requiredServerTag) == "" {
+			return errors.New("-required-server-tag must not be empty when probes are enabled")
+		}
+		journalPath = filepath.Join(network.stateDir, "commands", "journal.db")
+	}
 
 	instanceID, err := identity.LoadOrCreate(network.stateDir)
 	if err != nil {
 		return err
 	}
 	return node.Run(ctx, node.Options{
-		HeartbeatInterval: *heartbeat,
-		HerdrSocket:       *herdrSocket,
-		InstanceID:        instanceID,
-		ReconnectDelay:    *reconnectDelay,
-		ReconnectMaximum:  *reconnectMaximum,
-		ServerAddress:     *serverAddress,
-		Transport:         network.config(),
+		HeartbeatInterval:  *heartbeat,
+		HerdrSocket:        *herdrSocket,
+		CommandJournalPath: journalPath,
+		RequiredServerTag:  *requiredServerTag,
+		InstanceID:         instanceID,
+		ReconnectDelay:     *reconnectDelay,
+		ReconnectMaximum:   *reconnectMaximum,
+		ServerAddress:      *serverAddress,
+		Transport:          network.config(),
 	})
 }
 
 func runControl(ctx context.Context, args []string, streams IO) error {
 	if len(args) == 0 {
-		return errors.New("ctl requires a command; currently supported: server-info, nodes")
+		return errors.New("ctl requires a command; currently supported: server-info, nodes, ping, command")
 	}
 	switch args[0] {
 	case "server-info":
 		return runFleetQuery(ctx, args[1:], streams, false, false)
 	case "nodes":
 		return runFleetQuery(ctx, args[1:], streams, false, true)
+	case "ping", "command":
+		return runCommandQuery(ctx, args[0], args[1:], streams)
 	default:
 		return fmt.Errorf("unknown ctl command %q", args[0])
 	}
@@ -254,6 +272,8 @@ Usage:
   herdr-mesh node -server <host:port> [flags]
   herdr-mesh ctl server-info -server <host:port> [flags]
   herdr-mesh ctl nodes -server <host:port> [-json] [flags]
+  herdr-mesh ctl ping -server <host:port> -node <instance-id> [-idempotency-key <retry-key>] [flags]
+  herdr-mesh ctl command -server <host:port> -id <command-id> [flags]
   herdr-mesh doctor -server <host:port> [flags]
   herdr-mesh dashboard -server <host:port> [-listen 127.0.0.1:8787] [flags]
   herdr-mesh version`)

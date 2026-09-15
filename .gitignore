@@ -35,6 +35,11 @@ mesh.db-wal
 mesh.db-shm
 mesh.db-journal
 mesh.db.lock
+journal.db
+journal.db-wal
+journal.db-shm
+journal.db-journal
+journal.db.lock
 
 # Editor/IDE
 # .idea/
