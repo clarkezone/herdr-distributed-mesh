@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,18 +21,32 @@ func TestLiveHerdrFleetProjection(t *testing.T) {
 	if socket == "" {
 		t.Skip("set HERDR_MESH_TEST_SOCKET for read-only live integration")
 	}
-	connection := newTestConnection(t, &service{
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	store, _, err := openCoordinatorState(ctx, Options{
+		InstanceID: "server-1", DatabasePath: filepath.Join(t.TempDir(), "coordinator", "mesh.db"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	api := &service{
 		requiredNodeTag: "tag:node", requiredClientTag: "tag:client",
+		bindNode: durableBinder(store),
 		identifyPeer: func(context.Context) (transport.PeerIdentity, error) {
 			return transport.PeerIdentity{StableID: "stable-1", Tags: []string{"tag:node", "tag:client"}}, nil
 		},
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+	}
+	api.fleet.storage = store
+	connection := newTestConnection(t, api)
 	stream := startHerdrStream(t, ctx, connection)
 	collected := errors.New("sample collected")
 	var sent *agentflowv1.HerdrState
-	err := herdr.Observe(ctx, herdr.Config{SocketPath: socket}, func(state *agentflowv1.HerdrState) error {
+	err = herdr.Observe(ctx, herdr.Config{SocketPath: socket}, func(state *agentflowv1.HerdrState) error {
 		if state.Status != "ready" {
 			return errors.New("live Herdr unavailable: " + state.ErrorCode)
 		}
@@ -56,5 +71,9 @@ func TestLiveHerdrFleetProjection(t *testing.T) {
 	}
 	if len(list.Nodes) != 1 || !proto.Equal(list.Nodes[0].Herdr, sent) || !list.Nodes[0].Stale {
 		t.Fatal("real projected snapshot did not round-trip through fleet RPC")
+	}
+	persisted, err := store.LoadFleet(ctx)
+	if err != nil || len(persisted) != 1 || !proto.Equal(persisted[0].Herdr, sent) || persisted[0].Connected {
+		t.Fatal("real projection and disconnect were not persisted")
 	}
 }

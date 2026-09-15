@@ -80,6 +80,7 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 	}
 	return server.Run(ctx, server.Options{
 		BindingPath:       filepath.Join(network.stateDir, "node-bindings.jsonl"),
+		DatabasePath:      filepath.Join(network.stateDir, "coordinator", "mesh.db"),
 		InstanceID:        instanceID,
 		ListenAddress:     *listen,
 		RequiredClientTag: *requiredClientTag,

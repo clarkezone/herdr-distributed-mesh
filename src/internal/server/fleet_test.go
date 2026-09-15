@@ -27,6 +27,15 @@ func readyState(sequence uint64) *agentflowv1.HerdrState {
 	}
 }
 
+func listFleet(t *testing.T, fleet *fleetStore, now time.Time) *agentflowv1.NodeList {
+	t.Helper()
+	list, err := fleet.list(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return list
+}
+
 func TestFleetLifecycleAndFencing(t *testing.T) {
 	var fleet fleetStore
 	now := time.Now()
@@ -34,7 +43,7 @@ func TestFleetLifecycleAndFencing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fleet.list(now).Nodes[0]; got.Herdr.Status != "waiting" || !got.Stale {
+	if got := listFleet(t, &fleet, now).Nodes[0]; got.Herdr.Status != "waiting" || !got.Stale {
 		t.Fatalf("new node must be waiting/stale: %v", got)
 	}
 	state := readyState(1)
@@ -42,15 +51,15 @@ func TestFleetLifecycleAndFencing(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Panes[0].AgentStatus = "done"
-	view := fleet.list(now).Nodes[0]
+	view := listFleet(t, &fleet, now).Nodes[0]
 	if view.Stale || view.Herdr.Panes[0].AgentStatus != "working" {
 		t.Fatalf("state must be fresh and cloned: %v", view)
 	}
 	view.Herdr.Panes[0].AgentStatus = "done"
-	if fleet.list(now).Nodes[0].Herdr.Panes[0].AgentStatus != "working" {
+	if listFleet(t, &fleet, now).Nodes[0].Herdr.Panes[0].AgentStatus != "working" {
 		t.Fatal("caller mutated store")
 	}
-	if !fleet.list(now.Add(herdrStaleAfter + time.Second)).Nodes[0].Stale {
+	if !listFleet(t, &fleet, now.Add(herdrStaleAfter+time.Second)).Nodes[0].Stale {
 		t.Fatal("snapshot did not become stale")
 	}
 	if err := fleet.update(old, readyState(1), now); status.Code(err) != codes.InvalidArgument {
@@ -72,17 +81,17 @@ func TestFleetLifecycleAndFencing(t *testing.T) {
 		t.Fatalf("superseded heartbeat accepted: %v", err)
 	}
 	fleet.end(old)
-	if !fleet.list(now).Nodes[0].Connected {
+	if !listFleet(t, &fleet, now).Nodes[0].Connected {
 		t.Fatal("old disconnect affected replacement")
 	}
 	if err := fleet.update(current, readyState(1), now); err != nil {
 		t.Fatalf("fresh stream must reset sequence: %v", err)
 	}
 	fleet.end(current)
-	if got := fleet.list(now).Nodes[0]; got.Connected || !got.Stale {
+	if got := listFleet(t, &fleet, now).Nodes[0]; got.Connected || !got.Stale {
 		t.Fatal("disconnected node reported fresh")
 	}
-	if len(fleet.list(now.Add(offlineRetention+time.Second)).Nodes) != 0 {
+	if len(listFleet(t, &fleet, now.Add(offlineRetention+time.Second)).Nodes) != 0 {
 		t.Fatal("offline retention not bounded")
 	}
 }
@@ -306,7 +315,7 @@ func TestUnavailableStateClearsProjection(t *testing.T) {
 	if err := fleet.update(entry, failure, now); err != nil {
 		t.Fatal(err)
 	}
-	view := fleet.list(now).Nodes[0]
+	view := listFleet(t, &fleet, now).Nodes[0]
 	if !view.Stale || view.Herdr.Status != "unavailable" || len(view.Herdr.Panes) != 0 {
 		t.Fatal("unavailable status retained success-shaped snapshot")
 	}

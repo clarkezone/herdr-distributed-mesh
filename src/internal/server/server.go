@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"slices"
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -23,6 +25,7 @@ import (
 
 type Options struct {
 	BindingPath       string
+	DatabasePath      string
 	RequiredClientTag string
 	InstanceID        string
 	ListenAddress     string
@@ -44,7 +47,25 @@ type service struct {
 	fleet             fleetStore
 }
 
-func Run(ctx context.Context, options Options) error {
+func Run(ctx context.Context, options Options) (result error) {
+	store, restored, err := openCoordinatorState(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, store.Close()) }()
+	api := &service{
+		instanceID:        options.InstanceID,
+		requiredClientTag: options.RequiredClientTag,
+		requiredNodeTag:   options.RequiredNodeTag,
+		bindNode:          durableBinder(store),
+		helloTimeout:      10 * time.Second,
+		heartbeatTimeout:  time.Minute,
+	}
+	api.fleet.storage = store
+	api.fleet.fatal = make(chan error, 1)
+	if err := api.fleet.restore(restored, time.Now()); err != nil {
+		return fmt.Errorf("restore durable fleet: %w", err)
+	}
 	network, err := transport.Start(ctx, options.Transport)
 	if err != nil {
 		return err
@@ -68,11 +89,8 @@ func Run(ctx context.Context, options Options) error {
 	}
 	defer listener.Close()
 
-	bindings, err := newBindingStore(options.BindingPath)
-	if err != nil {
-		return err
-	}
 	grpcServer := grpc.NewServer(
+		grpc.WaitForHandlers(true),
 		grpc.MaxRecvMsgSize(1024*1024),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second,
@@ -83,14 +101,6 @@ func Run(ctx context.Context, options Options) error {
 			PermitWithoutStream: true,
 		}),
 	)
-	api := &service{
-		instanceID:        options.InstanceID,
-		requiredClientTag: options.RequiredClientTag,
-		requiredNodeTag:   options.RequiredNodeTag,
-		bindNode:          bindings.Bind,
-		helloTimeout:      10 * time.Second,
-		heartbeatTimeout:  time.Minute,
-	}
 	api.identifyPeer = func(ctx context.Context) (transport.PeerIdentity, error) {
 		grpcPeer, ok := peer.FromContext(ctx)
 		if !ok || grpcPeer.Addr == nil {
@@ -102,6 +112,11 @@ func Run(ctx context.Context, options Options) error {
 	agentflowv1.RegisterFleetServer(grpcServer, api)
 
 	log.Printf("mesh server ready instance_id=%s address=%s", options.InstanceID, listener.Addr())
+	return serveCoordinator(ctx, listener, grpcServer, &api.fleet)
+}
+
+func serveCoordinator(ctx context.Context, listener net.Listener, grpcServer *grpc.Server, fleet *fleetStore) error {
+	defer grpcServer.Stop()
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- grpcServer.Serve(listener)
@@ -115,7 +130,17 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			return fmt.Errorf("serve gRPC: %w", err)
 		}
+		fleet.mu.Lock()
+		persistenceErr := fleet.storageErr
+		fleet.mu.Unlock()
+		if persistenceErr != nil {
+			return fmt.Errorf("coordinator persistence failed during shutdown: %w", persistenceErr)
+		}
 		return nil
+	case err := <-fleet.fatal:
+		grpcServer.Stop()
+		<-serveErr
+		return fmt.Errorf("coordinator stopped after persistence failure: %w", err)
 	case err := <-serveErr:
 		if err != nil {
 			return fmt.Errorf("serve gRPC: %w", err)
@@ -124,7 +149,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 }
 
-func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.NodeEnvelope, agentflowv1.NodeEnvelope]) error {
+func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.NodeEnvelope, agentflowv1.NodeEnvelope]) (result error) {
 	identity, err := service.authorizePeer(stream.Context(), service.requiredNodeTag)
 	if err != nil {
 		return err
@@ -144,7 +169,10 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	selectedProtocol, _ := protocol.Negotiate(hello.Protocol)
 	if service.bindNode != nil {
 		if err := service.bindNode(identity.StableID, hello.InstanceId); err != nil {
-			return status.Errorf(codes.PermissionDenied, "bind mesh identity to Tailscale peer: %v", err)
+			if errors.Is(err, state.ErrIdentityConflict) {
+				return status.Error(codes.PermissionDenied, "mesh identity conflicts with an existing Tailscale binding")
+			}
+			return service.fleet.fail(err)
 		}
 	}
 	herdrEnabled := slices.Contains(hello.Capabilities, protocol.HerdrReadCapability)
@@ -152,7 +180,11 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	if err != nil {
 		return err
 	}
-	defer service.fleet.end(entry)
+	defer func() {
+		if err := service.fleet.end(entry); err != nil && result == nil {
+			result = err
+		}
+	}()
 	if err := stream.Send(&agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
 			HelloAck: &agentflowv1.HelloAck{
@@ -284,6 +316,9 @@ func (service *service) authorizePeer(ctx context.Context, requiredTag string) (
 	identity, err := service.identifyPeer(ctx)
 	if err != nil {
 		return transport.PeerIdentity{}, status.Errorf(codes.PermissionDenied, "identify Tailscale peer: %v", err)
+	}
+	if identity.StableID == "" {
+		return transport.PeerIdentity{}, status.Error(codes.PermissionDenied, "Tailscale peer has no stable identity")
 	}
 	if requiredTag != "" && !slices.Contains(identity.Tags, requiredTag) {
 		return transport.PeerIdentity{}, status.Errorf(codes.PermissionDenied, "peer is missing required tag %q", requiredTag)

@@ -157,12 +157,53 @@ Protocol 18 subscription selectors are dotted (`pane.updated`), but streamed
 event discriminators are snake_case (`pane_updated`). Unsupported Herdr
 protocol versions report `unavailable` until the adapter is updated.
 
-Fleet state is in memory, capped at 128 nodes, 256 KiB per projected state,
-4,096 entities per state, and 2 MiB total projected payload. Limits fail
-explicitly, not by truncating data. Disconnected nodes expire after 15 minutes
-without a heartbeat; a server restart clears inventory, and nodes repopulate
-it on reconnect. New node streams fence out older streams for the same bound
-identity.
+Fleet state is capped at 128 nodes, 256 KiB per projected state, 4,096 entities
+per state, and 2 MiB total projected payload. Limits fail explicitly, not by
+truncating data. The latest redacted observations and identity bindings are
+persisted in SQLite. On server restart, observations return **disconnected and
+stale**, never apparently live. A reconnect requires a new baseline before
+freshness is restored. New node streams fence out older streams for the same
+bound identity.
+
+## Durable coordinator state
+
+The server stores its database at `<server-state-dir>\coordinator\mesh.db`.
+It uses a pure-Go SQLite driver, so no database service or C compiler is needed.
+Restart only the server with the new binary and its existing `-state-dir` to
+enable this storage; existing read-only nodes and dashboard clients remain
+compatible.
+
+On startup, both legacy `node-bindings.jsonl` formats (JSON array or JSONL) are
+imported transactionally without changing the original file. Repeated imports
+are idempotent; conflicts or malformed data stop startup rather than discarding
+bindings. The database is tied to the server's persisted instance ID and is
+protected against concurrent coordinator processes using an OS-held lock.
+
+Identity binding and each latest fleet update commit before they become
+visible to clients. Storage failures reject new operations and stop the
+coordinator; there is no fallback to apparently healthy in-memory state.
+Database corruption, unsupported schema versions, and identity mismatches
+require explicit operator attention and never trigger an automatic reset.
+
+This stores **latest observations, not event history**. The existing retention
+policy is unchanged: disconnected observations expire after 15 minutes without
+a heartbeat, even across restarts. Expiry never removes the durable identity
+binding. Command journals, project bindings, and remote execution safety are
+subsequent work; remote mutations remain disabled.
+
+The dedicated coordinator directory is private to the current user (plus
+SYSTEM on Windows), including database sidecars. Keep it on a local filesystem.
+SQLite uses WAL with full synchronization. Do not remove its lock/WAL files or
+copy only `mesh.db` while the server runs. For an offline backup, stop the server
+and copy the entire server state directory, including its instance ID, tsnet
+identity, and coordinator directory. Downgrading to a JSON-binding-only server
+is not supported: it would ignore bindings learned by the SQLite-backed server.
+
+Durability and recovery checks:
+
+```powershell
+go test ./src/internal/state ./src/internal/server
+```
 
 Local automated coverage and optional read-only checks against a running Herdr:
 

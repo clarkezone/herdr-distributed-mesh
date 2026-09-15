@@ -9,6 +9,7 @@ import (
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -131,7 +132,7 @@ func TestNodeConnectRejectsIdentityRebinding(t *testing.T) {
 			return transport.PeerIdentity{StableID: "peer-1"}, nil
 		},
 		bindNode: func(stableID, instanceID string) error {
-			return errors.New("identity conflict")
+			return state.ErrIdentityConflict
 		},
 	})
 
@@ -183,7 +184,7 @@ func nodeHello(instanceID string) *agentflowv1.NodeEnvelope {
 func newTestConnection(t *testing.T, api *service) *grpc.ClientConn {
 	t.Helper()
 	listener := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.WaitForHandlers(true))
 	agentflowv1.RegisterNodeControlServer(grpcServer, api)
 	agentflowv1.RegisterFleetServer(grpcServer, api)
 	go func() {

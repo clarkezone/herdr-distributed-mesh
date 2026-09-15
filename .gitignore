@@ -27,9 +27,14 @@ go.work.sum
 # env file
 .env
 
-# Local tsnet identities and state
+# Local identities and runtime state
 .tsnet*/
 doctor-result.json
+mesh.db
+mesh.db-wal
+mesh.db-shm
+mesh.db-journal
+mesh.db.lock
 
 # Editor/IDE
 # .idea/
