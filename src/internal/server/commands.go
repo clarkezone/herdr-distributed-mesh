@@ -33,7 +33,7 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 	if s.commands == nil {
 		return nil, status.Error(codes.Unimplemented, "command journals are not configured")
 	}
-	if request != nil && request.CommandType != protocol.ProbeCommandType && request.CommandType != protocol.WorkspaceEnsureCommandType {
+	if request != nil && request.CommandType != protocol.ProbeCommandType && request.CommandType != protocol.WorkspaceEnsureCommandType && request.CommandType != protocol.WorktreeCreateCommandType {
 		log.Printf("command admission denied actor=%s reason=unsupported_command", identity.StableID)
 		return nil, status.Error(codes.PermissionDenied, "unsupported command type")
 	}
@@ -51,7 +51,8 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 	existing, err := s.commands.FindCommand(op, identity.StableID, request.IdempotencyKey)
 	if err == nil {
 		if existing.Command.TargetId != request.NodeInstanceId || existing.Command.CommandType != request.CommandType ||
-			!proto.Equal(existing.Command.Ttl, request.Ttl) || !proto.Equal(existing.Command.WorkspaceEnsure, request.WorkspaceEnsure) {
+			!proto.Equal(existing.Command.Ttl, request.Ttl) || !proto.Equal(existing.Command.WorkspaceEnsure, request.WorkspaceEnsure) ||
+			!proto.Equal(existing.Command.WorktreeCreate, request.WorktreeCreate) {
 			return nil, status.Error(codes.AlreadyExists, "idempotency key was used for a different request")
 		}
 		return existing, nil
@@ -64,13 +65,14 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 		log.Printf("command admission denied actor=%s reason=node_not_ready", identity.StableID)
 		return nil, status.Error(codes.FailedPrecondition, "target node has no ready probe session")
 	}
-	if request.WorkspaceEnsure != nil {
-		if _, err := s.workspacePolicy.Resolve(request.NodeInstanceId, request.WorkspaceEnsure.ProjectId, request.WorkspaceEnsure.BindingRevision, identity.StableID); err != nil {
+	if projectID, revision := protocol.RequestProject(request); projectID != "" {
+		binding, err := s.workspacePolicy.Resolve(request.NodeInstanceId, projectID, revision, identity.StableID)
+		if err != nil || (request.CommandType == protocol.WorktreeCreateCommandType && !binding.AllowWorktrees) {
 			log.Printf("command admission denied actor=%s reason=project_not_authorized", identity.StableID)
-			return nil, status.Error(codes.PermissionDenied, "workspace project is not authorized")
+			return nil, status.Error(codes.PermissionDenied, "project operation is not authorized")
 		}
-		if !entry.workspaces || !entry.view.WorkspaceReady || !freshHerdr(entry.view, time.Now()) {
-			return nil, status.Error(codes.FailedPrecondition, "target node has no fresh workspace-enabled session")
+		if !mutationReady(entry, request.CommandType, time.Now()) {
+			return nil, status.Error(codes.FailedPrecondition, "target node has no fresh session for this operation")
 		}
 	}
 	if len(entry.outbound) >= cap(entry.outbound) {
@@ -82,6 +84,7 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 		TargetId: request.NodeInstanceId, Ttl: request.Ttl, ExpiresAt: timestamppb.New(now.Add(request.Ttl.AsDuration())),
 		Actor:           &agentflowv1.Actor{ActorId: identity.StableID, Role: agentflowv1.Role_ROLE_CONTROLLER},
 		WorkspaceEnsure: request.WorkspaceEnsure,
+		WorktreeCreate:  request.WorktreeCreate,
 	}
 	record, created, err := s.commands.CreateCommand(op, command, now)
 	if err != nil {
@@ -143,8 +146,9 @@ func (s *service) commandErrorLocked(err error) error {
 func (s *service) prepareCommand(entry *fleetEntry, queued queuedCommand) (*agentflowv1.Command, error) {
 	pending := queued.command
 	authorized := true
-	if pending != nil && pending.WorkspaceEnsure != nil {
-		authorized = s.refreshWorkspaceAuthorization(entry, queued)
+	projectID, _ := protocol.CommandProject(pending)
+	if projectID != "" {
+		authorized = s.refreshMutationAuthorization(entry, queued)
 	}
 	s.fleet.mu.Lock()
 	defer s.fleet.mu.Unlock()
@@ -159,7 +163,7 @@ func (s *service) prepareCommand(entry *fleetEntry, queued queuedCommand) (*agen
 	}
 	op, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if pending.WorkspaceEnsure != nil && (!authorized || !entry.workspaces || !entry.view.WorkspaceReady || !freshHerdr(entry.view, time.Now())) {
+	if projectID != "" && (!authorized || !mutationReady(entry, pending.CommandType, time.Now())) {
 		if _, err := s.commands.RejectCommand(op, entry.view.InstanceId, pending.CommandId, "authorization_changed", time.Now()); err != nil {
 			return nil, s.commandErrorLocked(err)
 		}

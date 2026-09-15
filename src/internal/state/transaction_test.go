@@ -92,6 +92,7 @@ func TestCanceledWorkspacePollingKeepsStoreUsable(t *testing.T) {
 		} else if err != nil {
 			t.Fatalf("poll %d poisoned store: %v", i, err)
 		}
+
 		got, err := s.GetCommand(context.Background(), "actor", record.Command.CommandId)
 		requireOK(t, err)
 		if got.Command.CommandId != record.Command.CommandId {
@@ -100,5 +101,44 @@ func TestCanceledWorkspacePollingKeepsStoreUsable(t *testing.T) {
 	}
 	if canceled == 0 {
 		t.Fatal("polling did not exercise cancellation")
+	}
+}
+
+func TestWorktreeTransactionHonorsCanceledQueries(t *testing.T) {
+	s := commandStore(t)
+	command := worktreeCommand(1, "project1")
+	admitWorkspace(t, s, command, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		called = true
+		return nil
+	})
+	if called || !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled transaction began: callback=%v, err=%v", called, err)
+	}
+	for i := 0; i < 10; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		err := s.transaction(ctx, func(tx *sql.Tx) error {
+			if err := bind(ctx, tx, Binding{StableID: "temporary", InstanceID: "temporary"}); err != nil {
+				return err
+			}
+			cancel()
+			_, queryErr := readCommands(ctx, tx, "", nil)
+			if !errors.Is(queryErr, context.Canceled) {
+				t.Fatalf("transaction lifetime context replaced caller query context: %v", queryErr)
+			}
+			return queryErr
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) || rowCount(t, s, "SELECT count(*) FROM bindings WHERE stable_id = 'temporary'") != 0 {
+			t.Fatalf("canceled query failed to roll back synchronously: %v", err)
+		}
+		got, err := s.GetCommand(context.Background(), "actor", command.CommandId)
+		requireOK(t, err)
+		if got.Status != statusAccepted || got.Command.WorktreeCreate.GetName() != command.WorktreeCreate.Name {
+			t.Fatal("canceled query damaged worktree journal")
+		}
 	}
 }

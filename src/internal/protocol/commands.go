@@ -45,11 +45,21 @@ func NormalizeCommandRequest(request *agentflowv1.SubmitCommandRequest) (*agentf
 	}
 	switch request.CommandType {
 	case ProbeCommandType:
-		if request.WorkspaceEnsure != nil {
+		if request.WorkspaceEnsure != nil || request.WorktreeCreate != nil {
 			return nil, errors.New("probe must not contain workspace arguments")
 		}
 	case WorkspaceEnsureCommandType:
+		if request.WorktreeCreate != nil {
+			return nil, errors.New("workspace ensure must not contain worktree arguments")
+		}
 		if err := ValidateWorkspaceEnsure(request.WorkspaceEnsure); err != nil {
+			return nil, err
+		}
+	case WorktreeCreateCommandType:
+		if request.WorkspaceEnsure != nil {
+			return nil, errors.New("worktree create must not contain workspace ensure arguments")
+		}
+		if err := ValidateWorktreeCreate(request.WorktreeCreate); err != nil {
 			return nil, err
 		}
 	default:
@@ -88,11 +98,21 @@ func ValidateCommand(command *agentflowv1.Command, nodeID string) error {
 	}
 	switch command.CommandType {
 	case ProbeCommandType:
-		if command.WorkspaceEnsure != nil {
+		if command.WorkspaceEnsure != nil || command.WorktreeCreate != nil {
 			return errors.New("probe must not contain workspace arguments")
 		}
 	case WorkspaceEnsureCommandType:
+		if command.WorktreeCreate != nil {
+			return errors.New("workspace ensure must not contain worktree arguments")
+		}
 		if err := ValidateWorkspaceEnsure(command.WorkspaceEnsure); err != nil {
+			return err
+		}
+	case WorktreeCreateCommandType:
+		if command.WorkspaceEnsure != nil {
+			return errors.New("worktree create must not contain workspace ensure arguments")
+		}
+		if err := ValidateWorktreeCreate(command.WorktreeCreate); err != nil {
 			return err
 		}
 	default:
@@ -124,7 +144,7 @@ func IsTerminalCommand(status agentflowv1.CommandStatus) bool {
 }
 
 func ValidateProbeResult(result *agentflowv1.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid command result")
 	}
 	valid := false

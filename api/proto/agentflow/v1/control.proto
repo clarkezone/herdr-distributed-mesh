@@ -72,6 +72,7 @@ message Heartbeat {
   google.protobuf.Timestamp sent_at = 2;
   bool command_ready = 3;
   bool workspace_ready = 4;
+  bool worktree_ready = 5;
 }
 
 message Snapshot {
@@ -99,6 +100,24 @@ message Command {
   google.protobuf.Struct payload = 8;
   google.protobuf.Timestamp expires_at = 9;
   WorkspaceEnsure workspace_ensure = 10;
+  WorktreeCreate worktree_create = 11;
+}
+
+message WorktreeCreate {
+  string project_id = 1;
+  string binding_revision = 2;
+  string name = 3;
+  string branch = 4;
+  string base_commit = 5;
+}
+
+message WorktreeCreateResult {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  string name = 4;
+  string branch = 5;
+  string base_commit = 6;
 }
 
 // Device-independent identity only. Paths and environment never cross the mesh.
@@ -121,6 +140,7 @@ message SubmitCommandRequest {
   string command_type = 3;
   google.protobuf.Duration ttl = 4;
   WorkspaceEnsure workspace_ensure = 5;
+  WorktreeCreate worktree_create = 6;
 }
 
 message GetCommandRequest {
@@ -141,6 +161,7 @@ message CommandRecord {
   google.protobuf.Timestamp updated_at = 5;
   repeated CommandAudit audit = 6;
   WorkspaceEnsureResult workspace_ensure = 7;
+  WorktreeCreateResult worktree_create = 8;
 }
 
 message Actor {
@@ -162,6 +183,7 @@ message CommandResult {
   string detail = 3;
   google.protobuf.Struct payload = 4;
   WorkspaceEnsureResult workspace_ensure = 5;
+  WorktreeCreateResult worktree_create = 6;
 }
 
 message NodeEnvelope {
@@ -220,6 +242,7 @@ message NodeView {
   // Only negotiated allowlisted command types are available, not general execution.
   bool command_ready = 8;
   bool workspace_ready = 9;
+  bool worktree_ready = 10;
 }
 
 message NodeList {

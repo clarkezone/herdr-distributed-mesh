@@ -32,6 +32,7 @@ type fleetEntry struct {
 	outbound      chan queuedCommand
 	probes        bool
 	workspaces    bool
+	worktrees     bool
 	peerContext   context.Context
 	streamDone    <-chan struct{}
 	supersedeOnce sync.Once
@@ -220,6 +221,7 @@ func (f *fleetStore) restore(views []*agentflowv1.NodeView, now time.Time) error
 		copy.Connected, copy.Stale = false, true
 		copy.CommandReady = false
 		copy.WorkspaceReady = false
+		copy.WorktreeReady = false
 		nodes[copy.InstanceId] = &fleetEntry{view: copy, done: make(chan struct{})}
 	}
 	f.nodes = nodes
@@ -345,6 +347,7 @@ func (f *fleetStore) end(entry *fleetEntry) error {
 		copy.Connected, copy.Stale = false, true
 		copy.CommandReady = false
 		copy.WorkspaceReady = false
+		copy.WorktreeReady = false
 		if err := f.save(copy); err != nil {
 			return err
 		}
@@ -366,6 +369,7 @@ func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time, ready ...bool) 
 	copy.LastSeen = timestamppb.New(now)
 	copy.CommandReady = len(ready) > 0 && ready[0] && entry.probes
 	copy.WorkspaceReady = copy.CommandReady && len(ready) > 1 && ready[1] && entry.workspaces && freshHerdr(copy, now)
+	copy.WorktreeReady = copy.WorkspaceReady && len(ready) > 2 && ready[2] && entry.worktrees
 	if err := f.save(copy); err != nil {
 		return err
 	}
@@ -447,6 +451,7 @@ func (f *fleetStore) update(entry *fleetEntry, state *agentflowv1.HerdrState, no
 	copy.HerdrReceivedAt = timestamppb.New(now)
 	if state.Status != "ready" {
 		copy.WorkspaceReady = false
+		copy.WorktreeReady = false
 	}
 	if err := f.save(copy); err != nil {
 		return err
@@ -467,6 +472,7 @@ func (f *fleetStore) list(now time.Time) (*agentflowv1.NodeList, error) {
 		view.Stale = !view.Connected || view.Herdr.Status != "ready" ||
 			view.HerdrReceivedAt == nil || now.Sub(view.HerdrReceivedAt.AsTime()) > herdrStaleAfter
 		view.WorkspaceReady = view.WorkspaceReady && freshHerdr(view, now) && f.current(entry)
+		view.WorktreeReady = view.WorktreeReady && view.WorkspaceReady
 		list.Nodes = append(list.Nodes, view)
 	}
 

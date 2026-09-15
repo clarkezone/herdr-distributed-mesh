@@ -92,9 +92,9 @@ func (s *Store) inspectSchema(ctx context.Context, ownerID string, created bool,
 	if err := s.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&application); err != nil {
 		return 0, err
 	}
-	maxVersion := 3
+	maxVersion := 4
 	if kind == nodeKind {
-		maxVersion = 2
+		maxVersion = 3
 	}
 	if version < 0 || version > maxVersion {
 		return 0, fmt.Errorf("unsupported state schema version %d", version)
@@ -187,20 +187,28 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 		if err != nil {
 			return err
 		}
-		if version == 1 {
-			for _, entry := range entries {
+		for _, entry := range entries {
+			if version == 1 {
 				if err := protocol.ValidateProbeCommand(entry.command, ownerID); err != nil {
 					return fmt.Errorf("invalid legacy node command: %w", err)
 				}
 			}
+			if version > 0 && version < 3 && entry.command.CommandType == protocol.WorktreeCreateCommandType {
+				return errors.New("legacy node journal contains a worktree command")
+			}
 		}
-		// The version fences probe-only binaries without rewriting retained bytes.
+		// Version fences exclude older binaries without rewriting retained bytes.
 		if version < 2 {
-			_, err = tx.ExecContext(ctx, "PRAGMA user_version = 2")
+			if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
+				return err
+			}
+		}
+		if version < 3 {
+			_, err = tx.ExecContext(ctx, "PRAGMA user_version = 3")
 		}
 		return err
 	}
-	if version > 0 && version < 3 {
+	if version > 0 && version < 4 {
 		if err := validateLegacyBindings(ctx, tx); err != nil {
 			return err
 		}
@@ -230,15 +238,24 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 	if err != nil {
 		return err
 	}
-	if version > 0 && version < 3 {
-		for _, record := range records {
+	for _, record := range records {
+		if version > 0 && version < 3 {
 			if err := protocol.ValidateProbeCommand(record.Command, record.Command.TargetId); err != nil {
 				return fmt.Errorf("invalid legacy coordinator command: %w", err)
 			}
 		}
+		if version > 0 && version < 4 && record.Command.CommandType == protocol.WorktreeCreateCommandType {
+			return errors.New("legacy coordinator journal contains a worktree command")
+		}
 	}
 	if version < 3 {
-		_, err = tx.ExecContext(ctx, "PRAGMA user_version = 3")
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
+			return err
+		}
+	}
+	// Fence workspace-only binaries without rewriting retained typed blobs.
+	if version < 4 {
+		_, err = tx.ExecContext(ctx, "PRAGMA user_version = 4")
 	}
 	return err
 }

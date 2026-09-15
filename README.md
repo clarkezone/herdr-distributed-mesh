@@ -191,8 +191,8 @@ This stores **latest observations, not event history**. The existing retention
 policy is unchanged: disconnected observations expire after 15 minutes without
 a heartbeat, even across restarts. Expiry never removes the durable identity
 binding. Admitted command transitions have a separate durable journal, described
-below. Project bindings and mutation-specific execution safety remain subsequent
-work beyond the scoped workspace-ensure operation below.
+below. Project bindings and mutation-specific execution safety currently cover
+only the scoped workspace-ensure and worktree-create operations below.
 
 The dedicated coordinator directory is private to the current user (plus
 SYSTEM on Windows), including database sidecars. Keep it on a local filesystem.
@@ -219,7 +219,7 @@ Remove-Item Env:\HERDR_MESH_TEST_SOCKET
 
 The remaining two-host restart/NIC/sleep/hostname-collision runbook is
 `docs\windows-live-validation.md`. That gate is deferred, not passed, and remains
-required before the two-machine demo. Worktree creation, broader mutations,
+required before the two-machine demo. Broader mutations,
 durable event history, the fuller standalone CLI, and MCP remain later phases.
 
 ## Journaled command-safety probe
@@ -229,9 +229,9 @@ calls Herdr or executes shell commands. This exercises the command delivery and
 recovery path before introducing actual workspace/worktree mutations.
 
 Upgrade the server first, preserving its enrolled state. Coordinator schema 1
-upgrades transactionally through schema 2 to schema 3, preserving bindings,
+upgrades transactionally through schemas 2 and 3 to schema 4, preserving bindings,
 observations, and probe records. The node journal similarly upgrades from schema 1
-to schema 2. Older journal-aware binaries reject these newer schemas; take an
+through schema 2 to schema 3. Older journal-aware binaries reject these newer schemas; take an
 offline backup before upgrading.
 Restart the node with the new binary, its existing hostname/state/socket flags,
 and **`-enable-probes`**. Probes are off by default and do not require Herdr.
@@ -387,7 +387,7 @@ serialized on the node without blocking heartbeats or observer traffic.
 **Uncertainty is not retried.** A timeout, malformed response, or connection loss
 after attempting creation can mean Herdr created the workspace. The command is
 then `INDETERMINATE`; after interrupted intent, restart also remains indeterminate.
-The node durably rejects new workspace keys for that project as
+The node durably rejects new workspace or worktree keys for that project as
 `project_unresolved`, across actors and binding revisions, until explicit future
 reconciliation tooling resolves the ambiguity. Changing keys, resetting the
 journal, or rebinding the same project is not a safe workaround.
@@ -402,6 +402,80 @@ global uniqueness, automatic reconciliation, or an exactly-once Herdr effect.
 Workspace coverage includes fake local IPC with the real node/journals on
 Windows; it does not mutate existing user workspaces or replace the deferred
 two-host disruption validation.
+
+## Project-scoped worktree creation
+
+`ctl create-worktree` creates one new linked Git worktree and its Herdr
+workspace with `focus:false`. It requires a new branch, a new destination
+name, and an **exact full lowercase commit ID** already present in the bound
+repository. It does not fetch, clone, adopt existing destinations, overwrite
+branches, inject commands, or change the source checkout's branch.
+
+This is a separate opt-in: add `"allow_worktrees": true` to the project entry
+in **both** coordinator and node policies. Existing policies leave worktrees
+disabled. The node entry additionally requires a pre-existing absolute
+`"worktree_root": "C:\\dev\\AgentFlow-worktrees"`; the coordinator forbids paths.
+Keep the existing checkout `path` unchanged, advance `binding_revision` on both
+sides, and restart the server before the node using their existing state and
+identity flags. Worktree support requires the negotiated
+`commands.worktree-create.v1` capability.
+
+The output root is directory-identity pinned, cannot be a filesystem root, and
+must not overlap any bound checkout or another output root, including aliases.
+The destination is a direct child of that root. Names and branch names match
+`[a-z0-9][a-z0-9_-]{0,63}`; Windows device names are rejected. Paths, slashes,
+dots, flags, uppercase names, and arbitrary Git revision expressions are not
+accepted. A destination that already exists, even an empty directory or symlink,
+is rejected. An existing branch is rejected even when not checked out.
+
+From an unused enrolled client identity:
+
+```powershell
+.\herdr-mesh.exe ctl create-worktree `
+  -server '<server-magic-dns-name>:50052' `
+  -state-dir '<unused-enrolled-client-state-dir>' `
+  -node '<mesh-node-instance-id>' `
+  -project AgentFlow `
+  -binding-revision r2 `
+  -name task-one `
+  -branch task-one `
+  -base-commit '<full-lowercase-commit-id>' `
+  -idempotency-key create-task-one-1 `
+  -json
+```
+
+The worktree CLI defaults to the maximum 30-second TTL; the other command
+defaults remain 10 seconds. The node checks local Git preconditions, makes one
+Herdr `worktree.create` call, then verifies the returned workspace/path and the
+actual Git HEAD, branch, and common repository identity. Success includes
+`worktree_create` with project, binding revision, workspace ID, name, branch,
+and base commit. Paths, labels, and raw local diagnostics remain private.
+`ctl nodes -json` exposes `worktree_ready`, requiring fresh Herdr observation
+as well as negotiated support. The same actor/revision checks, peer
+reauthorization, serialized node worker, and durable receipts apply.
+
+Repeat an interrupted CLI invocation only with the **same identity, key, target,
+arguments, and TTL**, or inspect it with `ctl command`. Every argument is bound
+to that key. A timeout does not undo or necessarily stop an already-started
+Herdr operation. Missing or inconsistent creation metadata, failed postchecks,
+lost replies, and interrupted execution produce `INDETERMINATE`, with no
+automatic retry, rollback, branch deletion, or directory cleanup. Uncertainty
+quarantines **both workspace and worktree mutations for the project**, including
+new keys and after both journals restart. Reconciliation tooling is still
+pending; do not clear journals or rebind projects to bypass this protection.
+
+Only bind trusted repositories and use a trusted local Git installation.
+Herdr's normal Git hooks, filters, and terminal startup behavior may run; this
+is not a sandbox. External local operations can race the final path/branch
+checks, so do not concurrently replace checkout/root directories or create
+the same target. This does not claim atomic filesystem confinement against
+hostile local processes or exactly-once Herdr execution.
+
+Windows integration coverage uses isolated temporary Git repositories, fake
+local Herdr IPC, the real node runtime, and both SQLite journals. Actual Herdr
+worktree mutation on the live mesh and the deferred two-host disruption gate
+remain unvalidated. Fuller independent CLI functionality comes next; MCP follows
+the CLI rather than being its dependency.
 
 ## Windows tsnet feasibility spike
 

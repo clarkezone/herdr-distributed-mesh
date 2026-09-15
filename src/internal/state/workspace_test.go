@@ -405,7 +405,7 @@ func TestWorkspaceCoordinatorLifecycleRecovery(t *testing.T) {
 	}
 }
 
-func TestWorkspaceProjectQuarantineConcurrentAndRestart(t *testing.T) {
+func TestProjectMutationQuarantineConcurrentAndRestart(t *testing.T) {
 	ctx := context.Background()
 	path := testPath(t)
 	j := openTestNodeJournal(t, path)
@@ -420,8 +420,13 @@ func TestWorkspaceProjectQuarantineConcurrentAndRestart(t *testing.T) {
 	start := make(chan struct{})
 	for i := 1; i <= contenders; i++ {
 		command := workspaceCommand(i, "project1")
+		if i%2 == 0 {
+			command = worktreeCommand(i, "project1")
+			command.WorktreeCreate.BindingRevision = fmt.Sprintf("revision%d", i)
+		} else {
+			command.WorkspaceEnsure.BindingRevision = fmt.Sprintf("revision%d", i)
+		}
 		command.Actor.ActorId = fmt.Sprintf("actor%d", i)
-		command.WorkspaceEnsure.BindingRevision = fmt.Sprintf("revision%d", i)
 		go func() {
 			<-start
 			result, claimed, err := j.Claim(ctx, command)
@@ -601,7 +606,7 @@ func TestWorkspaceSchemaMigrationPreservesProbeBytes(t *testing.T) {
 	requireOK(t, j.Close())
 	s = openTestStore(t, coordinatorPath)
 	j = openTestNodeJournal(t, nodePath)
-	if rowCount(t, s, "PRAGMA user_version") != 3 || rowCount(t, j.store, "PRAGMA user_version") != 2 {
+	if rowCount(t, s, "PRAGMA user_version") != 4 || rowCount(t, j.store, "PRAGMA user_version") != 3 {
 		t.Fatal("workspace migration did not fence old binaries")
 	}
 	var gotCoordinator, gotFleet, gotCommand, gotResult []byte

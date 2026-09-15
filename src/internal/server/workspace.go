@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"time"
+
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 )
 
-func (s *service) refreshWorkspaceAuthorization(entry *fleetEntry, queued queuedCommand) bool {
+func (s *service) refreshMutationAuthorization(entry *fleetEntry, queued queuedCommand) bool {
 	s.fleet.mu.Lock()
 	current := s.fleet.current(entry)
 	nodeID, stableID, nodeContext := entry.view.InstanceId, entry.view.TailscaleStableId, entry.peerContext
@@ -25,7 +27,21 @@ func (s *service) refreshWorkspaceAuthorization(entry *fleetEntry, queued queued
 	if err != nil || node.StableID != stableID {
 		return false
 	}
-	request := queued.command.WorkspaceEnsure
-	_, err = s.workspacePolicy.Resolve(nodeID, request.ProjectId, request.BindingRevision, actor.StableID)
-	return err == nil
+	projectID, revision := protocol.CommandProject(queued.command)
+	binding, err := s.workspacePolicy.Resolve(nodeID, projectID, revision, actor.StableID)
+	return err == nil && (queued.command.CommandType != protocol.WorktreeCreateCommandType || binding.AllowWorktrees)
+}
+
+func mutationReady(entry *fleetEntry, commandType string, now time.Time) bool {
+	if !entry.workspaces || !entry.view.WorkspaceReady || !freshHerdr(entry.view, now) {
+		return false
+	}
+	switch commandType {
+	case protocol.WorkspaceEnsureCommandType:
+		return true
+	case protocol.WorktreeCreateCommandType:
+		return entry.worktrees && entry.view.WorktreeReady
+	default:
+		return false
+	}
 }

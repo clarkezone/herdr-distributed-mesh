@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
@@ -132,7 +133,7 @@ func interruptedNodeResult(id string) *pb.CommandResult {
 // Claim returns nil,true only after committing the execution intent. An existing
 // RUNNING intent is durably marked indeterminate, never granted to an executor.
 // Remaining wire TTL is not identity; the fixed absolute expiry is.
-// New workspace commands are rejected while any retained operation for their
+// New project mutations are rejected while any retained mutation for their
 // project is running or indeterminate, including acknowledged uncertainty.
 func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.CommandResult, bool, error) {
 	if err := j.store.enter(ctx); err != nil {
@@ -171,14 +172,14 @@ func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.Comma
 		if err != nil {
 			return err
 		}
-		if command.CommandType == protocol.WorkspaceEnsureCommandType {
+		if projectID, _ := protocol.CommandProject(command); projectID != "" {
 			entries, err := readNodeEntries(ctx, tx, j.nodeID, "WHERE status IN (?, ?)", []any{statusRunning, statusIndeterminate})
 			if err != nil {
 				return err
 			}
 			for _, prior := range entries {
-				if prior.command.CommandType != protocol.WorkspaceEnsureCommandType ||
-					prior.command.WorkspaceEnsure.ProjectId != command.WorkspaceEnsure.ProjectId {
+				priorProjectID, _ := protocol.CommandProject(prior.command)
+				if priorProjectID != projectID {
 					continue
 				}
 				result = &pb.CommandResult{CommandId: command.CommandId, Status: statusRejected, Detail: "project_unresolved"}
@@ -218,7 +219,7 @@ func (j *NodeJournal) Complete(ctx context.Context, result *pb.CommandResult) er
 			return err
 		}
 		if err := protocol.ValidateResultForCommand(result, entry.command); err != nil {
-			return err
+			return fmt.Errorf("%w: %v", ErrCommandConflict, err)
 		}
 		if entry.result != nil {
 			if !proto.Equal(entry.result, result) {

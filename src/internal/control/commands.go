@@ -126,6 +126,13 @@ func writeCommand(options Options, record *agentflowv1.CommandRecord) error {
 	if workspace := record.WorkspaceEnsure; workspace != nil {
 		_, err = fmt.Fprintf(options.Output, "project=%s binding_revision=%s workspace=%s created=%t\n",
 			workspace.ProjectId, workspace.BindingRevision, workspace.WorkspaceId, workspace.Created)
+		if err != nil {
+			return err
+		}
+	}
+	if worktree := record.WorktreeCreate; worktree != nil {
+		_, err = fmt.Fprintf(options.Output, "project=%s binding_revision=%s workspace=%s name=%s branch=%s base_commit=%s\n",
+			worktree.ProjectId, worktree.BindingRevision, worktree.WorkspaceId, worktree.Name, worktree.Branch, worktree.BaseCommit)
 	}
 	return err
 }

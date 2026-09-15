@@ -65,7 +65,7 @@ func openJournal(ctx context.Context, options Options) (*state.NodeJournal, erro
 // RunSession runs one session using an already authenticated client. Callers must
 // authorize the actual peer on every dial (production uses DialGRPCWithPeerTag).
 // It owns, recovers, and closes the requested journal for this session.
-// Workspace effects additionally require Options.VerifyServerPeer;
+// Workspace and worktree effects additionally require Options.VerifyServerPeer;
 // without one they fail closed. Run installs the production WhoIs verifier.
 func RunSession(ctx context.Context, client pb.NodeControlClient, options Options) (registered bool, err error) {
 	journal, err := openJournal(ctx, options)
@@ -91,12 +91,15 @@ type commandHandler struct {
 	ephemeralMu         sync.Mutex
 	workspacePolicy     *projects.Policy
 	workspaceNegotiated bool
+	worktreeNegotiated  bool
 	herdrConfig         herdr.Config
 	ensureWorkspace     workspaceExecutor
+	createWorktree      worktreeExecutor
 	verifyCoordinator   func(context.Context) error
 }
 
 type workspaceExecutor func(context.Context, herdr.Config, projects.Binding) (*pb.WorkspaceEnsureResult, error)
+type worktreeExecutor func(context.Context, herdr.Config, projects.Binding, *pb.WorktreeCreate) (*pb.WorktreeCreateResult, error)
 
 func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receivedAt time.Time) (*pb.CommandResult, error) {
 	if err := protocol.ValidateCommand(command, h.nodeID); err != nil {
@@ -104,6 +107,9 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	}
 	if command.CommandType == protocol.WorkspaceEnsureCommandType && !h.workspaceNegotiated {
 		return nil, status.Error(codes.FailedPrecondition, "workspace capability was not negotiated")
+	}
+	if command.CommandType == protocol.WorktreeCreateCommandType && !h.worktreeNegotiated {
+		return nil, status.Error(codes.FailedPrecondition, "worktree capability was not negotiated")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -155,8 +161,8 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	now := time.Now()
 	if !now.Before(command.ExpiresAt.AsTime()) || !now.Before(receivedAt.Add(command.Ttl.AsDuration())) {
 		result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_TIMED_OUT, "deadline_expired"
-	} else if command.CommandType == protocol.WorkspaceEnsureCommandType {
-		result = h.workspace(ctx, command, receivedAt)
+	} else if command.CommandType == protocol.WorkspaceEnsureCommandType || command.CommandType == protocol.WorktreeCreateCommandType {
+		result = h.mutation(ctx, command, receivedAt)
 		// Cancellation can race a remote mutation. Leave the durable intent for
 		// recovery rather than commit a potentially misleading executor result.
 		if err := ctx.Err(); err != nil {
@@ -179,14 +185,17 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	return result, nil
 }
 
-func (h *commandHandler) workspace(ctx context.Context, command *pb.Command, receivedAt time.Time) *pb.CommandResult {
+func (h *commandHandler) mutation(ctx context.Context, command *pb.Command, receivedAt time.Time) *pb.CommandResult {
 	result := &pb.CommandResult{CommandId: command.CommandId, Status: pb.CommandStatus_COMMAND_STATUS_REJECTED, Detail: "project_not_authorized"}
 	if h.workspacePolicy == nil {
 		return result
 	}
-	request := command.WorkspaceEnsure
-	binding, err := h.workspacePolicy.Resolve(h.nodeID, request.ProjectId, request.BindingRevision, command.Actor.ActorId)
+	projectID, revision := protocol.CommandProject(command)
+	binding, err := h.workspacePolicy.Resolve(h.nodeID, projectID, revision, command.Actor.ActorId)
 	if err != nil {
+		return result
+	}
+	if command.CommandType == protocol.WorktreeCreateCommandType && !binding.AllowWorktrees {
 		return result
 	}
 	deadline := command.ExpiresAt.AsTime()
@@ -215,20 +224,37 @@ func (h *commandHandler) workspace(ctx context.Context, command *pb.Command, rec
 		result.Detail = "precondition_failed"
 		return result
 	}
-	execute := h.ensureWorkspace
-	if execute == nil {
-		execute = herdr.EnsureWorkspace
-	}
-	value, err := execute(effect, h.herdrConfig, binding)
-	switch {
-	case err == nil:
-		result.Status, result.Detail, result.WorkspaceEnsure = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, "workspace_present", value
-		if value.GetCreated() {
-			result.Detail = "workspace_created"
+	if command.CommandType == protocol.WorktreeCreateCommandType {
+		execute := h.createWorktree
+		if execute == nil {
+			execute = herdr.CreateWorktree
 		}
+		value, effectErr := execute(effect, h.herdrConfig, binding, proto.Clone(command.WorktreeCreate).(*pb.WorktreeCreate))
+		err = effectErr
+		if err == nil {
+			result.Status, result.Detail, result.WorktreeCreate = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, "worktree_created", value
+		}
+	} else {
+		execute := h.ensureWorkspace
+		if execute == nil {
+			execute = herdr.EnsureWorkspace
+		}
+		value, effectErr := execute(effect, h.herdrConfig, binding)
+		err = effectErr
+		if err == nil {
+			result.Status, result.Detail, result.WorkspaceEnsure = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, "workspace_present", value
+			if value.GetCreated() {
+				result.Detail = "workspace_created"
+			}
+		}
+	}
+	if err == nil {
+		return result
+	}
+	switch {
 	case errors.Is(err, herdr.ErrWorkspacePrecondition):
 		result.Detail = "precondition_failed"
-	case errors.Is(err, herdr.ErrWorkspaceAmbiguous):
+	case command.CommandType == protocol.WorkspaceEnsureCommandType && errors.Is(err, herdr.ErrWorkspaceAmbiguous):
 		result.Detail = "ambiguous_workspace"
 	case errors.Is(err, herdr.ErrWorkspaceUnavailable):
 		result.Detail = "herdr_unavailable"

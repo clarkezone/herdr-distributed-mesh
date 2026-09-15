@@ -34,11 +34,12 @@ type Options struct {
 	ReconnectMaximum   time.Duration
 	ServerAddress      string
 	Transport          transport.Config
-	// WorkspacePolicy opts into local workspace mutations. It requires a journal,
+	// WorkspacePolicy opts into local workspace mutations and per-binding
+	// allow_worktrees opts into worktree creation. It requires a journal,
 	// explicit Herdr socket, and expected server tag; nil permits replay only.
 	WorkspacePolicy *projects.Policy
 	// VerifyServerPeer refreshes authorization of the actual stream peer before
-	// workspace effects in RunSession. A nil verifier fails closed. Run always
+	// workspace/worktree effects in RunSession. A nil verifier fails closed. Run always
 	// overrides this callback with its production WhoIs and required-tag check.
 	VerifyServerPeer func(context.Context, string) error
 }
@@ -144,6 +145,10 @@ func runSessionWithJournal(ctx context.Context, client agentflowv1.NodeControlCl
 }
 
 func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlClient, options Options, journal commandJournal, execute func(), ensure workspaceExecutor) (registered bool, sessionErr error) {
+	return runSessionWithMutationExecutors(ctx, client, options, journal, execute, ensure, nil)
+}
+
+func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.NodeControlClient, options Options, journal commandJournal, execute func(), ensure workspaceExecutor, create worktreeExecutor) (registered bool, sessionErr error) {
 	sessionContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// Run retains its journal across reconnects. The previous session joins its
@@ -175,6 +180,9 @@ func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlC
 		advertised = append(advertised, protocol.ProbeCapability)
 		if options.WorkspacePolicy != nil && options.HerdrSocket != "" {
 			advertised = append(advertised, protocol.WorkspaceEnsureCapability)
+			if options.WorkspacePolicy.HasWorktrees() {
+				advertised = append(advertised, protocol.WorktreeCreateCapability)
+			}
 		}
 	}
 	if err := send(&agentflowv1.NodeEnvelope{
@@ -211,15 +219,20 @@ func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlC
 	// Keep terminal replay available when a policy is removed. New claims still
 	// require the local policy before any effect.
 	workspaceNegotiated := journal != nil && slices.Contains(ack.Capabilities, protocol.WorkspaceEnsureCapability)
+	worktreeNegotiated := journal != nil && slices.Contains(ack.Capabilities, protocol.WorktreeCreateCapability)
 	if options.WorkspacePolicy != nil && !workspaceNegotiated {
 		return false, status.Error(codes.FailedPrecondition, "server does not support workspace ensure; upgrade server first")
 	}
+	if options.WorkspacePolicy != nil && options.WorkspacePolicy.HasWorktrees() && !worktreeNegotiated {
+		return false, status.Error(codes.FailedPrecondition, "server does not support worktree create; upgrade server first")
+	}
 	handler := &commandHandler{journal: journal, nodeID: options.InstanceID, execute: execute,
 		workspacePolicy: options.WorkspacePolicy, workspaceNegotiated: workspaceNegotiated,
+		worktreeNegotiated: worktreeNegotiated, createWorktree: create,
 		herdrConfig: herdr.Config{SocketPath: options.HerdrSocket}, ensureWorkspace: ensure,
 		verifyCoordinator: streamPeerVerifier(stream.Context(), options.VerifyServerPeer)}
 	var pending []*agentflowv1.CommandResult
-	if commandReady || workspaceNegotiated {
+	if commandReady || workspaceNegotiated || worktreeNegotiated {
 		operation, stop := context.WithTimeout(sessionContext, journalOperationTimeout)
 		pending, err = journal.PendingResults(operation)
 		stop()
@@ -334,11 +347,13 @@ func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlC
 	var localState *agentflowv1.HerdrState
 	sendHeartbeat := func(timestamp time.Time) error {
 		sequence++
+		workspaceReady, worktreeReady := handler.mutationReadiness(localState, time.Now(), commandReady)
 		return send(&agentflowv1.NodeEnvelope{
 			Body: &agentflowv1.NodeEnvelope_Heartbeat{
 				Heartbeat: &agentflowv1.Heartbeat{
 					Sequence: sequence, SentAt: timestamppb.New(timestamp), CommandReady: commandReady,
-					WorkspaceReady: workspaceNegotiated && options.WorkspacePolicy != nil && workspaceBaselineReady(localState, time.Now()),
+					WorkspaceReady: workspaceReady,
+					WorktreeReady:  worktreeReady,
 				},
 			},
 		})
@@ -360,7 +375,7 @@ func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlC
 		if envelope.GetCommand() == nil && envelope.GetCommandAck() == nil {
 			return nil
 		}
-		if !commandReady && !workspaceNegotiated {
+		if !commandReady && !workspaceNegotiated && !worktreeNegotiated {
 			return status.Error(codes.FailedPrecondition, "server sent command traffic without negotiated readiness")
 		}
 		if len(envelope.ProtoReflect().GetUnknown()) != 0 {
@@ -371,7 +386,8 @@ func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlC
 				return status.Errorf(codes.InvalidArgument, "invalid command: %v", err)
 			}
 			if (command.CommandType == protocol.ProbeCommandType && !commandReady) ||
-				(command.CommandType == protocol.WorkspaceEnsureCommandType && !workspaceNegotiated) {
+				(command.CommandType == protocol.WorkspaceEnsureCommandType && !workspaceNegotiated) ||
+				(command.CommandType == protocol.WorktreeCreateCommandType && !worktreeNegotiated) {
 				return status.Error(codes.FailedPrecondition, "command capability was not negotiated")
 			}
 			select {
@@ -446,6 +462,12 @@ func runSessionWithExecutor(ctx context.Context, client agentflowv1.NodeControlC
 			}
 		}
 	}
+}
+
+func (h *commandHandler) mutationReadiness(state *agentflowv1.HerdrState, now time.Time, commandReady bool) (workspace, worktree bool) {
+	workspace = h.workspaceNegotiated && h.workspacePolicy != nil && workspaceBaselineReady(state, now)
+	worktree = h.worktreeNegotiated && commandReady && workspace && h.workspacePolicy.HasWorktrees()
+	return workspace, worktree
 }
 
 func workspaceBaselineReady(state *agentflowv1.HerdrState, now time.Time) bool {

@@ -18,7 +18,7 @@ func ValidateWorkspaceEnsure(request *pb.WorkspaceEnsure) error {
 }
 
 func ValidateWorkspaceResult(result *pb.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorktreeCreate != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid workspace result")
 	}
 	if result.Status == pb.CommandStatus_COMMAND_STATUS_SUCCEEDED {
@@ -57,7 +57,10 @@ func ValidateCommandResult(result *pb.CommandResult) error {
 	if ValidateProbeResult(result) == nil {
 		return nil
 	}
-	return ValidateWorkspaceResult(result)
+	if ValidateWorkspaceResult(result) == nil {
+		return nil
+	}
+	return ValidateWorktreeResult(result)
 }
 
 func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) error {
@@ -75,6 +78,18 @@ func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) err
 			result.WorkspaceEnsure.ProjectId != command.WorkspaceEnsure.ProjectId ||
 			result.WorkspaceEnsure.BindingRevision != command.WorkspaceEnsure.BindingRevision) {
 			return errors.New("workspace result binding mismatch")
+		}
+		return nil
+	case WorktreeCreateCommandType:
+		if err := ValidateWorktreeResult(result); err != nil {
+			return err
+		}
+		if value := result.WorktreeCreate; value != nil {
+			want := command.WorktreeCreate
+			if want == nil || value.ProjectId != want.ProjectId || value.BindingRevision != want.BindingRevision ||
+				value.Name != want.Name || value.Branch != want.Branch || value.BaseCommit != want.BaseCommit {
+				return errors.New("worktree result does not match original request")
+			}
 		}
 		return nil
 	default:

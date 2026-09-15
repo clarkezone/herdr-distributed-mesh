@@ -211,6 +211,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	service.fleet.mu.Lock()
 	entry.probes = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProbeCapability)
 	entry.workspaces = entry.probes && herdrEnabled && service.workspacePolicy != nil && slices.Contains(hello.Capabilities, protocol.WorkspaceEnsureCapability)
+	entry.worktrees = entry.workspaces && service.workspacePolicy.HasWorktrees() && slices.Contains(hello.Capabilities, protocol.WorktreeCreateCapability)
 	service.fleet.mu.Unlock()
 	if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
@@ -327,7 +328,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			heartbeatSequence = heartbeat.Sequence
 			heartbeatDeadline = time.Now().Add(heartbeatTimeout)
 			heartbeatTimer.Reset(heartbeatTimeout)
-			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady); err != nil {
+			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady, heartbeat.WorktreeReady); err != nil {
 				return err
 			}
 			log.Printf(
@@ -428,6 +429,9 @@ func (service *service) capabilities() []string {
 		values = append(values, protocol.ProbeCapability)
 		if service.workspacePolicy != nil {
 			values = append(values, protocol.WorkspaceEnsureCapability)
+			if service.workspacePolicy.HasWorktrees() {
+				values = append(values, protocol.WorktreeCreateCapability)
+			}
 		}
 	}
 	return values

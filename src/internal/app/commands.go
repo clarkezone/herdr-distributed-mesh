@@ -6,6 +6,7 @@ import (
 	"flag"
 	"time"
 
+	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/control"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 )
@@ -19,18 +20,27 @@ func runCommandQuery(ctx context.Context, command string, args []string, streams
 	jsonOutput := flags.Bool("json", false, "write machine-readable command record")
 	timeout := flags.Duration("timeout", 60*time.Second, "overall connection and operation timeout")
 	var nodeID, key, id, projectID, revision string
+	var name, branch, baseCommit string
 	ttl := protocol.DefaultCommandTTL
-	submit := command == "ping" || command == "ensure-workspace"
+	if command == "create-worktree" {
+		ttl = protocol.MaxCommandTTL
+	}
+	submit := command == "ping" || command == "ensure-workspace" || command == "create-worktree"
 	if submit {
 		flags.StringVar(&nodeID, "node", "", "target mesh node instance ID")
 		flags.StringVar(&key, "idempotency-key", "", "actor-scoped request key (not an enrollment secret); reuse it for the same operation")
 		flags.DurationVar(&ttl, "ttl", ttl, "execution deadline after admission; at most 30s")
-		if command == "ensure-workspace" {
+		if command == "ensure-workspace" || command == "create-worktree" {
 			flags.StringVar(&projectID, "project", "", "stable configured project ID, never a checkout path")
 			flags.StringVar(&revision, "binding-revision", "", "expected local/coordinator project binding revision")
 		}
+		if command == "create-worktree" {
+			flags.StringVar(&name, "name", "", "portable lowercase destination name within the node's configured worktree root")
+			flags.StringVar(&branch, "branch", "", "new portable lowercase single-component Git branch")
+			flags.StringVar(&baseCommit, "base-commit", "", "full lowercase base commit ID; refs and HEAD are not accepted")
+		}
 	} else {
-		flags.StringVar(&id, "id", "", "command ID returned by a previous ping")
+		flags.StringVar(&id, "id", "", "command ID returned by a previous operation")
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -57,8 +67,11 @@ func runCommandQuery(ctx context.Context, command string, args []string, streams
 		if key == "" {
 			key = protocol.NewCommandID()
 		}
-		if command == "ensure-workspace" && (projectID == "" || revision == "") {
+		if (command == "ensure-workspace" || command == "create-worktree") && (projectID == "" || revision == "") {
 			return errors.New("-project and -binding-revision are required")
+		}
+		if command == "create-worktree" && (name == "" || branch == "" || baseCommit == "") {
+			return errors.New("-name, -branch and -base-commit are required")
 		}
 	} else if !protocol.ValidCommandID(id) {
 		return errors.New("-id requires a valid command ID")
@@ -71,6 +84,11 @@ func runCommandQuery(ctx context.Context, command string, args []string, streams
 	}
 	if command == "ensure-workspace" {
 		return control.EnsureWorkspace(op, options, nodeID, key, projectID, revision, ttl)
+	}
+	if command == "create-worktree" {
+		return control.CreateWorktree(op, options, nodeID, key, &pb.WorktreeCreate{
+			ProjectId: projectID, BindingRevision: revision, Name: name, Branch: branch, BaseCommit: baseCommit,
+		}, ttl)
 	}
 	return control.CommandStatus(op, options, id)
 }

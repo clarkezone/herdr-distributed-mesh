@@ -31,13 +31,16 @@ var (
 // Binding is a locally authorized checkout. Path is canonical for node policies
 // and empty for coordinator policies. Only Load can mint a path-valid binding.
 type Binding struct {
-	ProjectID string
-	NodeID    string
-	Revision  string
-	Path      string
+	ProjectID      string
+	NodeID         string
+	Revision       string
+	Path           string
+	AllowWorktrees bool
+	WorktreeRoot   string
 
-	actors map[string]struct{}
-	pin    *pathPin
+	actors      map[string]struct{}
+	pin         *pathPin
+	worktreePin *pathPin
 }
 
 type pathPin struct {
@@ -57,6 +60,10 @@ type Policy struct {
 // belong to that node and pin an existing local Git checkout. IDs use 1..128
 // ASCII letters, digits, colons, underscores, or hyphens; actor lists have
 // 1..128 distinct entries. Files are limited to 64 KiB and 128 bindings.
+// allow_worktrees defaults to false on both policy types. Opted-in node bindings
+// require a preexisting, pinned worktree_root disjoint from every checkout and
+// other worktree root. Nonempty roots without opt-in and all coordinator roots
+// are forbidden; worktree destinations are never created during policy loading.
 func Load(path string, nodeID string) (*Policy, error) {
 	if nodeID != "" && !tokenPattern.MatchString(nodeID) {
 		return nil, ErrInvalidPolicy
@@ -97,7 +104,7 @@ func Load(path string, nodeID string) (*Policy, error) {
 	for _, entry := range entries {
 		for key := range entry {
 			switch key {
-			case "project_id", "node_id", "binding_revision", "actor_ids", "path":
+			case "project_id", "node_id", "binding_revision", "actor_ids", "path", "allow_worktrees", "worktree_root":
 			default:
 				return nil, ErrInvalidPolicy
 			}
@@ -127,6 +134,19 @@ func Load(path string, nodeID string) (*Policy, error) {
 		if raw, ok := entry["path"]; ok && readString(raw, &b.Path) != nil {
 			return nil, ErrInvalidPolicy
 		}
+		if raw, ok := entry["allow_worktrees"]; ok {
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &b.AllowWorktrees) != nil {
+				return nil, ErrInvalidPolicy
+			}
+		}
+		if raw, ok := entry["worktree_root"]; ok {
+			if nodeID == "" || readString(raw, &b.WorktreeRoot) != nil {
+				return nil, ErrInvalidPolicy
+			}
+		}
+		if !b.AllowWorktrees && b.WorktreeRoot != "" {
+			return nil, ErrInvalidPolicy
+		}
 		if nodeID == "" {
 			if b.Path != "" {
 				return nil, ErrInvalidPolicy
@@ -150,12 +170,27 @@ func Load(path string, nodeID string) (*Policy, error) {
 			if b.ValidatePath() != nil {
 				return nil, ErrInvalidPath
 			}
+			if b.AllowWorktrees {
+				source := b.WorktreeRoot
+				canonical, info, err := directory(source)
+				if err != nil || filepath.Dir(canonical) == canonical {
+					return nil, ErrInvalidPath
+				}
+				b.WorktreeRoot = canonical
+				b.worktreePin = &pathPin{source, canonical, b.ProjectID, b.NodeID, b.Revision, info}
+				if b.ValidateWorktreeRoot() != nil {
+					return nil, ErrInvalidPath
+				}
+			}
 		}
 		key := bindingKey{b.NodeID, b.ProjectID}
 		if _, duplicate := p.bindings[key]; duplicate {
 			return nil, ErrInvalidPolicy
 		}
 		p.bindings[key] = b
+	}
+	if nodeID != "" && p.validateWorktreeOverlaps() != nil {
+		return nil, ErrInvalidPolicy
 	}
 	return p, nil
 }
@@ -194,6 +229,18 @@ func (b Binding) ValidatePath() error {
 }
 
 func checkout(path string) (string, os.FileInfo, error) {
+	canonical, info, err := directory(path)
+	if err != nil {
+		return "", nil, ErrInvalidPath
+	}
+	marker, err := os.Stat(filepath.Join(canonical, ".git"))
+	if err != nil || (!marker.IsDir() && !marker.Mode().IsRegular()) {
+		return "", nil, ErrInvalidPath
+	}
+	return canonical, info, nil
+}
+
+func directory(path string) (string, os.FileInfo, error) {
 	if !validLocalPath(path) {
 		return "", nil, ErrInvalidPath
 	}
@@ -211,10 +258,6 @@ func checkout(path string) (string, os.FileInfo, error) {
 	info, statErr := file.Stat()
 	closeErr := file.Close()
 	if statErr != nil || closeErr != nil || !info.IsDir() {
-		return "", nil, ErrInvalidPath
-	}
-	marker, err := os.Stat(filepath.Join(canonical, ".git"))
-	if err != nil || (!marker.IsDir() && !marker.Mode().IsRegular()) {
 		return "", nil, ErrInvalidPath
 	}
 	return canonical, info, nil

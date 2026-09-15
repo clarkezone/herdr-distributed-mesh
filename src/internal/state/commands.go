@@ -75,6 +75,10 @@ func validateCommand(command *pb.Command, target string) error {
 	return protocol.ValidateCommand(command, target)
 }
 
+func projectMutation(commandType string) bool {
+	return commandType == protocol.WorkspaceEnsureCommandType || commandType == protocol.WorktreeCreateCommandType
+}
+
 func validCommandOutcome(commandType string, status pb.CommandStatus, detail string) bool {
 	switch status {
 	case statusAccepted:
@@ -82,6 +86,9 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusRunning:
 		return detail == "dispatched"
 	case statusSucceeded:
+		if commandType == protocol.WorktreeCreateCommandType {
+			return detail == "worktree_created"
+		}
 		if commandType == protocol.WorkspaceEnsureCommandType {
 			return detail == "workspace_created" || detail == "workspace_present"
 		}
@@ -89,7 +96,7 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusTimedOut:
 		return detail == "deadline_expired"
 	case statusRejected:
-		if commandType == protocol.WorkspaceEnsureCommandType {
+		if projectMutation(commandType) {
 			switch detail {
 			case "journal_full", "project_unresolved", "project_not_authorized", "precondition_failed",
 				"ambiguous_workspace", "herdr_unavailable", "authorization_changed":
@@ -101,7 +108,7 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusIndeterminate:
 		return detail == "node_restarted" || detail == "server_restarted" ||
 			detail == "node_disconnected" || detail == "deadline_expired" ||
-			(commandType == protocol.WorkspaceEnsureCommandType && detail == "herdr_outcome_unknown")
+			(projectMutation(commandType) && detail == "herdr_outcome_unknown")
 	case statusUnavailable:
 		return detail == "node_disconnected" || detail == "server_restarted"
 	}
@@ -112,7 +119,7 @@ func validCommandTransition(commandType string, from, to pb.CommandStatus, detai
 	switch from {
 	case statusAccepted:
 		return to == statusRunning || to == statusTimedOut || to == statusUnavailable ||
-			(commandType == protocol.WorkspaceEnsureCommandType && to == statusRejected && detail == "authorization_changed")
+			(projectMutation(commandType) && to == statusRejected && detail == "authorization_changed")
 	case statusRunning:
 		return to == statusSucceeded || to == statusTimedOut || to == statusRejected || to == statusIndeterminate
 	case statusIndeterminate:
@@ -132,8 +139,8 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 		if err := protocol.ValidateResultForCommand(recordResult(record), record.Command); err != nil {
 			return err
 		}
-	} else if record.WorkspaceEnsure != nil {
-		return errors.New("stored unsuccessful command contains workspace success data")
+	} else if record.WorkspaceEnsure != nil || record.WorktreeCreate != nil {
+		return errors.New("stored unsuccessful command contains mutation success data")
 	}
 	if record.CreatedAt == nil || record.CreatedAt.CheckValid() != nil ||
 		record.UpdatedAt == nil || record.UpdatedAt.CheckValid() != nil ||
@@ -172,6 +179,7 @@ func recordResult(record *pb.CommandRecord) *pb.CommandResult {
 	return &pb.CommandResult{
 		CommandId: record.Command.CommandId, Status: record.Status, Detail: record.Detail,
 		WorkspaceEnsure: record.WorkspaceEnsure,
+		WorktreeCreate:  record.WorktreeCreate,
 	}
 }
 
@@ -371,7 +379,7 @@ func transitionCommand(ctx context.Context, tx *sql.Tx, record *pb.CommandRecord
 	return err
 }
 
-// RejectCommand revokes only accepted workspace admissions before dispatch.
+// RejectCommand revokes only accepted project mutation admissions before dispatch.
 // Already changed records are returned without rewriting their outcome or audit.
 func (s *Store) RejectCommand(ctx context.Context, nodeID, commandID, detail string, now time.Time) (*pb.CommandRecord, error) {
 	if err := s.enter(ctx); err != nil {
@@ -393,7 +401,7 @@ func (s *Store) RejectCommand(ctx context.Context, nodeID, commandID, detail str
 		if record.Command.TargetId != nodeID {
 			return ErrIdentityConflict
 		}
-		if record.Command.CommandType != protocol.WorkspaceEnsureCommandType {
+		if !projectMutation(record.Command.CommandType) {
 			return ErrCommandConflict
 		}
 		if record.Status != statusAccepted {
@@ -478,7 +486,7 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 			return err
 		}
 		if err := protocol.ValidateResultForCommand(result, record.Command); err != nil {
-			return err
+			return fmt.Errorf("%w: %v", ErrCommandConflict, err)
 		}
 		if result.Status == statusIndeterminate && protocol.IsTerminalCommand(record.Status) {
 			return nil
@@ -491,6 +499,9 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		}
 		if result.WorkspaceEnsure != nil {
 			record.WorkspaceEnsure = proto.Clone(result.WorkspaceEnsure).(*pb.WorkspaceEnsureResult)
+		}
+		if result.WorktreeCreate != nil {
+			record.WorktreeCreate = proto.Clone(result.WorktreeCreate).(*pb.WorktreeCreateResult)
 		}
 		return transitionCommand(ctx, tx, record, result.Status, result.Detail, now)
 	})

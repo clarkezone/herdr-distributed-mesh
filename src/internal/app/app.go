@@ -72,7 +72,7 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 	requiredClientTag := flags.String("required-client-tag", "tag:herdr-mesh-client", "Tailscale tag required for fleet read requests")
 	requiredCommandTag := flags.String("required-command-tag", "tag:herdr-mesh-client", "Tailscale tag required for command admission and history; workspace mutations also require project policy")
 	requiredNodeTag := flags.String("required-node-tag", "tag:herdr-mesh-node", "Tailscale tag required for node streams")
-	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in project/actor allowlist for workspace ensure; no local checkout paths")
+	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in project/actor allowlist for workspace and worktree operations; no local paths")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
 	herdrSocket := flags.String("herdr-socket", "", "local Herdr socket marker path; read-only unless workspace policy enables mutations")
 	enableProbes := flags.Bool("enable-probes", false, "opt in to durably journaled read-only node ping commands; no Herdr mutations")
-	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in local project checkout/actor bindings for workspace ensure")
+	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in local project checkout/actor bindings and optional worktree roots")
 	requiredServerTag := flags.String("required-server-tag", "tag:herdr-mesh-server", "Tailscale tag required on the coordinator when commands are enabled")
 	reconnectDelay := flags.Duration("reconnect-delay", 2*time.Second, "delay before reopening a failed stream")
 	reconnectMaximum := flags.Duration("reconnect-max-delay", time.Minute, "maximum delay before reopening a failed stream")
@@ -173,14 +173,14 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 
 func runControl(ctx context.Context, args []string, streams IO) error {
 	if len(args) == 0 {
-		return errors.New("ctl requires a command; currently supported: server-info, nodes, ping, ensure-workspace, command")
+		return errors.New("ctl requires a command; currently supported: server-info, nodes, ping, ensure-workspace, create-worktree, command")
 	}
 	switch args[0] {
 	case "server-info":
 		return runFleetQuery(ctx, args[1:], streams, false, false)
 	case "nodes":
 		return runFleetQuery(ctx, args[1:], streams, false, true)
-	case "ping", "ensure-workspace", "command":
+	case "ping", "ensure-workspace", "create-worktree", "command":
 		return runCommandQuery(ctx, args[0], args[1:], streams)
 	default:
 		return fmt.Errorf("unknown ctl command %q", args[0])
@@ -300,6 +300,7 @@ Usage:
   herdr-mesh ctl nodes -server <host:port> [-json] [flags]
   herdr-mesh ctl ping -server <host:port> -node <instance-id> [-idempotency-key <retry-key>] [flags]
   herdr-mesh ctl ensure-workspace -server <host:port> -node <instance-id> -project <id> -binding-revision <revision> [flags]
+  herdr-mesh ctl create-worktree -server <host:port> -node <instance-id> -project <id> -binding-revision <revision> -name <name> -branch <branch> -base-commit <sha> [flags]
   herdr-mesh ctl command -server <host:port> -id <command-id> [flags]
   herdr-mesh doctor -server <host:port> [flags]
   herdr-mesh dashboard -server <host:port> [-listen 127.0.0.1:8787] [flags]

@@ -37,8 +37,15 @@ type fakeWorkspaceHerdr struct {
 
 func newFakeWorkspaceHerdr(t *testing.T, checkout string, drop, omit bool) *fakeWorkspaceHerdr {
 	t.Helper()
-	fake := &fakeWorkspaceHerdr{path: `\\.\pipe\herdr-mesh-ensure-test-` + protocol.NewCommandID(), checkout: checkout, dropReply: drop, omitMetadata: omit}
-	listener, err := winio.ListenPipe(fake.path, nil)
+	fake := &fakeWorkspaceHerdr{checkout: checkout, dropReply: drop, omitMetadata: omit}
+	fake.path = listenFakeHerdr(t, fake.serve)
+	return fake
+}
+
+func listenFakeHerdr(t *testing.T, serve func(*testing.T, net.Conn)) string {
+	t.Helper()
+	path := `\\.\pipe\herdr-mesh-mutation-test-` + protocol.NewCommandID()
+	listener, err := winio.ListenPipe(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +66,12 @@ func newFakeWorkspaceHerdr(t *testing.T, checkout string, drop, omit bool) *fake
 				stop := context.AfterFunc(ctx, func() { conn.Close() })
 				defer stop()
 				conn.SetDeadline(time.Now().Add(15 * time.Second))
-				fake.serve(t, conn)
+				serve(t, conn)
 			}(connection)
 		}
 	}()
 	t.Cleanup(func() { cancel(); listener.Close(); <-accepted; workers.Wait() })
-	return fake
+	return path
 }
 
 func (f *fakeWorkspaceHerdr) workspace() map[string]any {
