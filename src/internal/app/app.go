@@ -50,6 +50,8 @@ func Run(ctx context.Context, args []string, streams IO) error {
 		return runControl(ctx, args[1:], streams)
 	case "doctor":
 		return runDoctor(ctx, args[1:], streams)
+	case "dashboard":
+		return runDashboard(ctx, args[1:], streams)
 	case "version":
 		fmt.Fprintln(streams.Out, buildinfo.Version)
 		return nil
@@ -66,7 +68,7 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 	flags.SetOutput(streams.Err)
 	network := addNetworkFlags(flags, "herdr-mesh-server", "server", "TS_AUTHKEY_SERVER", "tag:herdr-mesh-server")
 	listen := flags.String("listen", ":"+defaultPort, "tsnet TCP listen address")
-	requiredClientTag := flags.String("required-client-tag", "tag:herdr-mesh-client", "Tailscale tag required for ctl and doctor requests")
+	requiredClientTag := flags.String("required-client-tag", "tag:herdr-mesh-client", "Tailscale tag required for fleet read requests")
 	requiredNodeTag := flags.String("required-node-tag", "tag:herdr-mesh-node", "Tailscale tag required for node streams")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -252,5 +254,6 @@ Usage:
   herdr-mesh ctl server-info -server <host:port> [flags]
   herdr-mesh ctl nodes -server <host:port> [-json] [flags]
   herdr-mesh doctor -server <host:port> [flags]
+  herdr-mesh dashboard -server <host:port> [-listen 127.0.0.1:8787] [flags]
   herdr-mesh version`)
 }

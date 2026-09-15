@@ -11,9 +11,10 @@ go run ./src/cmd/herdr-mesh server
 go run ./src/cmd/herdr-mesh node -server '<server-magic-dns-name>:50052'
 go run ./src/cmd/herdr-mesh ctl server-info -server '<server-magic-dns-name>:50052'
 go run ./src/cmd/herdr-mesh doctor -server '<server-magic-dns-name>:50052'
+go run ./src/cmd/herdr-mesh dashboard -server '<server-magic-dns-name>:50052'
 ```
 
-`server` and `node` are long-running processes. `ctl` and `doctor` are
+`server`, `node`, and `dashboard` are long-running processes. `ctl` and `doctor` are
 short-lived clients. Each role uses a separate persistent local state directory
 by default. Initial enrollment uses a role-specific environment variable:
 `TS_AUTHKEY_SERVER`, `TS_AUTHKEY_NODE`, or `TS_AUTHKEY_CLIENT`. Server/controller
@@ -41,6 +42,56 @@ winget install --id Google.Protobuf --exact
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 .\scripts\generate-proto.ps1
+```
+
+## Monitoring dashboard
+
+The read-only dashboard uses the existing fleet inventory. It is embedded in
+the Go binary; no frontend server, npm install, system Tailscale client, or
+server/node upgrade is needed for the dashboard itself.
+
+Keep your read-only mesh server and Herdr-enabled node running. Start the
+dashboard with an **unused enrolled client state directory**, then open
+**http://127.0.0.1:8787**. For the setup used by the validation runbook, the
+short-lived doctor's identity can be reused:
+
+```powershell
+.\herdr-mesh.exe dashboard `
+  -hostname herdr-mesh-doctor `
+  -state-dir "$env:LOCALAPPDATA\herdr-mesh-validation\doctor" `
+  -server '<server-magic-dns-name>:50052'
+```
+
+Keep that process running. Do not run `doctor` or `ctl` with the same state
+directory while the dashboard owns it. A separately enrolled dashboard identity
+can use the default `dashboard` state directory instead; initial enrollment
+uses `TS_AUTHKEY_CLIENT` and `tag:herdr-mesh-client`.
+
+The page shows fleet connectivity, Herdr readiness/freshness, agent statuses,
+and workspace/tab/pane inventory. It refreshes automatically and supports
+filtering. Loading, an empty fleet, unavailable nodes, and failed server queries
+are distinct states; previously displayed data is marked not-live on failure.
+Names, paths, custom metadata, and terminal contents remain excluded.
+In the current projection, an agent's identifier is its pane ID; the dashboard
+links it to the matching pane within the same node, workspace, and tab.
+
+The local web gateway connects to the coordinator using embedded tsnet and the
+same authenticated `Fleet.ListNodes` RPC as `ctl nodes`. It binds only to a
+literal loopback IP (`-listen 127.0.0.1:8787` by default), checks the browser's
+Host/Origin, disables caching and cross-origin API access, and exposes no
+mutation endpoints. It trusts local processes/users on that host; it is not a
+public HTTP service or a substitute for OS user isolation. If the port is
+occupied, choose another loopback port with `-listen`.
+
+Delivery order: **dashboard first**, then durability/command safety and
+orchestration, then a **fuller standalone CLI**, then **MCP as a separate
+integration**. CLI functionality must not depend on MCP.
+
+Dashboard checks (frontend tests use only Node's built-in test runner):
+
+```powershell
+go test ./src/internal/dashboard ./src/internal/app
+node --test src\internal\dashboard\web\model.test.mjs
 ```
 
 ## Read-only Herdr integration
@@ -124,8 +175,8 @@ Remove-Item Env:\HERDR_MESH_TEST_SOCKET
 
 The remaining two-host restart/NIC/sleep/hostname-collision runbook is
 `docs\windows-live-validation.md`. That gate is deferred, not passed, and remains
-required before the two-machine demo. MCP, remote mutations, durable event
-history, and richer UI integration remain later phases.
+required before the two-machine demo. Remote mutations, durable event history,
+the fuller standalone CLI, and MCP remain later phases.
 
 ## Windows tsnet feasibility spike
 
