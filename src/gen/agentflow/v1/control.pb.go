@@ -904,6 +904,7 @@ type NodeEnvelope struct {
 	//	*NodeEnvelope_Command
 	//	*NodeEnvelope_CommandAck
 	//	*NodeEnvelope_CommandResult
+	//	*NodeEnvelope_HerdrState
 	Body          isNodeEnvelope_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1018,6 +1019,15 @@ func (x *NodeEnvelope) GetCommandResult() *CommandResult {
 	return nil
 }
 
+func (x *NodeEnvelope) GetHerdrState() *HerdrState {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_HerdrState); ok {
+			return x.HerdrState
+		}
+	}
+	return nil
+}
+
 type isNodeEnvelope_Body interface {
 	isNodeEnvelope_Body()
 }
@@ -1054,6 +1064,10 @@ type NodeEnvelope_CommandResult struct {
 	CommandResult *CommandResult `protobuf:"bytes,8,opt,name=command_result,json=commandResult,proto3,oneof"`
 }
 
+type NodeEnvelope_HerdrState struct {
+	HerdrState *HerdrState `protobuf:"bytes,9,opt,name=herdr_state,json=herdrState,proto3,oneof"`
+}
+
 func (*NodeEnvelope_Hello) isNodeEnvelope_Body() {}
 
 func (*NodeEnvelope_HelloAck) isNodeEnvelope_Body() {}
@@ -1069,6 +1083,8 @@ func (*NodeEnvelope_Command) isNodeEnvelope_Body() {}
 func (*NodeEnvelope_CommandAck) isNodeEnvelope_Body() {}
 
 func (*NodeEnvelope_CommandResult) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_HerdrState) isNodeEnvelope_Body() {}
 
 type ServerInfo struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
@@ -1138,6 +1154,337 @@ func (x *ServerInfo) GetCapabilities() []string {
 	return nil
 }
 
+// Read-only allowlisted projection. No terminal text, titles, paths, or metadata.
+type HerdrEntity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TabId         string                 `protobuf:"bytes,3,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
+	AgentStatus   string                 `protobuf:"bytes,4,opt,name=agent_status,json=agentStatus,proto3" json:"agent_status,omitempty"`
+	Focused       bool                   `protobuf:"varint,5,opt,name=focused,proto3" json:"focused,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HerdrEntity) Reset() {
+	*x = HerdrEntity{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HerdrEntity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HerdrEntity) ProtoMessage() {}
+
+func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HerdrEntity.ProtoReflect.Descriptor instead.
+func (*HerdrEntity) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *HerdrEntity) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetTabId() string {
+	if x != nil {
+		return x.TabId
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetAgentStatus() string {
+	if x != nil {
+		return x.AgentStatus
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetFocused() bool {
+	if x != nil {
+		return x.Focused
+	}
+	return false
+}
+
+type HerdrState struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// disabled, waiting, ready, or unavailable
+	Status     string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Version    string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Protocol   uint32                 `protobuf:"varint,3,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Sequence   uint64                 `protobuf:"varint,4,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	ObservedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	// A sanitized category, never raw local API error text.
+	ErrorCode     string         `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	Workspaces    []*HerdrEntity `protobuf:"bytes,7,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
+	Tabs          []*HerdrEntity `protobuf:"bytes,8,rep,name=tabs,proto3" json:"tabs,omitempty"`
+	Panes         []*HerdrEntity `protobuf:"bytes,9,rep,name=panes,proto3" json:"panes,omitempty"`
+	Agents        []*HerdrEntity `protobuf:"bytes,10,rep,name=agents,proto3" json:"agents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HerdrState) Reset() {
+	*x = HerdrState{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HerdrState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HerdrState) ProtoMessage() {}
+
+func (x *HerdrState) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HerdrState.ProtoReflect.Descriptor instead.
+func (*HerdrState) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *HerdrState) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *HerdrState) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *HerdrState) GetProtocol() uint32 {
+	if x != nil {
+		return x.Protocol
+	}
+	return 0
+}
+
+func (x *HerdrState) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *HerdrState) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+func (x *HerdrState) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *HerdrState) GetWorkspaces() []*HerdrEntity {
+	if x != nil {
+		return x.Workspaces
+	}
+	return nil
+}
+
+func (x *HerdrState) GetTabs() []*HerdrEntity {
+	if x != nil {
+		return x.Tabs
+	}
+	return nil
+}
+
+func (x *HerdrState) GetPanes() []*HerdrEntity {
+	if x != nil {
+		return x.Panes
+	}
+	return nil
+}
+
+func (x *HerdrState) GetAgents() []*HerdrEntity {
+	if x != nil {
+		return x.Agents
+	}
+	return nil
+}
+
+type NodeView struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId        string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	TailscaleStableId string                 `protobuf:"bytes,2,opt,name=tailscale_stable_id,json=tailscaleStableId,proto3" json:"tailscale_stable_id,omitempty"`
+	Connected         bool                   `protobuf:"varint,3,opt,name=connected,proto3" json:"connected,omitempty"`
+	LastSeen          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`
+	Herdr             *HerdrState            `protobuf:"bytes,5,opt,name=herdr,proto3" json:"herdr,omitempty"`
+	Stale             bool                   `protobuf:"varint,6,opt,name=stale,proto3" json:"stale,omitempty"`
+	HerdrReceivedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=herdr_received_at,json=herdrReceivedAt,proto3" json:"herdr_received_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *NodeView) Reset() {
+	*x = NodeView{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeView) ProtoMessage() {}
+
+func (x *NodeView) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeView.ProtoReflect.Descriptor instead.
+func (*NodeView) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *NodeView) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *NodeView) GetTailscaleStableId() string {
+	if x != nil {
+		return x.TailscaleStableId
+	}
+	return ""
+}
+
+func (x *NodeView) GetConnected() bool {
+	if x != nil {
+		return x.Connected
+	}
+	return false
+}
+
+func (x *NodeView) GetLastSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeen
+	}
+	return nil
+}
+
+func (x *NodeView) GetHerdr() *HerdrState {
+	if x != nil {
+		return x.Herdr
+	}
+	return nil
+}
+
+func (x *NodeView) GetStale() bool {
+	if x != nil {
+		return x.Stale
+	}
+	return false
+}
+
+func (x *NodeView) GetHerdrReceivedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.HerdrReceivedAt
+	}
+	return nil
+}
+
+type NodeList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*NodeView            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeList) Reset() {
+	*x = NodeList{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeList) ProtoMessage() {}
+
+func (x *NodeList) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeList.ProtoReflect.Descriptor instead.
+func (*NodeList) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *NodeList) GetNodes() []*NodeView {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
 var File_agentflow_v1_control_proto protoreflect.FileDescriptor
 
 const file_agentflow_v1_control_proto_rawDesc = "" +
@@ -1202,7 +1549,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
 	"\x06detail\x18\x03 \x01(\tR\x06detail\x121\n" +
-	"\apayload\x18\x04 \x01(\v2\x17.google.protobuf.StructR\apayload\"\xcc\x03\n" +
+	"\apayload\x18\x04 \x01(\v2\x17.google.protobuf.StructR\apayload\"\x89\x04\n" +
 	"\fNodeEnvelope\x12+\n" +
 	"\x05hello\x18\x01 \x01(\v2\x13.agentflow.v1.HelloH\x00R\x05hello\x125\n" +
 	"\thello_ack\x18\x02 \x01(\v2\x16.agentflow.v1.HelloAckH\x00R\bhelloAck\x127\n" +
@@ -1212,7 +1559,9 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\acommand\x18\x06 \x01(\v2\x15.agentflow.v1.CommandH\x00R\acommand\x12;\n" +
 	"\vcommand_ack\x18\a \x01(\v2\x18.agentflow.v1.CommandAckH\x00R\n" +
 	"commandAck\x12D\n" +
-	"\x0ecommand_result\x18\b \x01(\v2\x1b.agentflow.v1.CommandResultH\x00R\rcommandResultB\x06\n" +
+	"\x0ecommand_result\x18\b \x01(\v2\x1b.agentflow.v1.CommandResultH\x00R\rcommandResult\x12;\n" +
+	"\vherdr_state\x18\t \x01(\v2\x18.agentflow.v1.HerdrStateH\x00R\n" +
+	"herdrStateB\x06\n" +
 	"\x04body\"\xc1\x01\n" +
 	"\n" +
 	"ServerInfo\x12\x1f\n" +
@@ -1220,7 +1569,41 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"instanceId\x125\n" +
 	"\x16implementation_version\x18\x02 \x01(\tR\x15implementationVersion\x127\n" +
 	"\bprotocol\x18\x03 \x01(\v2\x1b.agentflow.v1.ProtocolRangeR\bprotocol\x12\"\n" +
-	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities*S\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\x94\x01\n" +
+	"\vHerdrEntity\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
+	"\x06tab_id\x18\x03 \x01(\tR\x05tabId\x12!\n" +
+	"\fagent_status\x18\x04 \x01(\tR\vagentStatus\x12\x18\n" +
+	"\afocused\x18\x05 \x01(\bR\afocused\"\xa0\x03\n" +
+	"\n" +
+	"HerdrState\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1a\n" +
+	"\bprotocol\x18\x03 \x01(\rR\bprotocol\x12\x1a\n" +
+	"\bsequence\x18\x04 \x01(\x04R\bsequence\x12;\n" +
+	"\vobserved_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x06 \x01(\tR\terrorCode\x129\n" +
+	"\n" +
+	"workspaces\x18\a \x03(\v2\x19.agentflow.v1.HerdrEntityR\n" +
+	"workspaces\x12-\n" +
+	"\x04tabs\x18\b \x03(\v2\x19.agentflow.v1.HerdrEntityR\x04tabs\x12/\n" +
+	"\x05panes\x18\t \x03(\v2\x19.agentflow.v1.HerdrEntityR\x05panes\x121\n" +
+	"\x06agents\x18\n" +
+	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xc0\x02\n" +
+	"\bNodeView\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12.\n" +
+	"\x13tailscale_stable_id\x18\x02 \x01(\tR\x11tailscaleStableId\x12\x1c\n" +
+	"\tconnected\x18\x03 \x01(\bR\tconnected\x127\n" +
+	"\tlast_seen\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\blastSeen\x12.\n" +
+	"\x05herdr\x18\x05 \x01(\v2\x18.agentflow.v1.HerdrStateR\x05herdr\x12\x14\n" +
+	"\x05stale\x18\x06 \x01(\bR\x05stale\x12F\n" +
+	"\x11herdr_received_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0fherdrReceivedAt\"8\n" +
+	"\bNodeList\x12,\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes*S\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tROLE_NODE\x10\x01\x12\x13\n" +
@@ -1242,9 +1625,10 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x12ACTOR_ORIGIN_AGENT\x10\x02\x12\x17\n" +
 	"\x13ACTOR_ORIGIN_SYSTEM\x10\x032T\n" +
 	"\vNodeControl\x12E\n" +
-	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012J\n" +
+	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\x87\x01\n" +
 	"\x05Fleet\x12A\n" +
-	"\rGetServerInfo\x12\x16.google.protobuf.Empty\x1a\x18.agentflow.v1.ServerInfoBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
+	"\rGetServerInfo\x12\x16.google.protobuf.Empty\x1a\x18.agentflow.v1.ServerInfo\x12;\n" +
+	"\tListNodes\x12\x16.google.protobuf.Empty\x1a\x16.agentflow.v1.NodeListBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
 
 var (
 	file_agentflow_v1_control_proto_rawDescOnce sync.Once
@@ -1259,7 +1643,7 @@ func file_agentflow_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_agentflow_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_agentflow_v1_control_proto_goTypes = []any{
 	(Role)(0),                     // 0: agentflow.v1.Role
 	(CommandStatus)(0),            // 1: agentflow.v1.CommandStatus
@@ -1276,27 +1660,31 @@ var file_agentflow_v1_control_proto_goTypes = []any{
 	(*CommandResult)(nil),         // 12: agentflow.v1.CommandResult
 	(*NodeEnvelope)(nil),          // 13: agentflow.v1.NodeEnvelope
 	(*ServerInfo)(nil),            // 14: agentflow.v1.ServerInfo
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 16: google.protobuf.Struct
-	(*durationpb.Duration)(nil),   // 17: google.protobuf.Duration
-	(*emptypb.Empty)(nil),         // 18: google.protobuf.Empty
+	(*HerdrEntity)(nil),           // 15: agentflow.v1.HerdrEntity
+	(*HerdrState)(nil),            // 16: agentflow.v1.HerdrState
+	(*NodeView)(nil),              // 17: agentflow.v1.NodeView
+	(*NodeList)(nil),              // 18: agentflow.v1.NodeList
+	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),       // 20: google.protobuf.Struct
+	(*durationpb.Duration)(nil),   // 21: google.protobuf.Duration
+	(*emptypb.Empty)(nil),         // 22: google.protobuf.Empty
 }
 var file_agentflow_v1_control_proto_depIdxs = []int32{
 	3,  // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
 	0,  // 1: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
-	15, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
-	16, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
-	15, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	16, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
+	19, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
+	20, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
+	19, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	20, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
 	10, // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
-	17, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
-	16, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
-	16, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
+	21, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
+	20, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
+	20, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
 	0,  // 10: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
 	2,  // 11: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
 	1,  // 12: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
 	1,  // 13: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
-	16, // 14: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
+	20, // 14: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
 	4,  // 15: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
 	5,  // 16: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
 	6,  // 17: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
@@ -1305,16 +1693,28 @@ var file_agentflow_v1_control_proto_depIdxs = []int32{
 	9,  // 20: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
 	11, // 21: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
 	12, // 22: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
-	3,  // 23: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
-	13, // 24: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
-	18, // 25: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
-	13, // 26: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
-	14, // 27: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
-	26, // [26:28] is the sub-list for method output_type
-	24, // [24:26] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	16, // 23: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
+	3,  // 24: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
+	19, // 25: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
+	15, // 26: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
+	15, // 27: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
+	15, // 28: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
+	15, // 29: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
+	19, // 30: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
+	16, // 31: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
+	19, // 32: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	17, // 33: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
+	13, // 34: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
+	22, // 35: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
+	22, // 36: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
+	13, // 37: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
+	14, // 38: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
+	18, // 39: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
+	37, // [37:40] is the sub-list for method output_type
+	34, // [34:37] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_agentflow_v1_control_proto_init() }
@@ -1331,6 +1731,7 @@ func file_agentflow_v1_control_proto_init() {
 		(*NodeEnvelope_Command)(nil),
 		(*NodeEnvelope_CommandAck)(nil),
 		(*NodeEnvelope_CommandResult)(nil),
+		(*NodeEnvelope_HerdrState)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1338,7 +1739,7 @@ func file_agentflow_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentflow_v1_control_proto_rawDesc), len(file_agentflow_v1_control_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   12,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

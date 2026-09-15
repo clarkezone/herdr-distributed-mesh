@@ -92,6 +92,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	network := addNetworkFlags(flags, defaultNodeHostname(), "node", "TS_AUTHKEY_NODE", "tag:herdr-mesh-node")
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
+	herdrSocket := flags.String("herdr-socket", "", "opt-in read-only Herdr socket marker path (Windows named pipe); empty disables integration")
 	reconnectDelay := flags.Duration("reconnect-delay", 2*time.Second, "delay before reopening a failed stream")
 	reconnectMaximum := flags.Duration("reconnect-max-delay", time.Minute, "maximum delay before reopening a failed stream")
 	if err := flags.Parse(args); err != nil {
@@ -116,6 +117,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	}
 	return node.Run(ctx, node.Options{
 		HeartbeatInterval: *heartbeat,
+		HerdrSocket:       *herdrSocket,
 		InstanceID:        instanceID,
 		ReconnectDelay:    *reconnectDelay,
 		ReconnectMaximum:  *reconnectMaximum,
@@ -126,11 +128,13 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 
 func runControl(ctx context.Context, args []string, streams IO) error {
 	if len(args) == 0 {
-		return errors.New("ctl requires a command; currently supported: server-info")
+		return errors.New("ctl requires a command; currently supported: server-info, nodes")
 	}
 	switch args[0] {
 	case "server-info":
-		return runServerInfo(ctx, args[1:], streams, false)
+		return runFleetQuery(ctx, args[1:], streams, false, false)
+	case "nodes":
+		return runFleetQuery(ctx, args[1:], streams, false, true)
 	default:
 		return fmt.Errorf("unknown ctl command %q", args[0])
 	}
@@ -138,15 +142,19 @@ func runControl(ctx context.Context, args []string, streams IO) error {
 
 func runDoctor(ctx context.Context, args []string, streams IO) error {
 	fmt.Fprintln(streams.Out, "checking tsnet enrollment, server reachability, and protocol compatibility")
-	if err := runServerInfo(ctx, args, streams, true); err != nil {
+	if err := runFleetQuery(ctx, args, streams, true, false); err != nil {
 		return fmt.Errorf("doctor failed: %w", err)
 	}
 	fmt.Fprintln(streams.Out, "doctor passed")
 	return nil
 }
 
-func runServerInfo(ctx context.Context, args []string, streams IO, doctor bool) error {
-	flags := flag.NewFlagSet("server-info", flag.ContinueOnError)
+func runFleetQuery(ctx context.Context, args []string, streams IO, doctor, nodes bool) error {
+	command := "server-info"
+	if nodes {
+		command = "nodes"
+	}
+	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
 	role := "ctl"
 	if doctor {
@@ -162,16 +170,23 @@ func runServerInfo(ctx context.Context, args []string, streams IO, doctor bool) 
 	if *serverAddress == "" {
 		return errors.New("-server is required")
 	}
+	if *timeout <= 0 {
+		return errors.New("-timeout must be greater than zero")
+	}
 
 	operationContext, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	return control.ServerInfo(operationContext, control.Options{
+	options := control.Options{
 		Diagnose:      doctor,
 		JSON:          *jsonOutput,
 		Output:        streams.Out,
 		ServerAddress: *serverAddress,
 		Transport:     network.config(),
-	})
+	}
+	if nodes {
+		return control.Nodes(operationContext, options)
+	}
+	return control.ServerInfo(operationContext, options)
 }
 
 func addNetworkFlags(flags *flag.FlagSet, hostname, stateName, authKeyEnv, defaultTags string) *networkFlags {
@@ -235,6 +250,7 @@ Usage:
   herdr-mesh server [flags]
   herdr-mesh node -server <host:port> [flags]
   herdr-mesh ctl server-info -server <host:port> [flags]
+  herdr-mesh ctl nodes -server <host:port> [-json] [flags]
   herdr-mesh doctor -server <host:port> [flags]
   herdr-mesh version`)
 }

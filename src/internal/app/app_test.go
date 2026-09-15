@@ -25,6 +25,17 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestNodesFlagsRejectInvalidArgumentsWithoutEnrollment(t *testing.T) {
+	for _, args := range [][]string{
+		{"ctl", "nodes"},
+		{"ctl", "nodes", "-server", "server:50052", "-timeout", "0s"},
+	} {
+		if err := Run(context.Background(), args, IO{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}); err == nil {
+			t.Fatalf("accepted invalid arguments %v", args)
+		}
+	}
+}
+
 func TestRunNodeRejectsNonPositiveReconnectDelay(t *testing.T) {
 	err := Run(
 		context.Background(),

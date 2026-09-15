@@ -1,7 +1,9 @@
 # Windows production transport validation
 
-This is the remaining Phase 1 gate before Herdr integration. Run the production
-`herdr-mesh` command, not the disposable spike, on two Windows hosts.
+This is the remaining Phase 1 transport gate. It is deferred while the read-only
+Herdr integration proceeds, but must be completed before the two-machine demo.
+Run the production `herdr-mesh` command, not the disposable spike, on two Windows
+hosts. See the README's read-only integration section for local use.
 
 ## Tailnet prerequisites
 
@@ -181,7 +183,7 @@ Record the following in the project delivery system, not shared AI Core memory:
 - Restart/reconnect timings
 - Network and sleep/wake observations
 - Disruption-loop duration and unexplained disconnect count
-- Final go/no-go result for beginning Herdr integration
+- Final go/no-go result for the two-machine demo
 
 Machine-specific paths, credentials, device state, and current run status must
 remain outside shared AI Core memory.

@@ -43,6 +43,90 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 .\scripts\generate-proto.ps1
 ```
 
+## Read-only Herdr integration
+
+The node can opt in to `ping`, `events.subscribe`, and `session.snapshot` against
+a local Herdr instance. Without `-herdr-socket`, it remains transport-only.
+Upgrade/restart the mesh server before starting an integration-enabled node;
+the node rejects servers that do not advertise `herdr.read.v1`.
+
+Build the binary, then restart your node with the same enrolled identity/state:
+
+```powershell
+go build -o .\herdr-mesh.exe .\src\cmd\herdr-mesh
+.\herdr-mesh.exe node `
+  -server '<server-magic-dns-name>:50052' `
+  -state-dir "$env:LOCALAPPDATA\herdr-mesh-validation\node" `
+  -herdr-socket "$env:APPDATA\herdr\herdr.sock"
+```
+
+Stop processes before overwriting their binary on Windows, or build to another
+filename and use that executable for the restarted roles.
+
+Use your existing node hostname if it was explicitly configured. Do not run
+two processes sharing a state directory. On Windows the socket argument is
+Herdr's marker path, mapped to a **local named pipe**, not a TCP endpoint.
+Custom sessions require their own socket path. No Herdr processes are launched
+or modified by the mesh.
+
+Query from a client-tagged identity (reuse your enrolled controller state):
+
+```powershell
+.\herdr-mesh.exe ctl nodes `
+  -server '<server-magic-dns-name>:50052' `
+  -state-dir "$env:LOCALAPPDATA\herdr-mesh-validation\doctor" `
+  -json
+```
+
+Omit `-json` for a compact count/status summary. JSON is a single object with a
+`nodes` array and snake_case protobuf field names; uint64 sequences are strings.
+Each node includes connectivity, last heartbeat, Herdr status, snapshot receipt
+time, and a `stale` flag. Status is `disabled`, `waiting`, `ready`, or
+`unavailable`; failures expose a sanitized category rather than local API text.
+`stale` is true unless a connected node has a ready snapshot received within
+30 seconds. Herdr traffic never extends the heartbeat deadline.
+
+Only entity IDs, workspace/tab relationships, focus flags, and agent status are
+forwarded. Titles, labels, paths, terminal output, agent names/session metadata,
+and custom tokens are excluded on the node. The server also validates the
+projection and rejects unknown protobuf fields. This is not a complete layout
+or terminal mirror and **does not support remote mutation or command execution**.
+
+Herdr protocol 18 is the initial supported local contract. The observer waits for
+subscription acknowledgement before taking its baseline. Events trigger
+coalesced, rate-limited authoritative snapshots; a five-second refresh also
+covers status changes and missed events. There is no global snapshot cursor, so
+events are never replayed as deltas over newer state. Connection loss reports
+`unavailable`; reconnect takes a fresh baseline. This is eventually consistent,
+not a lossless event log.
+
+The contract is checked against `herdr api schema --json` and the
+[Herdr Socket API documentation](https://herdr.dev/docs/socket-api/).
+Protocol 18 subscription selectors are dotted (`pane.updated`), but streamed
+event discriminators are snake_case (`pane_updated`). Unsupported Herdr
+protocol versions report `unavailable` until the adapter is updated.
+
+Fleet state is in memory, capped at 128 nodes, 256 KiB per projected state,
+4,096 entities per state, and 2 MiB total projected payload. Limits fail
+explicitly, not by truncating data. Disconnected nodes expire after 15 minutes
+without a heartbeat; a server restart clears inventory, and nodes repopulate
+it on reconnect. New node streams fence out older streams for the same bound
+identity.
+
+Local automated coverage and optional read-only checks against a running Herdr:
+
+```powershell
+go test ./src/internal/...
+$env:HERDR_MESH_TEST_SOCKET = "$env:APPDATA\herdr\herdr.sock"
+go test ./src/internal/herdr ./src/internal/node ./src/internal/server -run Live -count=1
+Remove-Item Env:\HERDR_MESH_TEST_SOCKET
+```
+
+The remaining two-host restart/NIC/sleep/hostname-collision runbook is
+`docs\windows-live-validation.md`. That gate is deferred, not passed, and remains
+required before the two-machine demo. MCP, remote mutations, durable event
+history, and richer UI integration remain later phases.
+
 ## Windows tsnet feasibility spike
 
 The first milestone is intentionally disposable. It tests whether two Windows

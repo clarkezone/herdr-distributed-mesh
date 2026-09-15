@@ -12,6 +12,7 @@ import (
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdr"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc/codes"
@@ -23,6 +24,7 @@ var capabilities = []string{"node.heartbeat.v1"}
 
 type Options struct {
 	HeartbeatInterval time.Duration
+	HerdrSocket       string
 	InstanceID        string
 	ReconnectDelay    time.Duration
 	ReconnectMaximum  time.Duration
@@ -100,21 +102,33 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 	if err != nil {
 		return false, fmt.Errorf("open node control stream: %w", err)
 	}
-	if err := stream.Send(&agentflowv1.NodeEnvelope{
+	// Cancel the entire stream on a blocked send; only this goroutine sends.
+	send := func(envelope *agentflowv1.NodeEnvelope) error {
+		timer := time.AfterFunc(10*time.Second, cancel)
+		defer timer.Stop()
+		return stream.Send(envelope)
+	}
+	advertised := slices.Clone(capabilities)
+	if options.HerdrSocket != "" {
+		advertised = append(advertised, protocol.HerdrReadCapability)
+	}
+	if err := send(&agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_Hello{
 			Hello: &agentflowv1.Hello{
 				Protocol:              protocol.SupportedRange(),
 				ImplementationVersion: buildinfo.Version,
 				InstanceId:            options.InstanceID,
 				Role:                  agentflowv1.Role_ROLE_NODE,
-				Capabilities:          slices.Clone(capabilities),
+				Capabilities:          advertised,
 			},
 		},
 	}); err != nil {
 		return false, fmt.Errorf("send hello: %w", err)
 	}
 
+	helloTimer := time.AfterFunc(10*time.Second, cancel)
 	response, err := stream.Recv()
+	helloTimer.Stop()
 	if err != nil {
 		return false, fmt.Errorf("receive hello acknowledgement: %w", err)
 	}
@@ -124,6 +138,9 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 	}
 	if ack.SelectedProtocol < protocol.MinimumVersion || ack.SelectedProtocol > protocol.MaximumVersion {
 		return false, fmt.Errorf("server selected unsupported protocol %d", ack.SelectedProtocol)
+	}
+	if options.HerdrSocket != "" && !slices.Contains(ack.Capabilities, protocol.HerdrReadCapability) {
+		return false, status.Error(codes.FailedPrecondition, "server does not support read-only Herdr state; upgrade server first")
 	}
 	log.Printf(
 		"node registered instance_id=%s server_instance_id=%s protocol=%d",
@@ -143,30 +160,67 @@ func runSession(ctx context.Context, client agentflowv1.NodeControlClient, optio
 		}
 	}()
 
+	updates := make(chan *agentflowv1.HerdrState, 1)
+	observerErr := make(chan error, 1)
+	if options.HerdrSocket != "" {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			observerErr <- herdr.Observe(sessionContext, herdr.Config{SocketPath: options.HerdrSocket},
+				func(state *agentflowv1.HerdrState) error {
+					select {
+					case updates <- state:
+						return nil
+					case <-sessionContext.Done():
+						return sessionContext.Err()
+					}
+				})
+		}()
+		defer func() { cancel(); <-done }()
+	}
+
 	ticker := time.NewTicker(options.HeartbeatInterval)
 	defer ticker.Stop()
 	var sequence uint64
+	sendHeartbeat := func(timestamp time.Time) error {
+		sequence++
+		return send(&agentflowv1.NodeEnvelope{
+			Body: &agentflowv1.NodeEnvelope_Heartbeat{
+				Heartbeat: &agentflowv1.Heartbeat{
+					Sequence: sequence, SentAt: timestamppb.New(timestamp), CommandReady: false,
+				},
+			},
+		})
+	}
 	for {
 		select {
-		case <-ctx.Done():
+		case <-sessionContext.Done():
 			_ = stream.CloseSend()
-			return true, nil
+			return true, sessionContext.Err()
+		case err := <-observerErr:
+			if err == nil {
+				err = errors.New("Herdr observer stopped unexpectedly")
+			}
+			return true, fmt.Errorf("observe Herdr: %w", err)
+		case state := <-updates:
+			// Give a due heartbeat priority even during continuous refresh traffic.
+			select {
+			case timestamp := <-ticker.C:
+				if err := sendHeartbeat(timestamp); err != nil {
+					return true, fmt.Errorf("send heartbeat: %w", err)
+				}
+			default:
+			}
+			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_HerdrState{HerdrState: state}}); err != nil {
+				return true, fmt.Errorf("send Herdr state: %w", err)
+			}
 		case err := <-receiveErr:
 			if errors.Is(err, io.EOF) {
 				return true, errors.New("server closed the node control stream")
 			}
 			return true, fmt.Errorf("receive server message: %w", err)
 		case timestamp := <-ticker.C:
-			sequence++
-			if err := stream.Send(&agentflowv1.NodeEnvelope{
-				Body: &agentflowv1.NodeEnvelope_Heartbeat{
-					Heartbeat: &agentflowv1.Heartbeat{
-						Sequence:     sequence,
-						SentAt:       timestamppb.New(timestamp),
-						CommandReady: false,
-					},
-				},
-			}); err != nil {
+			if err := sendHeartbeat(timestamp); err != nil {
 				return true, fmt.Errorf("send heartbeat: %w", err)
 			}
 		}

@@ -15,6 +15,7 @@ service NodeControl {
 
 service Fleet {
   rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfo);
+  rpc ListNodes(google.protobuf.Empty) returns (NodeList);
 }
 
 enum Role {
@@ -125,6 +126,7 @@ message NodeEnvelope {
     Command command = 6;
     CommandAck command_ack = 7;
     CommandResult command_result = 8;
+    HerdrState herdr_state = 9;
   }
 }
 
@@ -133,4 +135,42 @@ message ServerInfo {
   string implementation_version = 2;
   ProtocolRange protocol = 3;
   repeated string capabilities = 4;
+}
+
+// Read-only allowlisted projection. No terminal text, titles, paths, or metadata.
+message HerdrEntity {
+  string id = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string agent_status = 4;
+  bool focused = 5;
+}
+
+message HerdrState {
+  // disabled, waiting, ready, or unavailable
+  string status = 1;
+  string version = 2;
+  uint32 protocol = 3;
+  uint64 sequence = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  // A sanitized category, never raw local API error text.
+  string error_code = 6;
+  repeated HerdrEntity workspaces = 7;
+  repeated HerdrEntity tabs = 8;
+  repeated HerdrEntity panes = 9;
+  repeated HerdrEntity agents = 10;
+}
+
+message NodeView {
+  string instance_id = 1;
+  string tailscale_stable_id = 2;
+  bool connected = 3;
+  google.protobuf.Timestamp last_seen = 4;
+  HerdrState herdr = 5;
+  bool stale = 6;
+  google.protobuf.Timestamp herdr_received_at = 7;
+}
+
+message NodeList {
+  repeated NodeView nodes = 1;
 }

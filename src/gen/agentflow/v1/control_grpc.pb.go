@@ -117,6 +117,7 @@ var NodeControl_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	Fleet_GetServerInfo_FullMethodName = "/agentflow.v1.Fleet/GetServerInfo"
+	Fleet_ListNodes_FullMethodName     = "/agentflow.v1.Fleet/ListNodes"
 )
 
 // FleetClient is the client API for Fleet service.
@@ -124,6 +125,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FleetClient interface {
 	GetServerInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ServerInfo, error)
+	ListNodes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*NodeList, error)
 }
 
 type fleetClient struct {
@@ -144,11 +146,22 @@ func (c *fleetClient) GetServerInfo(ctx context.Context, in *emptypb.Empty, opts
 	return out, nil
 }
 
+func (c *fleetClient) ListNodes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*NodeList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeList)
+	err := c.cc.Invoke(ctx, Fleet_ListNodes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FleetServer is the server API for Fleet service.
 // All implementations must embed UnimplementedFleetServer
 // for forward compatibility.
 type FleetServer interface {
 	GetServerInfo(context.Context, *emptypb.Empty) (*ServerInfo, error)
+	ListNodes(context.Context, *emptypb.Empty) (*NodeList, error)
 	mustEmbedUnimplementedFleetServer()
 }
 
@@ -161,6 +174,9 @@ type UnimplementedFleetServer struct{}
 
 func (UnimplementedFleetServer) GetServerInfo(context.Context, *emptypb.Empty) (*ServerInfo, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetServerInfo not implemented")
+}
+func (UnimplementedFleetServer) ListNodes(context.Context, *emptypb.Empty) (*NodeList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
 }
 func (UnimplementedFleetServer) mustEmbedUnimplementedFleetServer() {}
 func (UnimplementedFleetServer) testEmbeddedByValue()               {}
@@ -201,6 +217,24 @@ func _Fleet_GetServerInfo_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fleet_ListNodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).ListNodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_ListNodes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).ListNodes(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fleet_ServiceDesc is the grpc.ServiceDesc for Fleet service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -211,6 +245,10 @@ var Fleet_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetServerInfo",
 			Handler:    _Fleet_GetServerInfo_Handler,
+		},
+		{
+			MethodName: "ListNodes",
+			Handler:    _Fleet_ListNodes_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

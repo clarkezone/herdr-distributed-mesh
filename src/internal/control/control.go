@@ -10,6 +10,7 @@ import (
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -24,6 +25,12 @@ type Options struct {
 }
 
 func ServerInfo(ctx context.Context, options Options) error {
+	return withFleet(ctx, options, func(client agentflowv1.FleetClient, localStatus transport.SelfStatus) error {
+		return writeServerInfo(ctx, options, client, localStatus)
+	})
+}
+
+func withFleet(ctx context.Context, options Options, query func(agentflowv1.FleetClient, transport.SelfStatus) error) error {
 	network, err := transport.Start(ctx, options.Transport)
 	if err != nil {
 		return err
@@ -42,7 +49,11 @@ func ServerInfo(ctx context.Context, options Options) error {
 	}
 	defer connection.Close()
 
-	info, err := getServerInfo(ctx, agentflowv1.NewFleetClient(connection))
+	return query(agentflowv1.NewFleetClient(connection), localStatus)
+}
+
+func writeServerInfo(ctx context.Context, options Options, client agentflowv1.FleetClient, localStatus transport.SelfStatus) error {
+	info, err := getServerInfo(ctx, client)
 	if err != nil {
 		return fmt.Errorf("get server info: %w", err)
 	}
@@ -95,10 +106,20 @@ func ServerInfo(ctx context.Context, options Options) error {
 	return nil
 }
 
-func getServerInfo(ctx context.Context, client agentflowv1.FleetClient) (*agentflowv1.ServerInfo, error) {
+type serverInfoClient interface {
+	GetServerInfo(context.Context, *emptypb.Empty, ...grpc.CallOption) (*agentflowv1.ServerInfo, error)
+}
+
+func getServerInfo(ctx context.Context, client serverInfoClient) (*agentflowv1.ServerInfo, error) {
+	return retryUnavailable(ctx, func() (*agentflowv1.ServerInfo, error) {
+		return client.GetServerInfo(ctx, &emptypb.Empty{})
+	})
+}
+
+func retryUnavailable[T any](ctx context.Context, call func() (*T, error)) (*T, error) {
 	var lastErr error
 	for {
-		info, err := client.GetServerInfo(ctx, &emptypb.Empty{})
+		info, err := call()
 		if err == nil {
 			return info, nil
 		}

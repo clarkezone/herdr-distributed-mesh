@@ -8,13 +8,16 @@ import (
 )
 
 const (
-	MinimumVersion uint32 = 1
-	MaximumVersion uint32 = 1
+	MinimumVersion      uint32 = 1
+	MaximumVersion      uint32 = 1
+	HerdrReadCapability        = "herdr.read.v1"
 )
 
 var ServerCapabilities = []string{
 	"node.heartbeat.v1",
 	"protocol.negotiation.v1",
+	HerdrReadCapability,
+	"fleet.nodes.v1",
 }
 
 func SupportedRange() *agentflowv1.ProtocolRange {
@@ -53,8 +56,8 @@ func ValidateNodeHello(hello *agentflowv1.Hello) error {
 	if hello == nil {
 		return errors.New("hello is required")
 	}
-	if hello.InstanceId == "" {
-		return errors.New("instance ID is required")
+	if hello.InstanceId == "" || len(hello.InstanceId) > 128 {
+		return errors.New("instance ID must contain 1-128 bytes")
 	}
 	if hello.Role != agentflowv1.Role_ROLE_NODE {
 		return fmt.Errorf("role %s is not permitted on the node control stream", hello.Role)

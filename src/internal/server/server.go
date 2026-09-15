@@ -41,6 +41,7 @@ type service struct {
 	bindNode          func(string, string) error
 	helloTimeout      time.Duration
 	heartbeatTimeout  time.Duration
+	fleet             fleetStore
 }
 
 func Run(ctx context.Context, options Options) error {
@@ -72,6 +73,7 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(1024*1024),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,
@@ -145,6 +147,12 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			return status.Errorf(codes.PermissionDenied, "bind mesh identity to Tailscale peer: %v", err)
 		}
 	}
+	herdrEnabled := slices.Contains(hello.Capabilities, protocol.HerdrReadCapability)
+	entry, err := service.fleet.begin(hello.InstanceId, identity.StableID, herdrEnabled, time.Now())
+	if err != nil {
+		return err
+	}
+	defer service.fleet.end(entry)
 	if err := stream.Send(&agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
 			HelloAck: &agentflowv1.HelloAck{
@@ -167,10 +175,15 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	)
 	defer log.Printf("node disconnected instance_id=%s peer_id=%s", hello.InstanceId, identity.StableID)
 
+	heartbeatDeadline := time.Now().Add(service.timeoutOrDefault(service.heartbeatTimeout, time.Minute))
+	var heartbeatSequence uint64
 	for {
-		envelope, err := receiveNodeEnvelope(
+		if !time.Now().Before(heartbeatDeadline) {
+			return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
+		}
+		envelope, err := receiveNodeEnvelopeUntil(
 			stream,
-			service.timeoutOrDefault(service.heartbeatTimeout, time.Minute),
+			time.Until(heartbeatDeadline), entry.done,
 		)
 		if errors.Is(err, io.EOF) {
 			return nil
@@ -183,7 +196,21 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 		}
 		heartbeat := envelope.GetHeartbeat()
 		if heartbeat == nil {
-			return status.Error(codes.InvalidArgument, "only heartbeat messages are accepted after hello")
+			if state := envelope.GetHerdrState(); state != nil && herdrEnabled {
+				if err := service.fleet.update(entry, state, time.Now()); err != nil {
+					return err
+				}
+				continue
+			}
+			return status.Error(codes.InvalidArgument, "expected heartbeat or negotiated read-only Herdr state")
+		}
+		if heartbeat.Sequence <= heartbeatSequence || heartbeat.SentAt == nil || heartbeat.SentAt.CheckValid() != nil {
+			return status.Error(codes.InvalidArgument, "invalid heartbeat sequence or timestamp")
+		}
+		heartbeatSequence = heartbeat.Sequence
+		heartbeatDeadline = time.Now().Add(service.timeoutOrDefault(service.heartbeatTimeout, time.Minute))
+		if err := service.fleet.heartbeat(entry, time.Now()); err != nil {
+			return err
 		}
 		log.Printf(
 			"node heartbeat instance_id=%s sequence=%d command_ready=%t",
@@ -206,6 +233,10 @@ type receiveResult struct {
 var errReceiveTimeout = errors.New("receive timed out")
 
 func receiveNodeEnvelope(receiver nodeEnvelopeReceiver, timeout time.Duration) (*agentflowv1.NodeEnvelope, error) {
+	return receiveNodeEnvelopeUntil(receiver, timeout, nil)
+}
+
+func receiveNodeEnvelopeUntil(receiver nodeEnvelopeReceiver, timeout time.Duration, superseded <-chan struct{}) (*agentflowv1.NodeEnvelope, error) {
 	result := make(chan receiveResult, 1)
 	go func() {
 		envelope, err := receiver.Recv()
@@ -218,6 +249,8 @@ func receiveNodeEnvelope(receiver nodeEnvelopeReceiver, timeout time.Duration) (
 		return value.envelope, value.err
 	case <-timer.C:
 		return nil, fmt.Errorf("%w after %s", errReceiveTimeout, timeout)
+	case <-superseded:
+		return nil, status.Error(codes.Aborted, "node stream superseded")
 	}
 }
 
