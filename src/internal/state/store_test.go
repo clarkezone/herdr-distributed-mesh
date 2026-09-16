@@ -176,7 +176,7 @@ func TestIdentityAndVersionMismatchDoNotChangeDatabase(t *testing.T) {
 			s := openTestStore(t, path)
 			requireOK(t, s.Bind(ctx, "stable", "instance"))
 			if version == 4 {
-				_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 5")
+				_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 6")
 				requireOK(t, err)
 			}
 			requireOK(t, s.Close())

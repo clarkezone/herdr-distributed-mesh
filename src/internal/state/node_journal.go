@@ -135,6 +135,8 @@ func interruptedNodeResult(id string) *pb.CommandResult {
 // Remaining wire TTL is not identity; the fixed absolute expiry is.
 // New project mutations are rejected while any retained mutation for their
 // project is running or indeterminate, including acknowledged uncertainty.
+// Agent controls have no project binding: only exact command-ID deduplication
+// applies, not cross-key agent quarantine or automatic retries after uncertainty.
 func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.CommandResult, bool, error) {
 	if err := j.store.enter(ctx); err != nil {
 		return nil, false, err
@@ -211,7 +213,7 @@ func (j *NodeJournal) Complete(ctx context.Context, result *pb.CommandResult) er
 	}
 	defer j.store.leave()
 	if err := protocol.ValidateCommandResult(result); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrCommandConflict, err)
 	}
 	return j.store.transaction(ctx, func(tx *sql.Tx) error {
 		entry, err := readNodeEntry(ctx, tx, j.nodeID, result.CommandId)

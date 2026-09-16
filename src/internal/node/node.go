@@ -25,6 +25,13 @@ import (
 var capabilities = []string{"node.heartbeat.v1"}
 
 type Options struct {
+	// EnableAgentControl requires a socket, journal, and fresh coordinator
+	// verification before effects. Run installs the production peer verifier.
+	EnableAgentControl bool
+	// QueryAgent and ControlAgent inject executors for RunSession. Run always
+	// uses the local Herdr adapter instead.
+	QueryAgent         func(context.Context, herdr.Config, *agentflowv1.AgentQueryRequest) (*agentflowv1.AgentQueryResult, error)
+	ControlAgent       func(context.Context, herdr.Config, *agentflowv1.AgentControl) (*agentflowv1.AgentControlResult, error)
 	CommandJournalPath string
 	RequiredServerTag  string
 	HeartbeatInterval  time.Duration
@@ -39,7 +46,7 @@ type Options struct {
 	// explicit Herdr socket, and expected server tag; nil permits replay only.
 	WorkspacePolicy *projects.Policy
 	// VerifyServerPeer refreshes authorization of the actual stream peer before
-	// workspace/worktree effects in RunSession. A nil verifier fails closed. Run always
+	// workspace/worktree/agent effects in RunSession. A nil verifier fails closed. Run always
 	// overrides this callback with its production WhoIs and required-tag check.
 	VerifyServerPeer func(context.Context, string) error
 }
@@ -69,6 +76,7 @@ func Run(ctx context.Context, options Options) (err error) {
 	// Always override any injected verifier in production with fresh WhoIs of
 	// the actual stream peer, not the configured server address or DNS identity.
 	options.VerifyServerPeer = workspacePeerTagVerifier(network.IdentifyPeer, options.RequiredServerTag)
+	options.QueryAgent, options.ControlAgent = nil, nil
 	self := network.SelfStatus()
 	if err := self.Validate(options.Transport.Tags, time.Now()); err != nil {
 		return fmt.Errorf("validate node tsnet identity: %w", err)
@@ -178,6 +186,9 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 	}
 	if journal != nil {
 		advertised = append(advertised, protocol.ProbeCapability)
+		if options.EnableAgentControl && options.HerdrSocket != "" {
+			advertised = append(advertised, protocol.AgentControlCapability)
+		}
 		if options.WorkspacePolicy != nil && options.HerdrSocket != "" {
 			advertised = append(advertised, protocol.WorkspaceEnsureCapability)
 			if options.WorkspacePolicy.HasWorktrees() {
@@ -216,6 +227,10 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		return false, status.Error(codes.FailedPrecondition, "server does not support read-only Herdr state; upgrade server first")
 	}
 	commandReady := journal != nil && slices.Contains(ack.Capabilities, protocol.ProbeCapability)
+	agentNegotiated := options.EnableAgentControl && options.HerdrSocket != "" && commandReady && slices.Contains(ack.Capabilities, protocol.AgentControlCapability)
+	if options.EnableAgentControl && !agentNegotiated {
+		return false, status.Error(codes.FailedPrecondition, "server does not support agent control; upgrade server first")
+	}
 	// Keep terminal replay available when a policy is removed. New claims still
 	// require the local policy before any effect.
 	workspaceNegotiated := journal != nil && slices.Contains(ack.Capabilities, protocol.WorkspaceEnsureCapability)
@@ -229,8 +244,14 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 	handler := &commandHandler{journal: journal, nodeID: options.InstanceID, execute: execute,
 		workspacePolicy: options.WorkspacePolicy, workspaceNegotiated: workspaceNegotiated,
 		worktreeNegotiated: worktreeNegotiated, createWorktree: create,
+		agentNegotiated: agentNegotiated, controlAgent: options.ControlAgent,
 		herdrConfig: herdr.Config{SocketPath: options.HerdrSocket}, ensureWorkspace: ensure,
 		verifyCoordinator: streamPeerVerifier(stream.Context(), options.VerifyServerPeer)}
+	if options.VerifyServerPeer == nil {
+		handler.verifyCoordinator = nil
+	}
+	queries := newAgentQueries(sessionContext, options, handler)
+	defer func() { cancel(); queries.join() }()
 	var pending []*agentflowv1.CommandResult
 	if commandReady || workspaceNegotiated || worktreeNegotiated {
 		operation, stop := context.WithTimeout(sessionContext, journalOperationTimeout)
@@ -354,6 +375,7 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 					Sequence: sequence, SentAt: timestamppb.New(timestamp), CommandReady: commandReady,
 					WorkspaceReady: workspaceReady,
 					WorktreeReady:  worktreeReady,
+					AgentReady:     handler.agentReady(),
 				},
 			},
 		})
@@ -372,6 +394,15 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		if envelope == nil {
 			return status.Error(codes.InvalidArgument, "empty server envelope")
 		}
+		if envelope.GetAgentQuery() != nil || envelope.GetAgentQueryCancel() != nil {
+			if len(envelope.ProtoReflect().GetUnknown()) != 0 || !agentNegotiated {
+				return status.Error(codes.FailedPrecondition, "agent query capability was not negotiated")
+			}
+			if query := envelope.GetAgentQuery(); query != nil {
+				return queries.start(query)
+			}
+			return queries.cancelQuery(envelope.GetAgentQueryCancel())
+		}
 		if envelope.GetCommand() == nil && envelope.GetCommandAck() == nil {
 			return nil
 		}
@@ -387,7 +418,8 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 			}
 			if (command.CommandType == protocol.ProbeCommandType && !commandReady) ||
 				(command.CommandType == protocol.WorkspaceEnsureCommandType && !workspaceNegotiated) ||
-				(command.CommandType == protocol.WorktreeCreateCommandType && !worktreeNegotiated) {
+				(command.CommandType == protocol.WorktreeCreateCommandType && !worktreeNegotiated) ||
+				(command.CommandType == protocol.AgentControlCommandType && !agentNegotiated) {
 				return status.Error(codes.FailedPrecondition, "command capability was not negotiated")
 			}
 			select {
@@ -417,6 +449,10 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		select {
 		case <-sessionContext.Done():
 			return true, sessionContext.Err()
+		case result := <-queries.results:
+			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_AgentQueryResult{AgentQueryResult: result}}); err != nil {
+				return true, err
+			}
 		case outcome := <-outcomes:
 			if err := sendOutcome(outcome); err != nil {
 				return true, err
@@ -428,6 +464,7 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 			return true, fmt.Errorf("observe Herdr: %w", err)
 		case state := <-updates:
 			localState = state
+			handler.agentBaseline.Store(state)
 			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_HerdrState{HerdrState: state}}); err != nil {
 				return true, fmt.Errorf("send Herdr state: %w", err)
 			}

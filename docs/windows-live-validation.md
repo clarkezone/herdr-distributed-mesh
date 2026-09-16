@@ -3,7 +3,7 @@
 This is the remaining Phase 1 transport gate. It is deferred while the read-only
 Herdr integration proceeds, but must be completed before the two-machine demo.
 Run the production `herdr-mesh` command, not the disposable spike, on two Windows
-hosts. See the README's read-only integration section for local use.
+hosts. See the README's Herdr connection section for local use.
 
 ## Tailnet prerequisites
 
@@ -187,3 +187,60 @@ Record the following in the project delivery system, not shared AI Core memory:
 
 Machine-specific paths, credentials, device state, and current run status must
 remain outside shared AI Core memory.
+
+## Headless agent-control compatibility
+
+The initial existing-agent slice was exercised on Windows with Herdr
+`0.7.5-preview.2026-07-29-44b3adb12552` (protocol 18) and a real Copilot agent.
+The experiment cold-started a disposable named `herdr ... server` with isolated
+configuration and a disposable Git directory. **No frontend ever attached.**
+Workspace creation, agent discovery, a warm prompt with an identifiable response,
+terminal reads, state waits, and actual provider cancellation worked headlessly.
+This local proof does not replace the two-host mesh/disruption gate above.
+
+Three compatibility findings affect interpretation and the later launch slice:
+
+1. With PowerShell as the shell, `agent start` with an empty argument vector
+   timed out because Herdr generated `Start-Process -ArgumentList ''`.
+   After verifying no agent existed, a launch with Copilot's supported
+   `--no-auto-update` argument succeeded. This is a launch compatibility issue,
+   not permission to blindly retry uncertain starts.
+2. An immediate post-launch prompt returned an idle acknowledgement while
+   Copilot was still loading, without a task response. A distinct prompt after
+   startup settled produced the expected response. Ready/idle transitions and
+   native integrated waits are not semantic task-completion evidence.
+3. One Escape showed "esc again to interrupt" and a transient Herdr idle state,
+   but the requested text task still completed. Two Escape keys in **one**
+   `agent.send_keys` request produced "Cancelling", then the explicit provider
+   output "Operation cancelled by user", without the second task's response.
+   This is the basis for the Copilot interrupt mapping. A concurrent Herdr wait
+   did not block input through another connection.
+
+Keep live experiments confined to an explicitly disposable session. Never
+attach a terminal to compensate for a headless failure, issue prompts into a
+user's active agent, or remove shared session/state roots during cleanup.
+
+### Local mesh round-trip
+
+The opt-in Windows fixture also passed against that real headless Copilot
+instance: the real node, coordinator, adapter, and both SQLite journals carried
+a prompt and its actual response, GET/READ/WAIT, wait cancellation, and a durable
+interrupt receipt. It reopened journals and checked that read output was not
+persisted. The gRPC link uses local in-memory transport with test identities;
+this is not a new cross-host tsnet or production-deployment claim.
+
+To reproduce, supply an already-running **disposable, idle Copilot** session:
+
+```powershell
+$env:HERDR_MESH_AGENT_TEST_SOCKET = '<disposable Herdr socket marker path>'
+$env:HERDR_MESH_AGENT_TEST_PANE = '<pane-id>'
+go test .\src\internal\server -run '^TestAgentLiveHeadlessQueryAndDurableInterrupt$' -count=1 -timeout=120s
+Remove-Item Env:\HERDR_MESH_AGENT_TEST_SOCKET
+Remove-Item Env:\HERDR_MESH_AGENT_TEST_PANE
+```
+
+The fixture sends a fresh text-only prompt and an interrupt; it is skipped
+without the socket environment variable. It requires a nonce-bearing response
+that cannot match the prompt echo or old output. The response marker is short
+enough to avoid Copilot's application-level line wrapping: `recent_unwrapped`
+does not undo wrapping already introduced by the provider's layout.

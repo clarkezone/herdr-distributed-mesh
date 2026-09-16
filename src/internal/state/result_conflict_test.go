@@ -16,6 +16,7 @@ func TestTypedResultMismatchIsInputConflict(t *testing.T) {
 	ctx := context.Background()
 	for _, command := range []*pb.Command{
 		worktreeCommand(1, "project1"), workspaceCommand(1, "project1"),
+		agentCommand(1, pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT),
 		probeCommand(1, "actor", "key1", "node", commandTestTime),
 	} {
 		t.Run(command.CommandType, func(t *testing.T) {
@@ -30,6 +31,8 @@ func TestTypedResultMismatchIsInputConflict(t *testing.T) {
 			}
 			exact := probeResult(command, statusSucceeded, "pong")
 			switch command.CommandType {
+			case protocol.AgentControlCommandType:
+				exact = agentResult(command)
 			case protocol.WorkspaceEnsureCommandType:
 				exact = workspaceResult(command, true)
 			case protocol.WorktreeCreateCommandType:
@@ -43,6 +46,7 @@ func TestTypedResultMismatchIsInputConflict(t *testing.T) {
 				worktreeResult(worktreeCommand(1, "project1")),
 				workspaceResult(workspaceCommand(1, "project1"), true),
 				probeResult(command, statusSucceeded, "pong"),
+				agentResult(agentCommand(1, pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT)),
 			}
 			if command.WorktreeCreate != nil {
 				for _, field := range []string{"project", "revision", "name", "branch", "base"} {

@@ -31,6 +31,8 @@ func NewCommandID() string {
 
 func ValidCommandID(id string) bool { return commandID.MatchString(id) }
 
+func ValidIdempotencyKey(key string) bool { return commandToken.MatchString(key) }
+
 func NormalizeProbeRequest(request *agentflowv1.SubmitCommandRequest) (*agentflowv1.SubmitCommandRequest, error) {
 	if request == nil || request.CommandType != ProbeCommandType {
 		return nil, errors.New("only the read-only node.ping.v1 probe is allowed")
@@ -40,30 +42,11 @@ func NormalizeProbeRequest(request *agentflowv1.SubmitCommandRequest) (*agentflo
 
 func NormalizeCommandRequest(request *agentflowv1.SubmitCommandRequest) (*agentflowv1.SubmitCommandRequest, error) {
 	if request == nil || len(request.ProtoReflect().GetUnknown()) != 0 ||
-		!commandToken.MatchString(request.NodeInstanceId) || !commandToken.MatchString(request.IdempotencyKey) {
+		!commandToken.MatchString(request.NodeInstanceId) || !ValidIdempotencyKey(request.IdempotencyKey) {
 		return nil, errors.New("node ID and idempotency key must be bounded identifier tokens")
 	}
-	switch request.CommandType {
-	case ProbeCommandType:
-		if request.WorkspaceEnsure != nil || request.WorktreeCreate != nil {
-			return nil, errors.New("probe must not contain workspace arguments")
-		}
-	case WorkspaceEnsureCommandType:
-		if request.WorktreeCreate != nil {
-			return nil, errors.New("workspace ensure must not contain worktree arguments")
-		}
-		if err := ValidateWorkspaceEnsure(request.WorkspaceEnsure); err != nil {
-			return nil, err
-		}
-	case WorktreeCreateCommandType:
-		if request.WorkspaceEnsure != nil {
-			return nil, errors.New("worktree create must not contain workspace ensure arguments")
-		}
-		if err := ValidateWorktreeCreate(request.WorktreeCreate); err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("unsupported command type")
+	if err := validateCommandBody(request.CommandType, request.WorkspaceEnsure, request.WorktreeCreate, request.AgentControl); err != nil {
+		return nil, err
 	}
 	copy := proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
 	if copy.Ttl == nil {
@@ -96,27 +79,8 @@ func ValidateCommand(command *agentflowv1.Command, nodeID string) error {
 		!commandToken.MatchString(command.IdempotencyKey) || len(command.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid or unsupported node command")
 	}
-	switch command.CommandType {
-	case ProbeCommandType:
-		if command.WorkspaceEnsure != nil || command.WorktreeCreate != nil {
-			return errors.New("probe must not contain workspace arguments")
-		}
-	case WorkspaceEnsureCommandType:
-		if command.WorktreeCreate != nil {
-			return errors.New("workspace ensure must not contain worktree arguments")
-		}
-		if err := ValidateWorkspaceEnsure(command.WorkspaceEnsure); err != nil {
-			return err
-		}
-	case WorktreeCreateCommandType:
-		if command.WorkspaceEnsure != nil {
-			return errors.New("worktree create must not contain workspace ensure arguments")
-		}
-		if err := ValidateWorktreeCreate(command.WorktreeCreate); err != nil {
-			return err
-		}
-	default:
-		return errors.New("unsupported command type")
+	if err := validateCommandBody(command.CommandType, command.WorkspaceEnsure, command.WorktreeCreate, command.AgentControl); err != nil {
+		return err
 	}
 	if command.Actor == nil || !commandToken.MatchString(command.Actor.ActorId) ||
 		command.Actor.Role != agentflowv1.Role_ROLE_CONTROLLER || command.Actor.Origin != agentflowv1.ActorOrigin_ACTOR_ORIGIN_UNSPECIFIED ||
@@ -144,7 +108,7 @@ func IsTerminalCommand(status agentflowv1.CommandStatus) bool {
 }
 
 func ValidateProbeResult(result *agentflowv1.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil || result.AgentControl != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid command result")
 	}
 	valid := false

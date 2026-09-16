@@ -79,6 +79,10 @@ func projectMutation(commandType string) bool {
 	return commandType == protocol.WorkspaceEnsureCommandType || commandType == protocol.WorktreeCreateCommandType
 }
 
+func authorizationSensitiveCommand(commandType string) bool {
+	return projectMutation(commandType) || commandType == protocol.AgentControlCommandType
+}
+
 func validCommandOutcome(commandType string, status pb.CommandStatus, detail string) bool {
 	switch status {
 	case statusAccepted:
@@ -86,6 +90,9 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusRunning:
 		return detail == "dispatched"
 	case statusSucceeded:
+		if commandType == protocol.AgentControlCommandType {
+			return detail == "agent_prompt_sent" || detail == "agent_input_sent" || detail == "agent_interrupt_sent"
+		}
 		if commandType == protocol.WorktreeCreateCommandType {
 			return detail == "worktree_created"
 		}
@@ -96,6 +103,14 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusTimedOut:
 		return detail == "deadline_expired"
 	case statusRejected:
+		if commandType == protocol.AgentControlCommandType {
+			switch detail {
+			case "journal_full", "precondition_failed", "agent_busy", "agent_blocked", "target_changed",
+				"herdr_unavailable", "unsupported", "authorization_changed":
+				return true
+			}
+			return false
+		}
 		if projectMutation(commandType) {
 			switch detail {
 			case "journal_full", "project_unresolved", "project_not_authorized", "precondition_failed",
@@ -108,7 +123,7 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusIndeterminate:
 		return detail == "node_restarted" || detail == "server_restarted" ||
 			detail == "node_disconnected" || detail == "deadline_expired" ||
-			(projectMutation(commandType) && detail == "herdr_outcome_unknown")
+			(authorizationSensitiveCommand(commandType) && detail == "herdr_outcome_unknown")
 	case statusUnavailable:
 		return detail == "node_disconnected" || detail == "server_restarted"
 	}
@@ -119,7 +134,7 @@ func validCommandTransition(commandType string, from, to pb.CommandStatus, detai
 	switch from {
 	case statusAccepted:
 		return to == statusRunning || to == statusTimedOut || to == statusUnavailable ||
-			(projectMutation(commandType) && to == statusRejected && detail == "authorization_changed")
+			(authorizationSensitiveCommand(commandType) && to == statusRejected && detail == "authorization_changed")
 	case statusRunning:
 		return to == statusSucceeded || to == statusTimedOut || to == statusRejected || to == statusIndeterminate
 	case statusIndeterminate:
@@ -139,7 +154,7 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 		if err := protocol.ValidateResultForCommand(recordResult(record), record.Command); err != nil {
 			return err
 		}
-	} else if record.WorkspaceEnsure != nil || record.WorktreeCreate != nil {
+	} else if record.WorkspaceEnsure != nil || record.WorktreeCreate != nil || record.AgentControl != nil {
 		return errors.New("stored unsuccessful command contains mutation success data")
 	}
 	if record.CreatedAt == nil || record.CreatedAt.CheckValid() != nil ||
@@ -180,6 +195,7 @@ func recordResult(record *pb.CommandRecord) *pb.CommandResult {
 		CommandId: record.Command.CommandId, Status: record.Status, Detail: record.Detail,
 		WorkspaceEnsure: record.WorkspaceEnsure,
 		WorktreeCreate:  record.WorktreeCreate,
+		AgentControl:    record.AgentControl,
 	}
 }
 
@@ -379,7 +395,7 @@ func transitionCommand(ctx context.Context, tx *sql.Tx, record *pb.CommandRecord
 	return err
 }
 
-// RejectCommand revokes only accepted project mutation admissions before dispatch.
+// RejectCommand revokes accepted authorization-sensitive admissions before dispatch.
 // Already changed records are returned without rewriting their outcome or audit.
 func (s *Store) RejectCommand(ctx context.Context, nodeID, commandID, detail string, now time.Time) (*pb.CommandRecord, error) {
 	if err := s.enter(ctx); err != nil {
@@ -401,7 +417,7 @@ func (s *Store) RejectCommand(ctx context.Context, nodeID, commandID, detail str
 		if record.Command.TargetId != nodeID {
 			return ErrIdentityConflict
 		}
-		if !projectMutation(record.Command.CommandType) {
+		if !authorizationSensitiveCommand(record.Command.CommandType) {
 			return ErrCommandConflict
 		}
 		if record.Status != statusAccepted {
@@ -466,7 +482,7 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		return nil, errors.New("result node and stable IDs must not be empty")
 	}
 	if err := protocol.ValidateCommandResult(result); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrCommandConflict, err)
 	}
 	if _, err := commandTime(now); err != nil {
 		return nil, err
@@ -502,6 +518,9 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		}
 		if result.WorktreeCreate != nil {
 			record.WorktreeCreate = proto.Clone(result.WorktreeCreate).(*pb.WorktreeCreateResult)
+		}
+		if result.AgentControl != nil {
+			record.AgentControl = proto.Clone(result.AgentControl).(*pb.AgentControlResult)
 		}
 		return transitionCommand(ctx, tx, record, result.Status, result.Detail, now)
 	})

@@ -606,7 +606,7 @@ func TestWorkspaceSchemaMigrationPreservesProbeBytes(t *testing.T) {
 	requireOK(t, j.Close())
 	s = openTestStore(t, coordinatorPath)
 	j = openTestNodeJournal(t, nodePath)
-	if rowCount(t, s, "PRAGMA user_version") != 4 || rowCount(t, j.store, "PRAGMA user_version") != 3 {
+	if rowCount(t, s, "PRAGMA user_version") != 5 || rowCount(t, j.store, "PRAGMA user_version") != 4 {
 		t.Fatal("workspace migration did not fence old binaries")
 	}
 	var gotCoordinator, gotFleet, gotCommand, gotResult []byte

@@ -212,6 +212,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	entry.probes = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProbeCapability)
 	entry.workspaces = entry.probes && herdrEnabled && service.workspacePolicy != nil && slices.Contains(hello.Capabilities, protocol.WorkspaceEnsureCapability)
 	entry.worktrees = entry.workspaces && service.workspacePolicy.HasWorktrees() && slices.Contains(hello.Capabilities, protocol.WorktreeCreateCapability)
+	entry.agents = entry.probes && herdrEnabled && service.agentConfigured() && slices.Contains(hello.Capabilities, protocol.AgentControlCapability)
 	service.fleet.mu.Unlock()
 	if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
@@ -267,6 +268,12 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			return status.Error(codes.Aborted, "node stream superseded")
 		case <-heartbeatTimer.C:
 			return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
+		case envelope := <-entry.queryOutbound:
+			if service.prepareAgentEnvelope(entry, envelope) {
+				if err := sendNodeEnvelope(stream, envelope, entry); err != nil {
+					return err
+				}
+			}
 		case pending := <-entry.outbound:
 			if !time.Now().Before(heartbeatDeadline) {
 				return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
@@ -293,6 +300,15 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 					return status.Errorf(codes.DeadlineExceeded, "receive heartbeat: %v", err)
 				}
 				return err
+			}
+			if envelope == nil || len(envelope.ProtoReflect().GetUnknown()) != 0 {
+				return status.Error(codes.InvalidArgument, "invalid node envelope")
+			}
+			if queryResult := envelope.GetAgentQueryResult(); queryResult != nil {
+				if err := service.finishAgentQuery(entry, queryResult); err != nil {
+					return err
+				}
+				continue
 			}
 			heartbeat := envelope.GetHeartbeat()
 			if heartbeat == nil {
@@ -328,7 +344,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			heartbeatSequence = heartbeat.Sequence
 			heartbeatDeadline = time.Now().Add(heartbeatTimeout)
 			heartbeatTimer.Reset(heartbeatTimeout)
-			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady, heartbeat.WorktreeReady); err != nil {
+			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady, heartbeat.WorktreeReady, heartbeat.AgentReady); err != nil {
 				return err
 			}
 			log.Printf(
@@ -427,6 +443,9 @@ func (service *service) capabilities() []string {
 	values := slices.Clone(protocol.ServerCapabilities)
 	if service.commands != nil {
 		values = append(values, protocol.ProbeCapability)
+		if service.agentConfigured() {
+			values = append(values, protocol.AgentControlCapability)
+		}
 		if service.workspacePolicy != nil {
 			values = append(values, protocol.WorkspaceEnsureCapability)
 			if service.workspacePolicy.HasWorktrees() {

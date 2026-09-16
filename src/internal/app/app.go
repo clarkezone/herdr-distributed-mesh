@@ -24,6 +24,7 @@ import (
 const defaultPort = "50052"
 
 type IO struct {
+	In  io.Reader
 	Out io.Writer
 	Err io.Writer
 }
@@ -114,7 +115,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	network := addNetworkFlags(flags, defaultNodeHostname(), "node", "TS_AUTHKEY_NODE", "tag:herdr-mesh-node")
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
-	herdrSocket := flags.String("herdr-socket", "", "local Herdr socket marker path; read-only unless workspace policy enables mutations")
+	herdrSocket := flags.String("herdr-socket", "", "local Herdr socket marker path; enables observation and authenticated existing-agent control")
 	enableProbes := flags.Bool("enable-probes", false, "opt in to durably journaled read-only node ping commands; no Herdr mutations")
 	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in local project checkout/actor bindings and optional worktree roots")
 	requiredServerTag := flags.String("required-server-tag", "tag:herdr-mesh-server", "Tailscale tag required on the coordinator when commands are enabled")
@@ -139,9 +140,9 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	if *workspacePolicyPath != "" && *herdrSocket == "" {
 		return errors.New("-herdr-socket is required with workspace policy")
 	}
-	if *enableProbes || *workspacePolicyPath != "" {
+	if *enableProbes || *workspacePolicyPath != "" || *herdrSocket != "" {
 		if strings.TrimSpace(*requiredServerTag) == "" {
-			return errors.New("-required-server-tag must not be empty when probes are enabled")
+			return errors.New("-required-server-tag must not be empty when commands are enabled")
 		}
 		journalPath = filepath.Join(network.stateDir, "commands", "journal.db")
 	}
@@ -168,6 +169,7 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 		ServerAddress:      *serverAddress,
 		Transport:          network.config(),
 		WorkspacePolicy:    workspacePolicy,
+		EnableAgentControl: *herdrSocket != "",
 	})
 }
 
@@ -182,6 +184,8 @@ func runControl(ctx context.Context, args []string, streams IO) error {
 		return runFleetQuery(ctx, args[1:], streams, false, true)
 	case "ping", "ensure-workspace", "create-worktree", "command":
 		return runCommandQuery(ctx, args[0], args[1:], streams)
+	case "agent":
+		return runAgent(ctx, args[1:], streams)
 	default:
 		return fmt.Errorf("unknown ctl command %q", args[0])
 	}
@@ -302,6 +306,7 @@ Usage:
   herdr-mesh ctl ensure-workspace -server <host:port> -node <instance-id> -project <id> -binding-revision <revision> [flags]
   herdr-mesh ctl create-worktree -server <host:port> -node <instance-id> -project <id> -binding-revision <revision> -name <name> -branch <branch> -base-commit <sha> [flags]
   herdr-mesh ctl command -server <host:port> -id <command-id> [flags]
+  herdr-mesh ctl agent <get|read|wait|prompt|input|interrupt> -server <host:port> -node <instance-id> -agent <pane-id> [flags]
   herdr-mesh doctor -server <host:port> [flags]
   herdr-mesh dashboard -server <host:port> [-listen 127.0.0.1:8787] [flags]
   herdr-mesh version`)

@@ -45,22 +45,27 @@ func submitAndWait(ctx context.Context, options Options, request *agentflowv1.Su
 	key := request.IdempotencyKey
 	log.Printf("command type=%s idempotency_key=%s target_node=%s", request.CommandType, key, request.NodeInstanceId)
 	return withFleet(ctx, options, func(client agentflowv1.FleetClient, _ transport.SelfStatus) error {
-		record, err := retryUnavailable(ctx, func() (*agentflowv1.CommandRecord, error) { return client.SubmitCommand(ctx, request) })
-		if err != nil {
-			return fmt.Errorf("submit command (retry with the same key %q): %w", key, err)
-		}
-		record, err = waitCommand(ctx, client, record)
-		if err != nil {
-			return fmt.Errorf("wait for command %s (retry with the same key %q): %w", record.GetCommand().GetCommandId(), key, err)
-		}
-		if err := writeCommand(options, record); err != nil {
-			return err
-		}
-		if record.Status != agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED {
-			return fmt.Errorf("command ended with %s; use the same key or command ID to inspect this operation", record.Status)
-		}
-		return nil
+		return submitAndWaitWithClient(ctx, options, client, request)
 	})
+}
+
+func submitAndWaitWithClient(ctx context.Context, options Options, client agentflowv1.FleetClient, request *agentflowv1.SubmitCommandRequest) error {
+	key := request.IdempotencyKey
+	record, err := retryUnavailable(ctx, func() (*agentflowv1.CommandRecord, error) { return client.SubmitCommand(ctx, request) })
+	if err != nil {
+		return fmt.Errorf("submit command (retry with the same key %q): %w", key, err)
+	}
+	record, err = waitCommand(ctx, client, record)
+	if err != nil {
+		return fmt.Errorf("wait for command %s (retry with the same key %q): %w", record.GetCommand().GetCommandId(), key, err)
+	}
+	if err := writeCommand(options, record); err != nil {
+		return err
+	}
+	if record.Status != agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED {
+		return fmt.Errorf("command ended with %s; use the same key or command ID to inspect this operation", record.Status)
+	}
+	return nil
 }
 
 func CommandStatus(ctx context.Context, options Options, id string) error {
@@ -133,6 +138,11 @@ func writeCommand(options Options, record *agentflowv1.CommandRecord) error {
 	if worktree := record.WorktreeCreate; worktree != nil {
 		_, err = fmt.Fprintf(options.Output, "project=%s binding_revision=%s workspace=%s name=%s branch=%s base_commit=%s\n",
 			worktree.ProjectId, worktree.BindingRevision, worktree.WorkspaceId, worktree.Name, worktree.Branch, worktree.BaseCommit)
+	}
+	if err == nil && record.AgentControl != nil {
+		value := record.AgentControl
+		_, err = fmt.Fprintf(options.Output, "agent=%s terminal=%s observed_status=%s state_change_seq=%d (input receipt, not task completion)\n",
+			value.Target.GetPaneId(), value.Target.GetTerminalId(), value.ObservedStatus, value.StateChangeSeq)
 	}
 	return err
 }

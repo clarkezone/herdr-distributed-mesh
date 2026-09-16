@@ -18,6 +18,7 @@ service Fleet {
   rpc ListNodes(google.protobuf.Empty) returns (NodeList);
   rpc SubmitCommand(SubmitCommandRequest) returns (CommandRecord);
   rpc GetCommand(GetCommandRequest) returns (CommandRecord);
+  rpc QueryAgent(AgentQueryRequest) returns (AgentQueryResult);
 }
 
 enum Role {
@@ -73,6 +74,7 @@ message Heartbeat {
   bool command_ready = 3;
   bool workspace_ready = 4;
   bool worktree_ready = 5;
+  bool agent_ready = 6;
 }
 
 message Snapshot {
@@ -101,6 +103,7 @@ message Command {
   google.protobuf.Timestamp expires_at = 9;
   WorkspaceEnsure workspace_ensure = 10;
   WorktreeCreate worktree_create = 11;
+  AgentControl agent_control = 12;
 }
 
 message WorktreeCreate {
@@ -141,6 +144,7 @@ message SubmitCommandRequest {
   google.protobuf.Duration ttl = 4;
   WorkspaceEnsure workspace_ensure = 5;
   WorktreeCreate worktree_create = 6;
+  AgentControl agent_control = 7;
 }
 
 message GetCommandRequest {
@@ -162,6 +166,7 @@ message CommandRecord {
   repeated CommandAudit audit = 6;
   WorkspaceEnsureResult workspace_ensure = 7;
   WorktreeCreateResult worktree_create = 8;
+  AgentControlResult agent_control = 9;
 }
 
 message Actor {
@@ -184,6 +189,7 @@ message CommandResult {
   google.protobuf.Struct payload = 4;
   WorkspaceEnsureResult workspace_ensure = 5;
   WorktreeCreateResult worktree_create = 6;
+  AgentControlResult agent_control = 7;
 }
 
 message NodeEnvelope {
@@ -197,6 +203,9 @@ message NodeEnvelope {
     CommandAck command_ack = 7;
     CommandResult command_result = 8;
     HerdrState herdr_state = 9;
+    AgentQuery agent_query = 10;
+    AgentQueryResult agent_query_result = 11;
+    AgentQueryCancel agent_query_cancel = 12;
   }
 }
 
@@ -243,8 +252,82 @@ message NodeView {
   bool command_ready = 8;
   bool workspace_ready = 9;
   bool worktree_ready = 10;
+  bool agent_ready = 11;
 }
 
 message NodeList {
   repeated NodeView nodes = 1;
+}
+
+message AgentTarget {
+  string pane_id = 1;
+  string terminal_id = 2;
+  string agent_session_id = 3;
+}
+
+message AgentView {
+  AgentTarget target = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string provider = 4;
+  string status = 5;
+  bool interactive_ready = 6;
+  bool launch_pending = 7;
+  uint64 revision = 8;
+  uint64 state_change_seq = 9;
+}
+
+enum AgentQueryKind {
+  AGENT_QUERY_KIND_UNSPECIFIED = 0;
+  AGENT_QUERY_KIND_GET = 1;
+  AGENT_QUERY_KIND_READ = 2;
+  AGENT_QUERY_KIND_WAIT = 3;
+}
+
+message AgentQueryRequest {
+  string node_instance_id = 1;
+  AgentQueryKind kind = 2;
+  AgentTarget target = 3;
+  uint32 lines = 4;
+  repeated string until = 5;
+  uint32 timeout_ms = 6;
+}
+
+// Ephemeral queries and output never enter the durable command journal.
+message AgentQuery {
+  string query_id = 1;
+  AgentQueryRequest request = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message AgentQueryResult {
+  string query_id = 1;
+  AgentView agent = 2;
+  string text = 3;
+  bool truncated = 4;
+  string error_code = 5;
+}
+
+message AgentQueryCancel {
+  string query_id = 1;
+}
+
+enum AgentControlAction {
+  AGENT_CONTROL_ACTION_UNSPECIFIED = 0;
+  AGENT_CONTROL_ACTION_PROMPT = 1;
+  AGENT_CONTROL_ACTION_INPUT = 2;
+  AGENT_CONTROL_ACTION_INTERRUPT = 3;
+}
+
+message AgentControl {
+  AgentControlAction action = 1;
+  AgentTarget target = 2;
+  string text = 3;
+  repeated string keys = 4;
+}
+
+message AgentControlResult {
+  AgentTarget target = 1;
+  string observed_status = 2;
+  uint64 state_change_seq = 3;
 }

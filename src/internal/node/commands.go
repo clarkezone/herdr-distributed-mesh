@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
@@ -41,6 +42,9 @@ func storageError(operation string, err error) error {
 }
 
 func openJournal(ctx context.Context, options Options) (*state.NodeJournal, error) {
+	if options.EnableAgentControl && (options.CommandJournalPath == "" || strings.TrimSpace(options.HerdrSocket) == "" || strings.TrimSpace(options.RequiredServerTag) == "") {
+		return nil, errors.New("agent control requires a command journal, Herdr socket, and required server tag")
+	}
 	if options.WorkspacePolicy != nil && (options.CommandJournalPath == "" || strings.TrimSpace(options.HerdrSocket) == "" || strings.TrimSpace(options.RequiredServerTag) == "") {
 		return nil, errors.New("workspace policy requires a command journal, Herdr socket, and required server tag")
 	}
@@ -65,7 +69,7 @@ func openJournal(ctx context.Context, options Options) (*state.NodeJournal, erro
 // RunSession runs one session using an already authenticated client. Callers must
 // authorize the actual peer on every dial (production uses DialGRPCWithPeerTag).
 // It owns, recovers, and closes the requested journal for this session.
-// Workspace and worktree effects additionally require Options.VerifyServerPeer;
+// Workspace, worktree, and agent effects additionally require Options.VerifyServerPeer;
 // without one they fail closed. Run installs the production WhoIs verifier.
 func RunSession(ctx context.Context, client pb.NodeControlClient, options Options) (registered bool, err error) {
 	journal, err := openJournal(ctx, options)
@@ -96,6 +100,9 @@ type commandHandler struct {
 	ensureWorkspace     workspaceExecutor
 	createWorktree      worktreeExecutor
 	verifyCoordinator   func(context.Context) error
+	agentNegotiated     bool
+	agentBaseline       atomic.Pointer[pb.HerdrState]
+	controlAgent        func(context.Context, herdr.Config, *pb.AgentControl) (*pb.AgentControlResult, error)
 }
 
 type workspaceExecutor func(context.Context, herdr.Config, projects.Binding) (*pb.WorkspaceEnsureResult, error)
@@ -110,6 +117,9 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	}
 	if command.CommandType == protocol.WorktreeCreateCommandType && !h.worktreeNegotiated {
 		return nil, status.Error(codes.FailedPrecondition, "worktree capability was not negotiated")
+	}
+	if command.CommandType == protocol.AgentControlCommandType && !h.agentNegotiated {
+		return nil, status.Error(codes.FailedPrecondition, "agent capability was not negotiated")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -161,6 +171,11 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	now := time.Now()
 	if !now.Before(command.ExpiresAt.AsTime()) || !now.Before(receivedAt.Add(command.Ttl.AsDuration())) {
 		result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_TIMED_OUT, "deadline_expired"
+	} else if command.CommandType == protocol.AgentControlCommandType {
+		result = h.agentMutation(ctx, command, receivedAt)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	} else if command.CommandType == protocol.WorkspaceEnsureCommandType || command.CommandType == protocol.WorktreeCreateCommandType {
 		result = h.mutation(ctx, command, receivedAt)
 		// Cancellation can race a remote mutation. Leave the durable intent for
@@ -175,11 +190,14 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 		result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, "pong"
 	}
 	if err := protocol.ValidateResultForCommand(result, command); err != nil {
-		return nil, storageError("validate completion", err)
+		return nil, status.Error(codes.InvalidArgument, "invalid command completion")
 	}
 	completion, stop := context.WithTimeout(context.WithoutCancel(ctx), journalOperationTimeout)
 	defer stop()
 	if err := h.journal.Complete(completion, result); err != nil {
+		if errors.Is(err, state.ErrCommandConflict) {
+			return nil, status.Error(codes.InvalidArgument, "conflicting command completion")
+		}
 		return nil, storageError("complete", err)
 	}
 	return result, nil

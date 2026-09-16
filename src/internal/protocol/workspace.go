@@ -18,7 +18,7 @@ func ValidateWorkspaceEnsure(request *pb.WorkspaceEnsure) error {
 }
 
 func ValidateWorkspaceResult(result *pb.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorktreeCreate != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorktreeCreate != nil || result.AgentControl != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid workspace result")
 	}
 	if result.Status == pb.CommandStatus_COMMAND_STATUS_SUCCEEDED {
@@ -60,7 +60,10 @@ func ValidateCommandResult(result *pb.CommandResult) error {
 	if ValidateWorkspaceResult(result) == nil {
 		return nil
 	}
-	return ValidateWorktreeResult(result)
+	if ValidateWorktreeResult(result) == nil {
+		return nil
+	}
+	return ValidateAgentControlResult(result)
 }
 
 func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) error {
@@ -68,6 +71,17 @@ func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) err
 		return errors.New("command result identity mismatch")
 	}
 	switch command.CommandType {
+	case AgentControlCommandType:
+		if err := ValidateAgentControlResult(result); err != nil {
+			return err
+		}
+		if value := result.AgentControl; value != nil {
+			if command.AgentControl == nil || !equalAgentTarget(value.Target, command.AgentControl.Target) ||
+				result.Detail != AgentControlSuccessDetail(command.AgentControl.Action) {
+				return errors.New("agent result does not match original request")
+			}
+		}
+		return nil
 	case ProbeCommandType:
 		return ValidateProbeResult(result)
 	case WorkspaceEnsureCommandType:

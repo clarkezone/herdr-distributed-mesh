@@ -33,6 +33,10 @@ type fleetEntry struct {
 	probes        bool
 	workspaces    bool
 	worktrees     bool
+	agents        bool
+	queries       map[string]*pendingAgentQuery
+	queryCanceled map[string]time.Time
+	queryOutbound chan *agentflowv1.NodeEnvelope
 	peerContext   context.Context
 	streamDone    <-chan struct{}
 	supersedeOnce sync.Once
@@ -222,6 +226,7 @@ func (f *fleetStore) restore(views []*agentflowv1.NodeView, now time.Time) error
 		copy.CommandReady = false
 		copy.WorkspaceReady = false
 		copy.WorktreeReady = false
+		copy.AgentReady = false
 		nodes[copy.InstanceId] = &fleetEntry{view: copy, done: make(chan struct{})}
 	}
 	f.nodes = nodes
@@ -323,8 +328,11 @@ func (f *fleetStore) beginLocked(instanceID, stableID string, enabled bool, now 
 			Connected: true, LastSeen: timestamppb.New(now),
 			Herdr: &agentflowv1.HerdrState{Status: herdrStatus},
 		},
-		done:     make(chan struct{}),
-		outbound: make(chan queuedCommand, 16),
+		done:          make(chan struct{}),
+		outbound:      make(chan queuedCommand, 16),
+		queries:       make(map[string]*pendingAgentQuery),
+		queryCanceled: make(map[string]time.Time),
+		queryOutbound: make(chan *agentflowv1.NodeEnvelope, 16),
 	}
 	if err := f.save(entry.view); err != nil {
 		return nil, err
@@ -342,12 +350,15 @@ func (f *fleetStore) beginLocked(instanceID, stableID string, enabled bool, now 
 func (f *fleetStore) end(entry *fleetEntry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	entry.supersede()
+	clear(entry.queries)
 	if f.nodes[entry.view.InstanceId] == entry {
 		copy := proto.Clone(entry.view).(*agentflowv1.NodeView)
 		copy.Connected, copy.Stale = false, true
 		copy.CommandReady = false
 		copy.WorkspaceReady = false
 		copy.WorktreeReady = false
+		copy.AgentReady = false
 		if err := f.save(copy); err != nil {
 			return err
 		}
@@ -362,6 +373,9 @@ func (f *fleetStore) end(entry *fleetEntry) error {
 func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time, ready ...bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.storageErr != nil {
+		return storageUnavailable()
+	}
 	if !f.current(entry) {
 		return status.Error(codes.Aborted, "node stream superseded")
 	}
@@ -370,6 +384,7 @@ func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time, ready ...bool) 
 	copy.CommandReady = len(ready) > 0 && ready[0] && entry.probes
 	copy.WorkspaceReady = copy.CommandReady && len(ready) > 1 && ready[1] && entry.workspaces && freshHerdr(copy, now)
 	copy.WorktreeReady = copy.WorkspaceReady && len(ready) > 2 && ready[2] && entry.worktrees
+	copy.AgentReady = copy.CommandReady && len(ready) > 3 && ready[3] && entry.agents && freshHerdr(copy, now)
 	if err := f.save(copy); err != nil {
 		return err
 	}
@@ -452,6 +467,7 @@ func (f *fleetStore) update(entry *fleetEntry, state *agentflowv1.HerdrState, no
 	if state.Status != "ready" {
 		copy.WorkspaceReady = false
 		copy.WorktreeReady = false
+		copy.AgentReady = false
 	}
 	if err := f.save(copy); err != nil {
 		return err
@@ -473,6 +489,7 @@ func (f *fleetStore) list(now time.Time) (*agentflowv1.NodeList, error) {
 			view.HerdrReceivedAt == nil || now.Sub(view.HerdrReceivedAt.AsTime()) > herdrStaleAfter
 		view.WorkspaceReady = view.WorkspaceReady && freshHerdr(view, now) && f.current(entry)
 		view.WorktreeReady = view.WorktreeReady && view.WorkspaceReady
+		view.AgentReady = view.AgentReady && freshHerdr(view, now) && f.current(entry)
 		list.Nodes = append(list.Nodes, view)
 	}
 

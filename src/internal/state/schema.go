@@ -92,9 +92,9 @@ func (s *Store) inspectSchema(ctx context.Context, ownerID string, created bool,
 	if err := s.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&application); err != nil {
 		return 0, err
 	}
-	maxVersion := 4
+	maxVersion := 5
 	if kind == nodeKind {
-		maxVersion = 3
+		maxVersion = 4
 	}
 	if version < 0 || version > maxVersion {
 		return 0, fmt.Errorf("unsupported state schema version %d", version)
@@ -196,6 +196,9 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 			if version > 0 && version < 3 && entry.command.CommandType == protocol.WorktreeCreateCommandType {
 				return errors.New("legacy node journal contains a worktree command")
 			}
+			if version > 0 && version < 4 && entry.command.CommandType == protocol.AgentControlCommandType {
+				return errors.New("legacy node journal contains an agent control command")
+			}
 		}
 		// Version fences exclude older binaries without rewriting retained bytes.
 		if version < 2 {
@@ -204,11 +207,16 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 			}
 		}
 		if version < 3 {
-			_, err = tx.ExecContext(ctx, "PRAGMA user_version = 3")
+			if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
+				return err
+			}
+		}
+		if version < 4 {
+			_, err = tx.ExecContext(ctx, "PRAGMA user_version = 4")
 		}
 		return err
 	}
-	if version > 0 && version < 4 {
+	if version > 0 && version < 5 {
 		if err := validateLegacyBindings(ctx, tx); err != nil {
 			return err
 		}
@@ -247,6 +255,9 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 		if version > 0 && version < 4 && record.Command.CommandType == protocol.WorktreeCreateCommandType {
 			return errors.New("legacy coordinator journal contains a worktree command")
 		}
+		if version > 0 && version < 5 && record.Command.CommandType == protocol.AgentControlCommandType {
+			return errors.New("legacy coordinator journal contains an agent control command")
+		}
 	}
 	if version < 3 {
 		if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
@@ -255,7 +266,13 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 	}
 	// Fence workspace-only binaries without rewriting retained typed blobs.
 	if version < 4 {
-		_, err = tx.ExecContext(ctx, "PRAGMA user_version = 4")
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
+			return err
+		}
+	}
+	// Older binaries must not interpret retained agent controls as unknown data.
+	if version < 5 {
+		_, err = tx.ExecContext(ctx, "PRAGMA user_version = 5")
 	}
 	return err
 }

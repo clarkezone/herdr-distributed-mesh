@@ -196,6 +196,110 @@ func (ActorOrigin) EnumDescriptor() ([]byte, []int) {
 	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{2}
 }
 
+type AgentQueryKind int32
+
+const (
+	AgentQueryKind_AGENT_QUERY_KIND_UNSPECIFIED AgentQueryKind = 0
+	AgentQueryKind_AGENT_QUERY_KIND_GET         AgentQueryKind = 1
+	AgentQueryKind_AGENT_QUERY_KIND_READ        AgentQueryKind = 2
+	AgentQueryKind_AGENT_QUERY_KIND_WAIT        AgentQueryKind = 3
+)
+
+// Enum value maps for AgentQueryKind.
+var (
+	AgentQueryKind_name = map[int32]string{
+		0: "AGENT_QUERY_KIND_UNSPECIFIED",
+		1: "AGENT_QUERY_KIND_GET",
+		2: "AGENT_QUERY_KIND_READ",
+		3: "AGENT_QUERY_KIND_WAIT",
+	}
+	AgentQueryKind_value = map[string]int32{
+		"AGENT_QUERY_KIND_UNSPECIFIED": 0,
+		"AGENT_QUERY_KIND_GET":         1,
+		"AGENT_QUERY_KIND_READ":        2,
+		"AGENT_QUERY_KIND_WAIT":        3,
+	}
+)
+
+func (x AgentQueryKind) Enum() *AgentQueryKind {
+	p := new(AgentQueryKind)
+	*p = x
+	return p
+}
+
+func (x AgentQueryKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AgentQueryKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_agentflow_v1_control_proto_enumTypes[3].Descriptor()
+}
+
+func (AgentQueryKind) Type() protoreflect.EnumType {
+	return &file_agentflow_v1_control_proto_enumTypes[3]
+}
+
+func (x AgentQueryKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AgentQueryKind.Descriptor instead.
+func (AgentQueryKind) EnumDescriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{3}
+}
+
+type AgentControlAction int32
+
+const (
+	AgentControlAction_AGENT_CONTROL_ACTION_UNSPECIFIED AgentControlAction = 0
+	AgentControlAction_AGENT_CONTROL_ACTION_PROMPT      AgentControlAction = 1
+	AgentControlAction_AGENT_CONTROL_ACTION_INPUT       AgentControlAction = 2
+	AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT   AgentControlAction = 3
+)
+
+// Enum value maps for AgentControlAction.
+var (
+	AgentControlAction_name = map[int32]string{
+		0: "AGENT_CONTROL_ACTION_UNSPECIFIED",
+		1: "AGENT_CONTROL_ACTION_PROMPT",
+		2: "AGENT_CONTROL_ACTION_INPUT",
+		3: "AGENT_CONTROL_ACTION_INTERRUPT",
+	}
+	AgentControlAction_value = map[string]int32{
+		"AGENT_CONTROL_ACTION_UNSPECIFIED": 0,
+		"AGENT_CONTROL_ACTION_PROMPT":      1,
+		"AGENT_CONTROL_ACTION_INPUT":       2,
+		"AGENT_CONTROL_ACTION_INTERRUPT":   3,
+	}
+)
+
+func (x AgentControlAction) Enum() *AgentControlAction {
+	p := new(AgentControlAction)
+	*p = x
+	return p
+}
+
+func (x AgentControlAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AgentControlAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_agentflow_v1_control_proto_enumTypes[4].Descriptor()
+}
+
+func (AgentControlAction) Type() protoreflect.EnumType {
+	return &file_agentflow_v1_control_proto_enumTypes[4]
+}
+
+func (x AgentControlAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AgentControlAction.Descriptor instead.
+func (AgentControlAction) EnumDescriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{4}
+}
+
 type ProtocolRange struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Minimum       uint32                 `protobuf:"varint,1,opt,name=minimum,proto3" json:"minimum,omitempty"`
@@ -407,6 +511,7 @@ type Heartbeat struct {
 	CommandReady   bool                   `protobuf:"varint,3,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
 	WorkspaceReady bool                   `protobuf:"varint,4,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
 	WorktreeReady  bool                   `protobuf:"varint,5,opt,name=worktree_ready,json=worktreeReady,proto3" json:"worktree_ready,omitempty"`
+	AgentReady     bool                   `protobuf:"varint,6,opt,name=agent_ready,json=agentReady,proto3" json:"agent_ready,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -472,6 +577,13 @@ func (x *Heartbeat) GetWorkspaceReady() bool {
 func (x *Heartbeat) GetWorktreeReady() bool {
 	if x != nil {
 		return x.WorktreeReady
+	}
+	return false
+}
+
+func (x *Heartbeat) GetAgentReady() bool {
+	if x != nil {
+		return x.AgentReady
 	}
 	return false
 }
@@ -625,6 +737,7 @@ type Command struct {
 	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	WorkspaceEnsure *WorkspaceEnsure       `protobuf:"bytes,10,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreate        `protobuf:"bytes,11,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
+	AgentControl    *AgentControl          `protobuf:"bytes,12,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -732,6 +845,13 @@ func (x *Command) GetWorkspaceEnsure() *WorkspaceEnsure {
 func (x *Command) GetWorktreeCreate() *WorktreeCreate {
 	if x != nil {
 		return x.WorktreeCreate
+	}
+	return nil
+}
+
+func (x *Command) GetAgentControl() *AgentControl {
+	if x != nil {
+		return x.AgentControl
 	}
 	return nil
 }
@@ -1026,6 +1146,7 @@ type SubmitCommandRequest struct {
 	Ttl             *durationpb.Duration   `protobuf:"bytes,4,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	WorkspaceEnsure *WorkspaceEnsure       `protobuf:"bytes,5,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreate        `protobuf:"bytes,6,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
+	AgentControl    *AgentControl          `protobuf:"bytes,7,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1098,6 +1219,13 @@ func (x *SubmitCommandRequest) GetWorkspaceEnsure() *WorkspaceEnsure {
 func (x *SubmitCommandRequest) GetWorktreeCreate() *WorktreeCreate {
 	if x != nil {
 		return x.WorktreeCreate
+	}
+	return nil
+}
+
+func (x *SubmitCommandRequest) GetAgentControl() *AgentControl {
+	if x != nil {
+		return x.AgentControl
 	}
 	return nil
 }
@@ -1216,6 +1344,7 @@ type CommandRecord struct {
 	Audit           []*CommandAudit        `protobuf:"bytes,6,rep,name=audit,proto3" json:"audit,omitempty"`
 	WorkspaceEnsure *WorkspaceEnsureResult `protobuf:"bytes,7,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreateResult  `protobuf:"bytes,8,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
+	AgentControl    *AgentControlResult    `protobuf:"bytes,9,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1302,6 +1431,13 @@ func (x *CommandRecord) GetWorkspaceEnsure() *WorkspaceEnsureResult {
 func (x *CommandRecord) GetWorktreeCreate() *WorktreeCreateResult {
 	if x != nil {
 		return x.WorktreeCreate
+	}
+	return nil
+}
+
+func (x *CommandRecord) GetAgentControl() *AgentControlResult {
+	if x != nil {
+		return x.AgentControl
 	}
 	return nil
 }
@@ -1442,6 +1578,7 @@ type CommandResult struct {
 	Payload         *structpb.Struct       `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
 	WorkspaceEnsure *WorkspaceEnsureResult `protobuf:"bytes,5,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreateResult  `protobuf:"bytes,6,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
+	AgentControl    *AgentControlResult    `protobuf:"bytes,7,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1518,6 +1655,13 @@ func (x *CommandResult) GetWorktreeCreate() *WorktreeCreateResult {
 	return nil
 }
 
+func (x *CommandResult) GetAgentControl() *AgentControlResult {
+	if x != nil {
+		return x.AgentControl
+	}
+	return nil
+}
+
 type NodeEnvelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Body:
@@ -1531,6 +1675,9 @@ type NodeEnvelope struct {
 	//	*NodeEnvelope_CommandAck
 	//	*NodeEnvelope_CommandResult
 	//	*NodeEnvelope_HerdrState
+	//	*NodeEnvelope_AgentQuery
+	//	*NodeEnvelope_AgentQueryResult
+	//	*NodeEnvelope_AgentQueryCancel
 	Body          isNodeEnvelope_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1654,6 +1801,33 @@ func (x *NodeEnvelope) GetHerdrState() *HerdrState {
 	return nil
 }
 
+func (x *NodeEnvelope) GetAgentQuery() *AgentQuery {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_AgentQuery); ok {
+			return x.AgentQuery
+		}
+	}
+	return nil
+}
+
+func (x *NodeEnvelope) GetAgentQueryResult() *AgentQueryResult {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_AgentQueryResult); ok {
+			return x.AgentQueryResult
+		}
+	}
+	return nil
+}
+
+func (x *NodeEnvelope) GetAgentQueryCancel() *AgentQueryCancel {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_AgentQueryCancel); ok {
+			return x.AgentQueryCancel
+		}
+	}
+	return nil
+}
+
 type isNodeEnvelope_Body interface {
 	isNodeEnvelope_Body()
 }
@@ -1694,6 +1868,18 @@ type NodeEnvelope_HerdrState struct {
 	HerdrState *HerdrState `protobuf:"bytes,9,opt,name=herdr_state,json=herdrState,proto3,oneof"`
 }
 
+type NodeEnvelope_AgentQuery struct {
+	AgentQuery *AgentQuery `protobuf:"bytes,10,opt,name=agent_query,json=agentQuery,proto3,oneof"`
+}
+
+type NodeEnvelope_AgentQueryResult struct {
+	AgentQueryResult *AgentQueryResult `protobuf:"bytes,11,opt,name=agent_query_result,json=agentQueryResult,proto3,oneof"`
+}
+
+type NodeEnvelope_AgentQueryCancel struct {
+	AgentQueryCancel *AgentQueryCancel `protobuf:"bytes,12,opt,name=agent_query_cancel,json=agentQueryCancel,proto3,oneof"`
+}
+
 func (*NodeEnvelope_Hello) isNodeEnvelope_Body() {}
 
 func (*NodeEnvelope_HelloAck) isNodeEnvelope_Body() {}
@@ -1711,6 +1897,12 @@ func (*NodeEnvelope_CommandAck) isNodeEnvelope_Body() {}
 func (*NodeEnvelope_CommandResult) isNodeEnvelope_Body() {}
 
 func (*NodeEnvelope_HerdrState) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_AgentQuery) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_AgentQueryResult) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_AgentQueryCancel) isNodeEnvelope_Body() {}
 
 type ServerInfo struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
@@ -1988,6 +2180,7 @@ type NodeView struct {
 	CommandReady   bool `protobuf:"varint,8,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
 	WorkspaceReady bool `protobuf:"varint,9,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
 	WorktreeReady  bool `protobuf:"varint,10,opt,name=worktree_ready,json=worktreeReady,proto3" json:"worktree_ready,omitempty"`
+	AgentReady     bool `protobuf:"varint,11,opt,name=agent_ready,json=agentReady,proto3" json:"agent_ready,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2092,6 +2285,13 @@ func (x *NodeView) GetWorktreeReady() bool {
 	return false
 }
 
+func (x *NodeView) GetAgentReady() bool {
+	if x != nil {
+		return x.AgentReady
+	}
+	return false
+}
+
 type NodeList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Nodes         []*NodeView            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
@@ -2136,6 +2336,567 @@ func (x *NodeList) GetNodes() []*NodeView {
 	return nil
 }
 
+type AgentTarget struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PaneId         string                 `protobuf:"bytes,1,opt,name=pane_id,json=paneId,proto3" json:"pane_id,omitempty"`
+	TerminalId     string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	AgentSessionId string                 `protobuf:"bytes,3,opt,name=agent_session_id,json=agentSessionId,proto3" json:"agent_session_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AgentTarget) Reset() {
+	*x = AgentTarget{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentTarget) ProtoMessage() {}
+
+func (x *AgentTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentTarget.ProtoReflect.Descriptor instead.
+func (*AgentTarget) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *AgentTarget) GetPaneId() string {
+	if x != nil {
+		return x.PaneId
+	}
+	return ""
+}
+
+func (x *AgentTarget) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+func (x *AgentTarget) GetAgentSessionId() string {
+	if x != nil {
+		return x.AgentSessionId
+	}
+	return ""
+}
+
+type AgentView struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Target           *AgentTarget           `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	WorkspaceId      string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TabId            string                 `protobuf:"bytes,3,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
+	Provider         string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
+	Status           string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	InteractiveReady bool                   `protobuf:"varint,6,opt,name=interactive_ready,json=interactiveReady,proto3" json:"interactive_ready,omitempty"`
+	LaunchPending    bool                   `protobuf:"varint,7,opt,name=launch_pending,json=launchPending,proto3" json:"launch_pending,omitempty"`
+	Revision         uint64                 `protobuf:"varint,8,opt,name=revision,proto3" json:"revision,omitempty"`
+	StateChangeSeq   uint64                 `protobuf:"varint,9,opt,name=state_change_seq,json=stateChangeSeq,proto3" json:"state_change_seq,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *AgentView) Reset() {
+	*x = AgentView{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentView) ProtoMessage() {}
+
+func (x *AgentView) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentView.ProtoReflect.Descriptor instead.
+func (*AgentView) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *AgentView) GetTarget() *AgentTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AgentView) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *AgentView) GetTabId() string {
+	if x != nil {
+		return x.TabId
+	}
+	return ""
+}
+
+func (x *AgentView) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AgentView) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AgentView) GetInteractiveReady() bool {
+	if x != nil {
+		return x.InteractiveReady
+	}
+	return false
+}
+
+func (x *AgentView) GetLaunchPending() bool {
+	if x != nil {
+		return x.LaunchPending
+	}
+	return false
+}
+
+func (x *AgentView) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *AgentView) GetStateChangeSeq() uint64 {
+	if x != nil {
+		return x.StateChangeSeq
+	}
+	return 0
+}
+
+type AgentQueryRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	Kind           AgentQueryKind         `protobuf:"varint,2,opt,name=kind,proto3,enum=agentflow.v1.AgentQueryKind" json:"kind,omitempty"`
+	Target         *AgentTarget           `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Lines          uint32                 `protobuf:"varint,4,opt,name=lines,proto3" json:"lines,omitempty"`
+	Until          []string               `protobuf:"bytes,5,rep,name=until,proto3" json:"until,omitempty"`
+	TimeoutMs      uint32                 `protobuf:"varint,6,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AgentQueryRequest) Reset() {
+	*x = AgentQueryRequest{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentQueryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentQueryRequest) ProtoMessage() {}
+
+func (x *AgentQueryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentQueryRequest.ProtoReflect.Descriptor instead.
+func (*AgentQueryRequest) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *AgentQueryRequest) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+func (x *AgentQueryRequest) GetKind() AgentQueryKind {
+	if x != nil {
+		return x.Kind
+	}
+	return AgentQueryKind_AGENT_QUERY_KIND_UNSPECIFIED
+}
+
+func (x *AgentQueryRequest) GetTarget() *AgentTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AgentQueryRequest) GetLines() uint32 {
+	if x != nil {
+		return x.Lines
+	}
+	return 0
+}
+
+func (x *AgentQueryRequest) GetUntil() []string {
+	if x != nil {
+		return x.Until
+	}
+	return nil
+}
+
+func (x *AgentQueryRequest) GetTimeoutMs() uint32 {
+	if x != nil {
+		return x.TimeoutMs
+	}
+	return 0
+}
+
+// Ephemeral queries and output never enter the durable command journal.
+type AgentQuery struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	QueryId       string                 `protobuf:"bytes,1,opt,name=query_id,json=queryId,proto3" json:"query_id,omitempty"`
+	Request       *AgentQueryRequest     `protobuf:"bytes,2,opt,name=request,proto3" json:"request,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentQuery) Reset() {
+	*x = AgentQuery{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentQuery) ProtoMessage() {}
+
+func (x *AgentQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentQuery.ProtoReflect.Descriptor instead.
+func (*AgentQuery) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *AgentQuery) GetQueryId() string {
+	if x != nil {
+		return x.QueryId
+	}
+	return ""
+}
+
+func (x *AgentQuery) GetRequest() *AgentQueryRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *AgentQuery) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+type AgentQueryResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	QueryId       string                 `protobuf:"bytes,1,opt,name=query_id,json=queryId,proto3" json:"query_id,omitempty"`
+	Agent         *AgentView             `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	Truncated     bool                   `protobuf:"varint,4,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	ErrorCode     string                 `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentQueryResult) Reset() {
+	*x = AgentQueryResult{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentQueryResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentQueryResult) ProtoMessage() {}
+
+func (x *AgentQueryResult) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentQueryResult.ProtoReflect.Descriptor instead.
+func (*AgentQueryResult) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *AgentQueryResult) GetQueryId() string {
+	if x != nil {
+		return x.QueryId
+	}
+	return ""
+}
+
+func (x *AgentQueryResult) GetAgent() *AgentView {
+	if x != nil {
+		return x.Agent
+	}
+	return nil
+}
+
+func (x *AgentQueryResult) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *AgentQueryResult) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+func (x *AgentQueryResult) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+type AgentQueryCancel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	QueryId       string                 `protobuf:"bytes,1,opt,name=query_id,json=queryId,proto3" json:"query_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentQueryCancel) Reset() {
+	*x = AgentQueryCancel{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentQueryCancel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentQueryCancel) ProtoMessage() {}
+
+func (x *AgentQueryCancel) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentQueryCancel.ProtoReflect.Descriptor instead.
+func (*AgentQueryCancel) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *AgentQueryCancel) GetQueryId() string {
+	if x != nil {
+		return x.QueryId
+	}
+	return ""
+}
+
+type AgentControl struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        AgentControlAction     `protobuf:"varint,1,opt,name=action,proto3,enum=agentflow.v1.AgentControlAction" json:"action,omitempty"`
+	Target        *AgentTarget           `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	Keys          []string               `protobuf:"bytes,4,rep,name=keys,proto3" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentControl) Reset() {
+	*x = AgentControl{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentControl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentControl) ProtoMessage() {}
+
+func (x *AgentControl) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentControl.ProtoReflect.Descriptor instead.
+func (*AgentControl) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *AgentControl) GetAction() AgentControlAction {
+	if x != nil {
+		return x.Action
+	}
+	return AgentControlAction_AGENT_CONTROL_ACTION_UNSPECIFIED
+}
+
+func (x *AgentControl) GetTarget() *AgentTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AgentControl) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *AgentControl) GetKeys() []string {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+type AgentControlResult struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Target         *AgentTarget           `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	ObservedStatus string                 `protobuf:"bytes,2,opt,name=observed_status,json=observedStatus,proto3" json:"observed_status,omitempty"`
+	StateChangeSeq uint64                 `protobuf:"varint,3,opt,name=state_change_seq,json=stateChangeSeq,proto3" json:"state_change_seq,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AgentControlResult) Reset() {
+	*x = AgentControlResult{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentControlResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentControlResult) ProtoMessage() {}
+
+func (x *AgentControlResult) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentControlResult.ProtoReflect.Descriptor instead.
+func (*AgentControlResult) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *AgentControlResult) GetTarget() *AgentTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AgentControlResult) GetObservedStatus() string {
+	if x != nil {
+		return x.ObservedStatus
+	}
+	return ""
+}
+
+func (x *AgentControlResult) GetStateChangeSeq() uint64 {
+	if x != nil {
+		return x.StateChangeSeq
+	}
+	return 0
+}
+
 var File_agentflow_v1_control_proto protoreflect.FileDescriptor
 
 const file_agentflow_v1_control_proto_rawDesc = "" +
@@ -2157,13 +2918,15 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\bHelloAck\x12+\n" +
 	"\x11selected_protocol\x18\x01 \x01(\rR\x10selectedProtocol\x12,\n" +
 	"\x12server_instance_id\x18\x02 \x01(\tR\x10serverInstanceId\x12\"\n" +
-	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"\xd1\x01\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"\xf2\x01\n" +
 	"\tHeartbeat\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x123\n" +
 	"\asent_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12#\n" +
 	"\rcommand_ready\x18\x03 \x01(\bR\fcommandReady\x12'\n" +
 	"\x0fworkspace_ready\x18\x04 \x01(\bR\x0eworkspaceReady\x12%\n" +
-	"\x0eworktree_ready\x18\x05 \x01(\bR\rworktreeReady\"~\n" +
+	"\x0eworktree_ready\x18\x05 \x01(\bR\rworktreeReady\x12\x1f\n" +
+	"\vagent_ready\x18\x06 \x01(\bR\n" +
+	"agentReady\"~\n" +
 	"\bSnapshot\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12#\n" +
 	"\rsnapshot_type\x18\x02 \x01(\tR\fsnapshotType\x121\n" +
@@ -2175,7 +2938,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\tentity_id\x18\x03 \x01(\tR\bentityId\x12;\n" +
 	"\voccurred_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"occurredAt\x121\n" +
-	"\apayload\x18\x05 \x01(\v2\x17.google.protobuf.StructR\apayload\"\xa7\x04\n" +
+	"\apayload\x18\x05 \x01(\v2\x17.google.protobuf.StructR\apayload\"\xe8\x04\n" +
 	"\aCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12'\n" +
@@ -2190,7 +2953,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12H\n" +
 	"\x10workspace_ensure\x18\n" +
 	" \x01(\v2\x1d.agentflow.v1.WorkspaceEnsureR\x0fworkspaceEnsure\x12E\n" +
-	"\x0fworktree_create\x18\v \x01(\v2\x1c.agentflow.v1.WorktreeCreateR\x0eworktreeCreate\"\xa7\x01\n" +
+	"\x0fworktree_create\x18\v \x01(\v2\x1c.agentflow.v1.WorktreeCreateR\x0eworktreeCreate\x12?\n" +
+	"\ragent_control\x18\f \x01(\v2\x1a.agentflow.v1.AgentControlR\fagentControl\"\xa7\x01\n" +
 	"\x0eWorktreeCreate\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
@@ -2217,14 +2981,15 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
 	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\x12!\n" +
 	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x18\n" +
-	"\acreated\x18\x04 \x01(\bR\acreated\"\xca\x02\n" +
+	"\acreated\x18\x04 \x01(\bR\acreated\"\x8b\x03\n" +
 	"\x14SubmitCommandRequest\x12(\n" +
 	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +
 	"\fcommand_type\x18\x03 \x01(\tR\vcommandType\x12+\n" +
 	"\x03ttl\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x12H\n" +
 	"\x10workspace_ensure\x18\x05 \x01(\v2\x1d.agentflow.v1.WorkspaceEnsureR\x0fworkspaceEnsure\x12E\n" +
-	"\x0fworktree_create\x18\x06 \x01(\v2\x1c.agentflow.v1.WorktreeCreateR\x0eworktreeCreate\"2\n" +
+	"\x0fworktree_create\x18\x06 \x01(\v2\x1c.agentflow.v1.WorktreeCreateR\x0eworktreeCreate\x12?\n" +
+	"\ragent_control\x18\a \x01(\v2\x1a.agentflow.v1.AgentControlR\fagentControl\"2\n" +
 	"\x11GetCommandRequest\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\"\x98\x01\n" +
@@ -2232,7 +2997,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12;\n" +
 	"\voccurred_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"occurredAt\"\xd2\x03\n" +
+	"occurredAt\"\x99\x04\n" +
 	"\rCommandRecord\x12/\n" +
 	"\acommand\x18\x01 \x01(\v2\x15.agentflow.v1.CommandR\acommand\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
@@ -2243,7 +3008,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x120\n" +
 	"\x05audit\x18\x06 \x03(\v2\x1a.agentflow.v1.CommandAuditR\x05audit\x12N\n" +
 	"\x10workspace_ensure\x18\a \x01(\v2#.agentflow.v1.WorkspaceEnsureResultR\x0fworkspaceEnsure\x12K\n" +
-	"\x0fworktree_create\x18\b \x01(\v2\".agentflow.v1.WorktreeCreateResultR\x0eworktreeCreate\"\x9a\x01\n" +
+	"\x0fworktree_create\x18\b \x01(\v2\".agentflow.v1.WorktreeCreateResultR\x0eworktreeCreate\x12E\n" +
+	"\ragent_control\x18\t \x01(\v2 .agentflow.v1.AgentControlResultR\fagentControl\"\x9a\x01\n" +
 	"\x05Actor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12&\n" +
 	"\x04role\x18\x02 \x01(\x0e2\x12.agentflow.v1.RoleR\x04role\x121\n" +
@@ -2254,7 +3020,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xcb\x02\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\"\x92\x03\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
@@ -2262,7 +3028,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x06detail\x18\x03 \x01(\tR\x06detail\x121\n" +
 	"\apayload\x18\x04 \x01(\v2\x17.google.protobuf.StructR\apayload\x12N\n" +
 	"\x10workspace_ensure\x18\x05 \x01(\v2#.agentflow.v1.WorkspaceEnsureResultR\x0fworkspaceEnsure\x12K\n" +
-	"\x0fworktree_create\x18\x06 \x01(\v2\".agentflow.v1.WorktreeCreateResultR\x0eworktreeCreate\"\x89\x04\n" +
+	"\x0fworktree_create\x18\x06 \x01(\v2\".agentflow.v1.WorktreeCreateResultR\x0eworktreeCreate\x12E\n" +
+	"\ragent_control\x18\a \x01(\v2 .agentflow.v1.AgentControlResultR\fagentControl\"\xe6\x05\n" +
 	"\fNodeEnvelope\x12+\n" +
 	"\x05hello\x18\x01 \x01(\v2\x13.agentflow.v1.HelloH\x00R\x05hello\x125\n" +
 	"\thello_ack\x18\x02 \x01(\v2\x16.agentflow.v1.HelloAckH\x00R\bhelloAck\x127\n" +
@@ -2274,7 +3041,12 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"commandAck\x12D\n" +
 	"\x0ecommand_result\x18\b \x01(\v2\x1b.agentflow.v1.CommandResultH\x00R\rcommandResult\x12;\n" +
 	"\vherdr_state\x18\t \x01(\v2\x18.agentflow.v1.HerdrStateH\x00R\n" +
-	"herdrStateB\x06\n" +
+	"herdrState\x12;\n" +
+	"\vagent_query\x18\n" +
+	" \x01(\v2\x18.agentflow.v1.AgentQueryH\x00R\n" +
+	"agentQuery\x12N\n" +
+	"\x12agent_query_result\x18\v \x01(\v2\x1e.agentflow.v1.AgentQueryResultH\x00R\x10agentQueryResult\x12N\n" +
+	"\x12agent_query_cancel\x18\f \x01(\v2\x1e.agentflow.v1.AgentQueryCancelH\x00R\x10agentQueryCancelB\x06\n" +
 	"\x04body\"\xc1\x01\n" +
 	"\n" +
 	"ServerInfo\x12\x1f\n" +
@@ -2305,7 +3077,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x04tabs\x18\b \x03(\v2\x19.agentflow.v1.HerdrEntityR\x04tabs\x12/\n" +
 	"\x05panes\x18\t \x03(\v2\x19.agentflow.v1.HerdrEntityR\x05panes\x121\n" +
 	"\x06agents\x18\n" +
-	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xb5\x03\n" +
+	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xd6\x03\n" +
 	"\bNodeView\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12.\n" +
@@ -2318,9 +3090,58 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\rcommand_ready\x18\b \x01(\bR\fcommandReady\x12'\n" +
 	"\x0fworkspace_ready\x18\t \x01(\bR\x0eworkspaceReady\x12%\n" +
 	"\x0eworktree_ready\x18\n" +
-	" \x01(\bR\rworktreeReady\"8\n" +
+	" \x01(\bR\rworktreeReady\x12\x1f\n" +
+	"\vagent_ready\x18\v \x01(\bR\n" +
+	"agentReady\"8\n" +
 	"\bNodeList\x12,\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes*S\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes\"q\n" +
+	"\vAgentTarget\x12\x17\n" +
+	"\apane_id\x18\x01 \x01(\tR\x06paneId\x12\x1f\n" +
+	"\vterminal_id\x18\x02 \x01(\tR\n" +
+	"terminalId\x12(\n" +
+	"\x10agent_session_id\x18\x03 \x01(\tR\x0eagentSessionId\"\xc6\x02\n" +
+	"\tAgentView\x121\n" +
+	"\x06target\x18\x01 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
+	"\x06tab_id\x18\x03 \x01(\tR\x05tabId\x12\x1a\n" +
+	"\bprovider\x18\x04 \x01(\tR\bprovider\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12+\n" +
+	"\x11interactive_ready\x18\x06 \x01(\bR\x10interactiveReady\x12%\n" +
+	"\x0elaunch_pending\x18\a \x01(\bR\rlaunchPending\x12\x1a\n" +
+	"\brevision\x18\b \x01(\x04R\brevision\x12(\n" +
+	"\x10state_change_seq\x18\t \x01(\x04R\x0estateChangeSeq\"\xed\x01\n" +
+	"\x11AgentQueryRequest\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x120\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1c.agentflow.v1.AgentQueryKindR\x04kind\x121\n" +
+	"\x06target\x18\x03 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12\x14\n" +
+	"\x05lines\x18\x04 \x01(\rR\x05lines\x12\x14\n" +
+	"\x05until\x18\x05 \x03(\tR\x05until\x12\x1d\n" +
+	"\n" +
+	"timeout_ms\x18\x06 \x01(\rR\ttimeoutMs\"\x9d\x01\n" +
+	"\n" +
+	"AgentQuery\x12\x19\n" +
+	"\bquery_id\x18\x01 \x01(\tR\aqueryId\x129\n" +
+	"\arequest\x18\x02 \x01(\v2\x1f.agentflow.v1.AgentQueryRequestR\arequest\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xad\x01\n" +
+	"\x10AgentQueryResult\x12\x19\n" +
+	"\bquery_id\x18\x01 \x01(\tR\aqueryId\x12-\n" +
+	"\x05agent\x18\x02 \x01(\v2\x17.agentflow.v1.AgentViewR\x05agent\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x12\x1c\n" +
+	"\ttruncated\x18\x04 \x01(\bR\ttruncated\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x05 \x01(\tR\terrorCode\"-\n" +
+	"\x10AgentQueryCancel\x12\x19\n" +
+	"\bquery_id\x18\x01 \x01(\tR\aqueryId\"\xa3\x01\n" +
+	"\fAgentControl\x128\n" +
+	"\x06action\x18\x01 \x01(\x0e2 .agentflow.v1.AgentControlActionR\x06action\x121\n" +
+	"\x06target\x18\x02 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x12\x12\n" +
+	"\x04keys\x18\x04 \x03(\tR\x04keys\"\x9a\x01\n" +
+	"\x12AgentControlResult\x121\n" +
+	"\x06target\x18\x01 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12'\n" +
+	"\x0fobserved_status\x18\x02 \x01(\tR\x0eobservedStatus\x12(\n" +
+	"\x10state_change_seq\x18\x03 \x01(\x04R\x0estateChangeSeq*S\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tROLE_NODE\x10\x01\x12\x13\n" +
@@ -2340,15 +3161,27 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x18ACTOR_ORIGIN_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ACTOR_ORIGIN_HUMAN\x10\x01\x12\x16\n" +
 	"\x12ACTOR_ORIGIN_AGENT\x10\x02\x12\x17\n" +
-	"\x13ACTOR_ORIGIN_SYSTEM\x10\x032T\n" +
+	"\x13ACTOR_ORIGIN_SYSTEM\x10\x03*\x82\x01\n" +
+	"\x0eAgentQueryKind\x12 \n" +
+	"\x1cAGENT_QUERY_KIND_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14AGENT_QUERY_KIND_GET\x10\x01\x12\x19\n" +
+	"\x15AGENT_QUERY_KIND_READ\x10\x02\x12\x19\n" +
+	"\x15AGENT_QUERY_KIND_WAIT\x10\x03*\x9f\x01\n" +
+	"\x12AgentControlAction\x12$\n" +
+	" AGENT_CONTROL_ACTION_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bAGENT_CONTROL_ACTION_PROMPT\x10\x01\x12\x1e\n" +
+	"\x1aAGENT_CONTROL_ACTION_INPUT\x10\x02\x12\"\n" +
+	"\x1eAGENT_CONTROL_ACTION_INTERRUPT\x10\x032T\n" +
 	"\vNodeControl\x12E\n" +
-	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\xa5\x02\n" +
+	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\xf4\x02\n" +
 	"\x05Fleet\x12A\n" +
 	"\rGetServerInfo\x12\x16.google.protobuf.Empty\x1a\x18.agentflow.v1.ServerInfo\x12;\n" +
 	"\tListNodes\x12\x16.google.protobuf.Empty\x1a\x16.agentflow.v1.NodeList\x12P\n" +
 	"\rSubmitCommand\x12\".agentflow.v1.SubmitCommandRequest\x1a\x1b.agentflow.v1.CommandRecord\x12J\n" +
 	"\n" +
-	"GetCommand\x12\x1f.agentflow.v1.GetCommandRequest\x1a\x1b.agentflow.v1.CommandRecordBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
+	"GetCommand\x12\x1f.agentflow.v1.GetCommandRequest\x1a\x1b.agentflow.v1.CommandRecord\x12M\n" +
+	"\n" +
+	"QueryAgent\x12\x1f.agentflow.v1.AgentQueryRequest\x1a\x1e.agentflow.v1.AgentQueryResultBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
 
 var (
 	file_agentflow_v1_control_proto_rawDescOnce sync.Once
@@ -2362,108 +3195,136 @@ func file_agentflow_v1_control_proto_rawDescGZIP() []byte {
 	return file_agentflow_v1_control_proto_rawDescData
 }
 
-var file_agentflow_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_agentflow_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_agentflow_v1_control_proto_goTypes = []any{
 	(Role)(0),                     // 0: agentflow.v1.Role
 	(CommandStatus)(0),            // 1: agentflow.v1.CommandStatus
 	(ActorOrigin)(0),              // 2: agentflow.v1.ActorOrigin
-	(*ProtocolRange)(nil),         // 3: agentflow.v1.ProtocolRange
-	(*Hello)(nil),                 // 4: agentflow.v1.Hello
-	(*HelloAck)(nil),              // 5: agentflow.v1.HelloAck
-	(*Heartbeat)(nil),             // 6: agentflow.v1.Heartbeat
-	(*Snapshot)(nil),              // 7: agentflow.v1.Snapshot
-	(*Event)(nil),                 // 8: agentflow.v1.Event
-	(*Command)(nil),               // 9: agentflow.v1.Command
-	(*WorktreeCreate)(nil),        // 10: agentflow.v1.WorktreeCreate
-	(*WorktreeCreateResult)(nil),  // 11: agentflow.v1.WorktreeCreateResult
-	(*WorkspaceEnsure)(nil),       // 12: agentflow.v1.WorkspaceEnsure
-	(*WorkspaceEnsureResult)(nil), // 13: agentflow.v1.WorkspaceEnsureResult
-	(*SubmitCommandRequest)(nil),  // 14: agentflow.v1.SubmitCommandRequest
-	(*GetCommandRequest)(nil),     // 15: agentflow.v1.GetCommandRequest
-	(*CommandAudit)(nil),          // 16: agentflow.v1.CommandAudit
-	(*CommandRecord)(nil),         // 17: agentflow.v1.CommandRecord
-	(*Actor)(nil),                 // 18: agentflow.v1.Actor
-	(*CommandAck)(nil),            // 19: agentflow.v1.CommandAck
-	(*CommandResult)(nil),         // 20: agentflow.v1.CommandResult
-	(*NodeEnvelope)(nil),          // 21: agentflow.v1.NodeEnvelope
-	(*ServerInfo)(nil),            // 22: agentflow.v1.ServerInfo
-	(*HerdrEntity)(nil),           // 23: agentflow.v1.HerdrEntity
-	(*HerdrState)(nil),            // 24: agentflow.v1.HerdrState
-	(*NodeView)(nil),              // 25: agentflow.v1.NodeView
-	(*NodeList)(nil),              // 26: agentflow.v1.NodeList
-	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 28: google.protobuf.Struct
-	(*durationpb.Duration)(nil),   // 29: google.protobuf.Duration
-	(*emptypb.Empty)(nil),         // 30: google.protobuf.Empty
+	(AgentQueryKind)(0),           // 3: agentflow.v1.AgentQueryKind
+	(AgentControlAction)(0),       // 4: agentflow.v1.AgentControlAction
+	(*ProtocolRange)(nil),         // 5: agentflow.v1.ProtocolRange
+	(*Hello)(nil),                 // 6: agentflow.v1.Hello
+	(*HelloAck)(nil),              // 7: agentflow.v1.HelloAck
+	(*Heartbeat)(nil),             // 8: agentflow.v1.Heartbeat
+	(*Snapshot)(nil),              // 9: agentflow.v1.Snapshot
+	(*Event)(nil),                 // 10: agentflow.v1.Event
+	(*Command)(nil),               // 11: agentflow.v1.Command
+	(*WorktreeCreate)(nil),        // 12: agentflow.v1.WorktreeCreate
+	(*WorktreeCreateResult)(nil),  // 13: agentflow.v1.WorktreeCreateResult
+	(*WorkspaceEnsure)(nil),       // 14: agentflow.v1.WorkspaceEnsure
+	(*WorkspaceEnsureResult)(nil), // 15: agentflow.v1.WorkspaceEnsureResult
+	(*SubmitCommandRequest)(nil),  // 16: agentflow.v1.SubmitCommandRequest
+	(*GetCommandRequest)(nil),     // 17: agentflow.v1.GetCommandRequest
+	(*CommandAudit)(nil),          // 18: agentflow.v1.CommandAudit
+	(*CommandRecord)(nil),         // 19: agentflow.v1.CommandRecord
+	(*Actor)(nil),                 // 20: agentflow.v1.Actor
+	(*CommandAck)(nil),            // 21: agentflow.v1.CommandAck
+	(*CommandResult)(nil),         // 22: agentflow.v1.CommandResult
+	(*NodeEnvelope)(nil),          // 23: agentflow.v1.NodeEnvelope
+	(*ServerInfo)(nil),            // 24: agentflow.v1.ServerInfo
+	(*HerdrEntity)(nil),           // 25: agentflow.v1.HerdrEntity
+	(*HerdrState)(nil),            // 26: agentflow.v1.HerdrState
+	(*NodeView)(nil),              // 27: agentflow.v1.NodeView
+	(*NodeList)(nil),              // 28: agentflow.v1.NodeList
+	(*AgentTarget)(nil),           // 29: agentflow.v1.AgentTarget
+	(*AgentView)(nil),             // 30: agentflow.v1.AgentView
+	(*AgentQueryRequest)(nil),     // 31: agentflow.v1.AgentQueryRequest
+	(*AgentQuery)(nil),            // 32: agentflow.v1.AgentQuery
+	(*AgentQueryResult)(nil),      // 33: agentflow.v1.AgentQueryResult
+	(*AgentQueryCancel)(nil),      // 34: agentflow.v1.AgentQueryCancel
+	(*AgentControl)(nil),          // 35: agentflow.v1.AgentControl
+	(*AgentControlResult)(nil),    // 36: agentflow.v1.AgentControlResult
+	(*timestamppb.Timestamp)(nil), // 37: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),       // 38: google.protobuf.Struct
+	(*durationpb.Duration)(nil),   // 39: google.protobuf.Duration
+	(*emptypb.Empty)(nil),         // 40: google.protobuf.Empty
 }
 var file_agentflow_v1_control_proto_depIdxs = []int32{
-	3,  // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
+	5,  // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
 	0,  // 1: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
-	27, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
-	28, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
-	27, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	28, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
-	18, // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
-	29, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
-	28, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
-	28, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
-	27, // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
-	12, // 11: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
-	10, // 12: agentflow.v1.Command.worktree_create:type_name -> agentflow.v1.WorktreeCreate
-	29, // 13: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
-	12, // 14: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
-	10, // 15: agentflow.v1.SubmitCommandRequest.worktree_create:type_name -> agentflow.v1.WorktreeCreate
-	1,  // 16: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
-	27, // 17: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
-	9,  // 18: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
-	1,  // 19: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
-	27, // 20: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
-	27, // 21: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
-	16, // 22: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
-	13, // 23: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
-	11, // 24: agentflow.v1.CommandRecord.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
-	0,  // 25: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
-	2,  // 26: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
-	1,  // 27: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
-	1,  // 28: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
-	28, // 29: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
-	13, // 30: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
-	11, // 31: agentflow.v1.CommandResult.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
-	4,  // 32: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
-	5,  // 33: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
-	6,  // 34: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
-	7,  // 35: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
-	8,  // 36: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
-	9,  // 37: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
-	19, // 38: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
-	20, // 39: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
-	24, // 40: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
-	3,  // 41: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
-	27, // 42: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
-	23, // 43: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
-	23, // 44: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
-	23, // 45: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
-	23, // 46: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
-	27, // 47: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
-	24, // 48: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
-	27, // 49: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
-	25, // 50: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
-	21, // 51: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
-	30, // 52: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
-	30, // 53: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
-	14, // 54: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
-	15, // 55: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
-	21, // 56: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
-	22, // 57: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
-	26, // 58: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
-	17, // 59: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
-	17, // 60: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
-	56, // [56:61] is the sub-list for method output_type
-	51, // [51:56] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	37, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
+	38, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
+	37, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	38, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
+	20, // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
+	39, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
+	38, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
+	38, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
+	37, // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 11: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	12, // 12: agentflow.v1.Command.worktree_create:type_name -> agentflow.v1.WorktreeCreate
+	35, // 13: agentflow.v1.Command.agent_control:type_name -> agentflow.v1.AgentControl
+	39, // 14: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
+	14, // 15: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	12, // 16: agentflow.v1.SubmitCommandRequest.worktree_create:type_name -> agentflow.v1.WorktreeCreate
+	35, // 17: agentflow.v1.SubmitCommandRequest.agent_control:type_name -> agentflow.v1.AgentControl
+	1,  // 18: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
+	37, // 19: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
+	11, // 20: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
+	1,  // 21: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
+	37, // 22: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
+	37, // 23: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 24: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
+	15, // 25: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	13, // 26: agentflow.v1.CommandRecord.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
+	36, // 27: agentflow.v1.CommandRecord.agent_control:type_name -> agentflow.v1.AgentControlResult
+	0,  // 28: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
+	2,  // 29: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
+	1,  // 30: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
+	1,  // 31: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
+	38, // 32: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
+	15, // 33: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	13, // 34: agentflow.v1.CommandResult.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
+	36, // 35: agentflow.v1.CommandResult.agent_control:type_name -> agentflow.v1.AgentControlResult
+	6,  // 36: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
+	7,  // 37: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
+	8,  // 38: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
+	9,  // 39: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
+	10, // 40: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
+	11, // 41: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
+	21, // 42: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
+	22, // 43: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
+	26, // 44: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
+	32, // 45: agentflow.v1.NodeEnvelope.agent_query:type_name -> agentflow.v1.AgentQuery
+	33, // 46: agentflow.v1.NodeEnvelope.agent_query_result:type_name -> agentflow.v1.AgentQueryResult
+	34, // 47: agentflow.v1.NodeEnvelope.agent_query_cancel:type_name -> agentflow.v1.AgentQueryCancel
+	5,  // 48: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
+	37, // 49: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
+	25, // 50: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
+	25, // 51: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
+	25, // 52: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
+	25, // 53: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
+	37, // 54: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
+	26, // 55: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
+	37, // 56: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	27, // 57: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
+	29, // 58: agentflow.v1.AgentView.target:type_name -> agentflow.v1.AgentTarget
+	3,  // 59: agentflow.v1.AgentQueryRequest.kind:type_name -> agentflow.v1.AgentQueryKind
+	29, // 60: agentflow.v1.AgentQueryRequest.target:type_name -> agentflow.v1.AgentTarget
+	31, // 61: agentflow.v1.AgentQuery.request:type_name -> agentflow.v1.AgentQueryRequest
+	37, // 62: agentflow.v1.AgentQuery.expires_at:type_name -> google.protobuf.Timestamp
+	30, // 63: agentflow.v1.AgentQueryResult.agent:type_name -> agentflow.v1.AgentView
+	4,  // 64: agentflow.v1.AgentControl.action:type_name -> agentflow.v1.AgentControlAction
+	29, // 65: agentflow.v1.AgentControl.target:type_name -> agentflow.v1.AgentTarget
+	29, // 66: agentflow.v1.AgentControlResult.target:type_name -> agentflow.v1.AgentTarget
+	23, // 67: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
+	40, // 68: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
+	40, // 69: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
+	16, // 70: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
+	17, // 71: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
+	31, // 72: agentflow.v1.Fleet.QueryAgent:input_type -> agentflow.v1.AgentQueryRequest
+	23, // 73: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
+	24, // 74: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
+	28, // 75: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
+	19, // 76: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
+	19, // 77: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
+	33, // 78: agentflow.v1.Fleet.QueryAgent:output_type -> agentflow.v1.AgentQueryResult
+	73, // [73:79] is the sub-list for method output_type
+	67, // [67:73] is the sub-list for method input_type
+	67, // [67:67] is the sub-list for extension type_name
+	67, // [67:67] is the sub-list for extension extendee
+	0,  // [0:67] is the sub-list for field type_name
 }
 
 func init() { file_agentflow_v1_control_proto_init() }
@@ -2481,14 +3342,17 @@ func file_agentflow_v1_control_proto_init() {
 		(*NodeEnvelope_CommandAck)(nil),
 		(*NodeEnvelope_CommandResult)(nil),
 		(*NodeEnvelope_HerdrState)(nil),
+		(*NodeEnvelope_AgentQuery)(nil),
+		(*NodeEnvelope_AgentQueryResult)(nil),
+		(*NodeEnvelope_AgentQueryCancel)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentflow_v1_control_proto_rawDesc), len(file_agentflow_v1_control_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   24,
+			NumEnums:      5,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

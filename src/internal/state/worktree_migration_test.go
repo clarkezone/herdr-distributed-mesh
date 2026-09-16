@@ -68,7 +68,7 @@ func TestWorktreeMigrationPreservesWorkspaceAndProbeJournals(t *testing.T) {
 	requireOK(t, s.Close())
 	requireOK(t, j.Close())
 	s, j = openTestStore(t, coordinatorPath), openTestNodeJournal(t, nodePath)
-	if rowCount(t, s, "PRAGMA user_version") != 4 || rowCount(t, j.store, "PRAGMA user_version") != 3 {
+	if rowCount(t, s, "PRAGMA user_version") != 5 || rowCount(t, j.store, "PRAGMA user_version") != 4 {
 		t.Fatal("worktree migration did not fence workspace-only binaries")
 	}
 	var gotFleet []byte

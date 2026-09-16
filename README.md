@@ -94,12 +94,16 @@ go test ./src/internal/dashboard ./src/internal/app
 node --test src\internal\dashboard\web\model.test.mjs
 ```
 
-## Read-only Herdr integration
+## Herdr connection and observation
 
-The node can opt in to `ping`, `events.subscribe`, and `session.snapshot` against
+The node uses `ping`, `events.subscribe`, and `session.snapshot` against
 a local Herdr instance. Without `-herdr-socket`, it remains transport-only.
+**Supplying `-herdr-socket` also enables authenticated existing-agent control**
+and its durable journal, described below. There is no additional agent
+allowlist or project policy to configure.
 Upgrade/restart the mesh server before starting an integration-enabled node;
-the node rejects servers that do not advertise `herdr.read.v1`.
+the node rejects servers that do not advertise the required observation and
+agent-control capabilities (`herdr.read.v1` and `herdr.agent-control.v1`).
 
 Build the binary, then restart your node with the same enrolled identity/state:
 
@@ -117,8 +121,8 @@ filename and use that executable for the restarted roles.
 Use your existing node hostname if it was explicitly configured. Do not run
 two processes sharing a state directory. On Windows the socket argument is
 Herdr's marker path, mapped to a **local named pipe**, not a TCP endpoint.
-Custom sessions require their own socket path. Read-only integration does not
-launch or modify Herdr processes; workspace creation requires the separate
+Custom sessions require their own socket path. The node does not
+launch Herdr processes; workspace creation requires the separate
 explicit project policies described below.
 
 Query from a client-tagged identity (reuse your enrolled controller state):
@@ -142,8 +146,8 @@ Only entity IDs, workspace/tab relationships, focus flags, and agent status are
 forwarded. Titles, labels, paths, terminal output, agent names/session metadata,
 and custom tokens are excluded on the node. The server also validates the
 projection and rejects unknown protobuf fields. This is not a complete layout
-or terminal mirror. Observation alone enables **no remote Herdr mutation or
-arbitrary command execution**.
+or terminal mirror. Explicit agent queries and typed input commands use separate
+RPCs; terminal text is never included in these fleet observations.
 
 Herdr protocol 18 is the initial supported local contract. The observer waits for
 subscription acknowledgement before taking its baseline. Events trigger
@@ -300,6 +304,81 @@ The durable audit covers **admitted command transitions**, not all denied
 requests. Denials are not a durable security audit. This is a probe-only safety
 foundation when no workspace policy is configured, not arbitrary mutation
 authorization, automated reconciliation, the fuller CLI, or MCP.
+
+## Headless existing-agent control
+
+The standalone CLI can **get, read, wait, prompt, send explicit input, and
+interrupt** an existing agent. It does not depend on MCP or an attached Herdr
+terminal/window. Upgrade the coordinator and node together, then configure the
+node's `-herdr-socket`. Existing Tailscale client/node/server role checks remain;
+agent operations need no project allowlist. `ctl nodes -json` exposes
+`agent_ready`, and the capability is `herdr.agent-control.v1`.
+
+Use the pane ID shown in fleet inventory as `-agent`. Examples assume the
+controller's normal enrolled state directory is unused by other processes:
+
+```powershell
+.\herdr-mesh.exe ctl agent get -server '<server>:50052' -node '<node-id>' -agent w1:p1 -json
+.\herdr-mesh.exe ctl agent read -server '<server>:50052' -node '<node-id>' -agent w1:p1 -lines 100
+.\herdr-mesh.exe ctl agent prompt -server '<server>:50052' -node '<node-id>' -agent w1:p1 `
+  -prompt 'Describe the current project without changing files.'
+.\herdr-mesh.exe ctl agent prompt -server '<server>:50052' -node '<node-id>' -agent w1:p1 `
+  -prompt-file .\task.txt
+Get-Content -Raw .\task.txt | .\herdr-mesh.exe ctl agent prompt `
+  -server '<server>:50052' -node '<node-id>' -agent w1:p1 -prompt-file -
+.\herdr-mesh.exe ctl agent wait -server '<server>:50052' -node '<node-id>' -agent w1:p1 `
+  -until idle,done,blocked -wait-timeout 2m -timeout 3m
+.\herdr-mesh.exe ctl agent input -server '<server>:50052' -node '<node-id>' -agent w1:p1 -key down -key enter
+.\herdr-mesh.exe ctl agent interrupt -server '<server>:50052' -node '<node-id>' -agent w1:p1
+```
+
+Prompt files are read on the **client**, never opened remotely. Prompts are
+bounded to 8,192 UTF-8 bytes. Read returns a sanitized recent terminal snapshot,
+not a complete conversation: at most 1,000 lines and 65,536 bytes, with a
+truncation indicator. `-json` produces one typed JSON object. Read/query output
+is ephemeral, not persisted in command journals, fleet snapshots, or shared
+memory. Submitted prompt text and explicit keys **are** retained in the
+private coordinator/node command journals for exact retry comparison.
+
+Before input/read/wait, the client discovers and pins the terminal and optional
+provider session ID in the same authenticated connection. A replacement fails
+explicitly rather than intentionally rebinding input to another agent. Herdr
+does not provide an atomic expected-terminal input operation, so a trusted
+local actor replacing a pane between preflight and input remains a local race.
+
+Input commands produce **delivery receipts, not proof of task completion**.
+Prompt refuses agents observed working or blocked; explicit input can answer
+a provider prompt, but the mesh never automatically approves it. Interrupt is
+currently verified only for Copilot and sends two Escape keys in one Herdr
+request; unsupported providers fail explicitly. It is not force-kill, rollback,
+or cancellation of independently detached work.
+
+`wait` observes matching states (default `idle,done,blocked`), not a particular
+turn or successful task outcome. It may return immediately for an already
+matching state. Provider startup and status detection can transiently report
+idle; inspect output before treating work as complete. Query timeouts are
+bounded to five minutes; the overall `-timeout` must also allow enrollment and
+connection time. Canceling a wait cancels only the query, never the agent task.
+
+Input uses the existing durable command path and default ten-second TTL
+(maximum thirty seconds). The client prints the idempotency key and pinned
+target, and returns the command ID. For retries preserve the original
+`-idempotency-key`, `-terminal`, optional `-agent-session`, input, and TTL;
+an explicit terminal bypasses discovery, allowing the coordinator to return
+the original receipt even when that agent is no longer available. Alternatively
+use `ctl command -id <command-id>`. **Do not generate a fresh key after an
+indeterminate outcome without inspecting the agent.** The mesh never
+automatically retries uncertain input as a new operation. Agent input does not
+add the project-wide quarantine used by workspace/worktree mutations.
+
+This slice addresses existing agents on the node's **one configured socket**.
+Named Herdr session ensure/start and multi-session routing, project registration,
+dedicated-pane agent launch/stop, output following, and MCP remain planned.
+Legacy workspace/worktree policy configuration below is unchanged; its
+single-user simplification is not yet implemented.
+
+Headless compatibility evidence and the opt-in live fixture are documented in
+`docs\windows-live-validation.md`.
 
 ## Project-scoped workspace ensure
 

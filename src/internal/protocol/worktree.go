@@ -29,7 +29,7 @@ func ValidateWorktreeCreate(request *pb.WorktreeCreate) error {
 }
 
 func ValidateWorktreeResult(result *pb.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil ||
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.AgentControl != nil ||
 		len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid worktree result")
 	}
