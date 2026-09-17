@@ -112,7 +112,7 @@ $global:HerdrRemoteFailure = ''
 $global:HerdrMockEtag = '"test-etag"'
 $global:HerdrMalformedKey = $false
 
-function global:Set-Acl {
+function Set-Acl {
     param(
         [string]$LiteralPath,
         $AclObject,
@@ -128,7 +128,7 @@ function global:Set-Acl {
         -AclObject $AclObject -WhatIf:$false
 }
 
-function global:Invoke-WebRequest {
+function Invoke-WebRequest {
     param(
         [string]$Method,
         [string]$Uri,
@@ -149,7 +149,7 @@ function global:Invoke-WebRequest {
     }
 }
 
-function global:Invoke-RestMethod {
+function Invoke-RestMethod {
     param(
         [string]$Method,
         [string]$Uri,
@@ -500,9 +500,6 @@ try {
     Write-Host 'configure-tailnet.ps1 tests passed.'
 } finally {
     [Environment]::SetEnvironmentVariable($tokenVariable, $null)
-    Remove-Item Function:\global:Invoke-WebRequest -ErrorAction SilentlyContinue
-    Remove-Item Function:\global:Invoke-RestMethod -ErrorAction SilentlyContinue
-    Remove-Item Function:\global:Set-Acl -ErrorAction SilentlyContinue
     Remove-Item Variable:\global:HerdrTailnetMockPolicy -ErrorAction SilentlyContinue
     Remove-Item Variable:\global:HerdrTailnetMockRestCalls -ErrorAction SilentlyContinue
     Remove-Item Variable:\global:HerdrFailSecretAcl -ErrorAction SilentlyContinue

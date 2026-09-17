@@ -391,6 +391,8 @@ func TestCreateWorktreeListValidation(t *testing.T) {
 
 func TestCreateWorktreeGitPreconditions(t *testing.T) {
 	f := newWorktreeFixture(t)
+	config := testConfig()
+	config.RequestTimeout = 10 * time.Second
 	for name, base := range map[string]string{
 		"missing SHA1": strings.Repeat("0", 40), "missing SHA256": strings.Repeat("0", 64),
 		"tree not commit": testWorktreeGit(t, f.binding.Path, "rev-parse", "HEAD^{tree}"),
@@ -398,14 +400,14 @@ func TestCreateWorktreeGitPreconditions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := proto.Clone(f.request).(*pb.WorktreeCreate)
 			r.BaseCommit = base
-			result, err := createWorktree(context.Background(), testConfig(), f.binding, r,
+			result, err := createWorktree(context.Background(), config, f.binding, r,
 				worktreeDial(t, f, workspacePong(), f.listStep()))
 			assertWorktreeError(t, result, err, ErrWorkspacePrecondition)
 		})
 	}
 	t.Run("unattached branch exists", func(t *testing.T) {
 		testWorktreeGit(t, f.binding.Path, "branch", f.request.Branch, f.request.BaseCommit)
-		result, err := createWorktree(context.Background(), testConfig(), f.binding, f.request,
+		result, err := createWorktree(context.Background(), config, f.binding, f.request,
 			worktreeDial(t, f, workspacePong(), f.listStep()))
 		assertWorktreeError(t, result, err, ErrWorkspacePrecondition)
 	})
@@ -417,7 +419,7 @@ func TestCreateWorktreeGitPreconditions(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(f.binding.Path, ".git"), 0700); err != nil {
 			t.Fatal(err)
 		}
-		result, err := createWorktree(context.Background(), testConfig(), f.binding, f.request,
+		result, err := createWorktree(context.Background(), config, f.binding, f.request,
 			worktreeDial(t, f, workspacePong(), f.listStep()))
 		assertWorktreeError(t, result, err, ErrWorkspacePrecondition)
 	})
