@@ -3,12 +3,14 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -17,6 +19,7 @@ import (
 )
 
 type Options struct {
+	FleetClient       agentflowv1.FleetClient
 	Diagnose          bool
 	JSON              bool
 	Output            io.Writer
@@ -25,18 +28,46 @@ type Options struct {
 	Transport         transport.Config
 }
 
+// WithFleet owns one transport connection for a long-lived controller such as
+// MCP. Its operations reuse the ordinary CLI services and validation paths.
+func WithFleet(ctx context.Context, options Options, use func(agentflowv1.FleetClient) error) error {
+	if use == nil {
+		return errors.New("fleet callback is required")
+	}
+	return withFleet(ctx, options, func(client agentflowv1.FleetClient, _ transport.SelfStatus) error {
+		return use(client)
+	})
+}
+
 func ServerInfo(ctx context.Context, options Options) error {
 	return withFleet(ctx, options, func(client agentflowv1.FleetClient, localStatus transport.SelfStatus) error {
 		return writeServerInfo(ctx, options, client, localStatus)
 	})
 }
 
-func withFleet(ctx context.Context, options Options, query func(agentflowv1.FleetClient, transport.SelfStatus) error) error {
+func withFleet(ctx context.Context, options Options, query func(agentflowv1.FleetClient, transport.SelfStatus) error) (result error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if options.FleetClient != nil {
+		if options.Diagnose {
+			return errors.New("transport diagnostics require an owned transport")
+		}
+		return query(options.FleetClient, transport.SelfStatus{})
+	}
+	guard, err := state.PrepareRoleState(ctx, options.Transport.RoleStateDir, "client")
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, guard.Close()) }()
 	network, err := transport.Start(ctx, options.Transport)
 	if err != nil {
 		return err
 	}
-	defer network.Close()
+	defer func() { result = errors.Join(result, network.Close()) }()
+	if err := guard.Activate(); err != nil {
+		return err
+	}
 
 	localStatus := network.SelfStatus()
 	if options.Diagnose {

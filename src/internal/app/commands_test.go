@@ -17,7 +17,6 @@ func TestCommandFlagsValidateBeforeEnrollment(t *testing.T) {
 		{"node", "-server", "server:50052", "-herdr-socket", "unused", "-required-server-tag", ""},
 		{"server", "-required-command-tag", ""},
 		{"ctl", "ensure-workspace", "-server", "server:50052", "-node", "node-1"},
-		{"ctl", "ensure-workspace", "-server", "server:50052", "-node", "node-1", "-project", "AgentFlow"},
 		{"ctl", "ensure-workspace", "-server", "server:50052", "-node", "node-1", "-project", `C:\repo`, "-binding-revision", "r1"},
 		{"ctl", "ensure-workspace", "-server", "server:50052", "-node", "node-1", "-project", "AgentFlow", "-binding-revision", "r1", "-ttl", "31s"},
 		{"node", "-server", "server:50052", "-workspace-policy", "not-used-without-socket"},

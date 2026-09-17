@@ -45,10 +45,31 @@ func NormalizeCommandRequest(request *agentflowv1.SubmitCommandRequest) (*agentf
 		!commandToken.MatchString(request.NodeInstanceId) || !ValidIdempotencyKey(request.IdempotencyKey) {
 		return nil, errors.New("node ID and idempotency key must be bounded identifier tokens")
 	}
-	if err := validateCommandBody(request.CommandType, request.WorkspaceEnsure, request.WorktreeCreate, request.AgentControl); err != nil {
+	check := proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
+	if check.AgentStart != nil && check.AgentStart.BindingRevision == "" {
+		check.AgentStart.BindingRevision = "managed"
+	}
+	if check.WorkspaceEnsure != nil && check.WorkspaceEnsure.BindingRevision == "" {
+		check.WorkspaceEnsure.BindingRevision = "managed"
+	}
+	if check.WorktreeCreate != nil {
+		if check.WorktreeCreate.BindingRevision == "" {
+			check.WorktreeCreate.BindingRevision = "managed"
+		}
+		if check.WorktreeCreate.Branch == "" {
+			check.WorktreeCreate.Branch = check.WorktreeCreate.Name
+		}
+		if check.WorktreeCreate.BaseCommit == "" {
+			check.WorktreeCreate.BaseCommit = "0000000000000000000000000000000000000000"
+		}
+	}
+	if err := validateCommandBody(check.CommandType, check.WorkspaceEnsure, check.WorktreeCreate, check.AgentControl, check.SessionEnsure, check.AgentStart, check.AgentStop); err != nil {
 		return nil, err
 	}
 	copy := proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
+	if copy.AgentStart != nil {
+		copy.AgentStart.StartupTimeoutMs, _ = NormalizeAgentStartupTimeout(copy.AgentStart.StartupTimeoutMs)
+	}
 	if copy.Ttl == nil {
 		copy.Ttl = durationpb.New(DefaultCommandTTL)
 	}
@@ -79,7 +100,20 @@ func ValidateCommand(command *agentflowv1.Command, nodeID string) error {
 		!commandToken.MatchString(command.IdempotencyKey) || len(command.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid or unsupported node command")
 	}
-	if err := validateCommandBody(command.CommandType, command.WorkspaceEnsure, command.WorktreeCreate, command.AgentControl); err != nil {
+	if IsLifecycleCommand(command.CommandType) && proto.Size(command)+MaxLifecycleReceiptBytes+1024 > 16*1024 {
+		return errors.New("lifecycle command exceeds request budget reserved for durable receipt and audit")
+	}
+	worktree := command.WorktreeCreate
+	if command.SubmittedRequest != nil {
+		if err := ValidateSubmittedRequest(command); err != nil {
+			return err
+		}
+		if worktree != nil && worktree.BaseCommit == "" {
+			worktree = proto.Clone(worktree).(*agentflowv1.WorktreeCreate)
+			worktree.BaseCommit = "0000000000000000000000000000000000000000"
+		}
+	}
+	if err := validateCommandBody(command.CommandType, command.WorkspaceEnsure, worktree, command.AgentControl, command.SessionEnsure, command.AgentStart, command.AgentStop); err != nil {
 		return err
 	}
 	if command.Actor == nil || !commandToken.MatchString(command.Actor.ActorId) ||
@@ -92,6 +126,16 @@ func ValidateCommand(command *agentflowv1.Command, nodeID string) error {
 	}
 	if command.ExpiresAt == nil || command.ExpiresAt.CheckValid() != nil || len(command.ExpiresAt.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("command expiry is required")
+	}
+	if command.AgentStart != nil {
+		expected, err := LifecycleExecutionDeadline(command.ExpiresAt.AsTime(), command.AgentStart.StartupTimeoutMs)
+		if err != nil || command.SubmittedRequest == nil || command.ExecutionExpiresAt == nil ||
+			command.ExecutionExpiresAt.CheckValid() != nil || len(command.ExecutionExpiresAt.ProtoReflect().GetUnknown()) != 0 ||
+			!command.ExecutionExpiresAt.AsTime().Equal(expected) {
+			return errors.New("start requires original request and fixed separate execution deadline")
+		}
+	} else if command.ExecutionExpiresAt != nil || command.AgentStop != nil && command.SubmittedRequest == nil {
+		return errors.New("invalid lifecycle expiry or missing original stop request")
 	}
 	return validTTL(command.Ttl)
 }
@@ -108,7 +152,7 @@ func IsTerminalCommand(status agentflowv1.CommandStatus) bool {
 }
 
 func ValidateProbeResult(result *agentflowv1.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil || result.AgentControl != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil || result.AgentControl != nil || result.SessionEnsure != nil || result.AgentLifecycle != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid command result")
 	}
 	valid := false

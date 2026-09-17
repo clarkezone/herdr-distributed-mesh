@@ -1,0 +1,51 @@
+name: Mesh CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mesh-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit and local integration tests
+        run: go test ./src/...
+      - name: Archived experiment checks
+        run: go test ./experiments/...
+      - name: Vet
+        run: go vet ./src/...
+      - name: Dashboard model
+        run: node --test src/internal/dashboard/web/model.test.mjs
+      - name: Build production CLI
+        run: go build ./src/cmd/herdr-mesh
+      - name: Windows automation boundaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\scripts\test-configure-tailnet.ps1
+          .\scripts\test-bootstrap-node.ps1
+      - name: Race checks
+        if: runner.os == 'Linux'
+        run: go test -race ./src/internal/...

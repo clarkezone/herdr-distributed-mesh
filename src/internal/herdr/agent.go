@@ -95,6 +95,11 @@ func controlAgent(ctx context.Context, config Config, command *pb.AgentControl, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if config.CheckSession != nil {
+		if err := config.CheckSession(ctx); err != nil {
+			return nil, err
+		}
+	}
 	ack, err := o.agentRequest(ctx, method, resultType, params)
 	if err != nil {
 		return nil, agentFailure(ctx, ErrAgentIndeterminate)

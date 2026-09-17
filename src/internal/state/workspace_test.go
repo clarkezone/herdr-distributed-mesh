@@ -598,15 +598,17 @@ func TestWorkspaceSchemaMigrationPreservesProbeBytes(t *testing.T) {
 	requireOK(t, s.conn.QueryRowContext(ctx, "SELECT record FROM commands").Scan(&coordinatorBytes))
 	requireOK(t, s.conn.QueryRowContext(ctx, "SELECT payload FROM latest_nodes").Scan(&fleetBytes))
 	requireOK(t, j.store.conn.QueryRowContext(ctx, "SELECT command, result FROM node_commands").Scan(&commandBytes, &resultBytes))
-	_, err = s.conn.ExecContext(ctx, "PRAGMA user_version = 2")
+	removeLifecycleSchema(t, s, coordinatorKind)
+	removeLifecycleSchema(t, j.store, nodeKind)
+	_, err = s.conn.ExecContext(ctx, "DROP TABLE projects; PRAGMA user_version = 2")
 	requireOK(t, err)
-	_, err = j.store.conn.ExecContext(ctx, "PRAGMA user_version = 1")
+	_, err = j.store.conn.ExecContext(ctx, "DROP TABLE node_projects; PRAGMA user_version = 1")
 	requireOK(t, err)
 	requireOK(t, s.Close())
 	requireOK(t, j.Close())
 	s = openTestStore(t, coordinatorPath)
 	j = openTestNodeJournal(t, nodePath)
-	if rowCount(t, s, "PRAGMA user_version") != 5 || rowCount(t, j.store, "PRAGMA user_version") != 4 {
+	if rowCount(t, s, "PRAGMA user_version") != 7 || rowCount(t, j.store, "PRAGMA user_version") != 6 {
 		t.Fatal("workspace migration did not fence old binaries")
 	}
 	var gotCoordinator, gotFleet, gotCommand, gotResult []byte
@@ -646,7 +648,8 @@ func TestWorkspaceMigrationFailsClosedWithoutRewriting(t *testing.T) {
 					} else {
 						claimTestCommand(t, j, 1)
 					}
-					_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 1")
+					removeLifecycleSchema(t, s, nodeKind)
+					_, err := s.conn.ExecContext(ctx, "DROP TABLE node_projects; PRAGMA user_version = 1")
 					requireOK(t, err)
 				} else {
 					s = commandStoreAtPath(t, path)
@@ -656,7 +659,8 @@ func TestWorkspaceMigrationFailsClosedWithoutRewriting(t *testing.T) {
 						createTestCommand(t, s, 1)
 					}
 					requireOK(t, s.SaveNode(ctx, node("stable", "node")))
-					_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 2")
+					removeLifecycleSchema(t, s, coordinatorKind)
+					_, err := s.conn.ExecContext(ctx, "DROP TABLE projects; PRAGMA user_version = 2")
 					requireOK(t, err)
 				}
 				statement := ""

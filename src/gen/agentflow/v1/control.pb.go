@@ -512,6 +512,7 @@ type Heartbeat struct {
 	WorkspaceReady bool                   `protobuf:"varint,4,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
 	WorktreeReady  bool                   `protobuf:"varint,5,opt,name=worktree_ready,json=worktreeReady,proto3" json:"worktree_ready,omitempty"`
 	AgentReady     bool                   `protobuf:"varint,6,opt,name=agent_ready,json=agentReady,proto3" json:"agent_ready,omitempty"`
+	SessionsReady  bool                   `protobuf:"varint,7,opt,name=sessions_ready,json=sessionsReady,proto3" json:"sessions_ready,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -584,6 +585,13 @@ func (x *Heartbeat) GetWorktreeReady() bool {
 func (x *Heartbeat) GetAgentReady() bool {
 	if x != nil {
 		return x.AgentReady
+	}
+	return false
+}
+
+func (x *Heartbeat) GetSessionsReady() bool {
+	if x != nil {
+		return x.SessionsReady
 	}
 	return false
 }
@@ -738,8 +746,14 @@ type Command struct {
 	WorkspaceEnsure *WorkspaceEnsure       `protobuf:"bytes,10,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreate        `protobuf:"bytes,11,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
 	AgentControl    *AgentControl          `protobuf:"bytes,12,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Original operator request for new managed commands. Historical records omit it.
+	SubmittedRequest   *SubmitCommandRequest  `protobuf:"bytes,13,opt,name=submitted_request,json=submittedRequest,proto3" json:"submitted_request,omitempty"`
+	SessionEnsure      *SessionEnsure         `protobuf:"bytes,14,opt,name=session_ensure,json=sessionEnsure,proto3" json:"session_ensure,omitempty"`
+	AgentStart         *AgentStart            `protobuf:"bytes,15,opt,name=agent_start,json=agentStart,proto3" json:"agent_start,omitempty"`
+	AgentStop          *AgentStop             `protobuf:"bytes,16,opt,name=agent_stop,json=agentStop,proto3" json:"agent_stop,omitempty"`
+	ExecutionExpiresAt *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=execution_expires_at,json=executionExpiresAt,proto3" json:"execution_expires_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Command) Reset() {
@@ -856,15 +870,52 @@ func (x *Command) GetAgentControl() *AgentControl {
 	return nil
 }
 
+func (x *Command) GetSubmittedRequest() *SubmitCommandRequest {
+	if x != nil {
+		return x.SubmittedRequest
+	}
+	return nil
+}
+
+func (x *Command) GetSessionEnsure() *SessionEnsure {
+	if x != nil {
+		return x.SessionEnsure
+	}
+	return nil
+}
+
+func (x *Command) GetAgentStart() *AgentStart {
+	if x != nil {
+		return x.AgentStart
+	}
+	return nil
+}
+
+func (x *Command) GetAgentStop() *AgentStop {
+	if x != nil {
+		return x.AgentStop
+	}
+	return nil
+}
+
+func (x *Command) GetExecutionExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExecutionExpiresAt
+	}
+	return nil
+}
+
 type WorktreeCreate struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	BindingRevision string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
-	Name            string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Branch          string                 `protobuf:"bytes,4,opt,name=branch,proto3" json:"branch,omitempty"`
-	BaseCommit      string                 `protobuf:"bytes,5,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision    string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	Name               string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Branch             string                 `protobuf:"bytes,4,opt,name=branch,proto3" json:"branch,omitempty"`
+	BaseCommit         string                 `protobuf:"bytes,5,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
+	SessionName        string                 `protobuf:"bytes,6,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	SessionIncarnation string                 `protobuf:"bytes,7,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *WorktreeCreate) Reset() {
@@ -932,16 +983,32 @@ func (x *WorktreeCreate) GetBaseCommit() string {
 	return ""
 }
 
+func (x *WorktreeCreate) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+func (x *WorktreeCreate) GetSessionIncarnation() string {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return ""
+}
+
 type WorktreeCreateResult struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	BindingRevision string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
-	WorkspaceId     string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Name            string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	Branch          string                 `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
-	BaseCommit      string                 `protobuf:"bytes,6,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision    string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	WorkspaceId        string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Name               string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	Branch             string                 `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
+	BaseCommit         string                 `protobuf:"bytes,6,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
+	SessionName        string                 `protobuf:"bytes,7,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	SessionIncarnation string                 `protobuf:"bytes,8,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *WorktreeCreateResult) Reset() {
@@ -1016,13 +1083,29 @@ func (x *WorktreeCreateResult) GetBaseCommit() string {
 	return ""
 }
 
-// Device-independent identity only. Paths and environment never cross the mesh.
+func (x *WorktreeCreateResult) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+func (x *WorktreeCreateResult) GetSessionIncarnation() string {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return ""
+}
+
+// Commands carry identity only. Paths travel exclusively in project configuration.
 type WorkspaceEnsure struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	BindingRevision string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision    string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	SessionName        string                 `protobuf:"bytes,3,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	SessionIncarnation string                 `protobuf:"bytes,4,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *WorkspaceEnsure) Reset() {
@@ -1069,14 +1152,30 @@ func (x *WorkspaceEnsure) GetBindingRevision() string {
 	return ""
 }
 
+func (x *WorkspaceEnsure) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+func (x *WorkspaceEnsure) GetSessionIncarnation() string {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return ""
+}
+
 type WorkspaceEnsureResult struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	BindingRevision string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
-	WorkspaceId     string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Created         bool                   `protobuf:"varint,4,opt,name=created,proto3" json:"created,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision    string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	WorkspaceId        string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Created            bool                   `protobuf:"varint,4,opt,name=created,proto3" json:"created,omitempty"`
+	SessionName        string                 `protobuf:"bytes,5,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	SessionIncarnation string                 `protobuf:"bytes,6,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *WorkspaceEnsureResult) Reset() {
@@ -1137,6 +1236,20 @@ func (x *WorkspaceEnsureResult) GetCreated() bool {
 	return false
 }
 
+func (x *WorkspaceEnsureResult) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+func (x *WorkspaceEnsureResult) GetSessionIncarnation() string {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return ""
+}
+
 // The actor and command ID are assigned by the authenticated coordinator.
 type SubmitCommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -1147,6 +1260,9 @@ type SubmitCommandRequest struct {
 	WorkspaceEnsure *WorkspaceEnsure       `protobuf:"bytes,5,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreate        `protobuf:"bytes,6,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
 	AgentControl    *AgentControl          `protobuf:"bytes,7,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
+	SessionEnsure   *SessionEnsure         `protobuf:"bytes,8,opt,name=session_ensure,json=sessionEnsure,proto3" json:"session_ensure,omitempty"`
+	AgentStart      *AgentStart            `protobuf:"bytes,9,opt,name=agent_start,json=agentStart,proto3" json:"agent_start,omitempty"`
+	AgentStop       *AgentStop             `protobuf:"bytes,10,opt,name=agent_stop,json=agentStop,proto3" json:"agent_stop,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1226,6 +1342,27 @@ func (x *SubmitCommandRequest) GetWorktreeCreate() *WorktreeCreate {
 func (x *SubmitCommandRequest) GetAgentControl() *AgentControl {
 	if x != nil {
 		return x.AgentControl
+	}
+	return nil
+}
+
+func (x *SubmitCommandRequest) GetSessionEnsure() *SessionEnsure {
+	if x != nil {
+		return x.SessionEnsure
+	}
+	return nil
+}
+
+func (x *SubmitCommandRequest) GetAgentStart() *AgentStart {
+	if x != nil {
+		return x.AgentStart
+	}
+	return nil
+}
+
+func (x *SubmitCommandRequest) GetAgentStop() *AgentStop {
+	if x != nil {
+		return x.AgentStop
 	}
 	return nil
 }
@@ -1345,6 +1482,8 @@ type CommandRecord struct {
 	WorkspaceEnsure *WorkspaceEnsureResult `protobuf:"bytes,7,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreateResult  `protobuf:"bytes,8,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
 	AgentControl    *AgentControlResult    `protobuf:"bytes,9,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
+	SessionEnsure   *SessionView           `protobuf:"bytes,10,opt,name=session_ensure,json=sessionEnsure,proto3" json:"session_ensure,omitempty"`
+	AgentLifecycle  *AgentLifecycleReceipt `protobuf:"bytes,11,opt,name=agent_lifecycle,json=agentLifecycle,proto3" json:"agent_lifecycle,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1438,6 +1577,20 @@ func (x *CommandRecord) GetWorktreeCreate() *WorktreeCreateResult {
 func (x *CommandRecord) GetAgentControl() *AgentControlResult {
 	if x != nil {
 		return x.AgentControl
+	}
+	return nil
+}
+
+func (x *CommandRecord) GetSessionEnsure() *SessionView {
+	if x != nil {
+		return x.SessionEnsure
+	}
+	return nil
+}
+
+func (x *CommandRecord) GetAgentLifecycle() *AgentLifecycleReceipt {
+	if x != nil {
+		return x.AgentLifecycle
 	}
 	return nil
 }
@@ -1579,6 +1732,8 @@ type CommandResult struct {
 	WorkspaceEnsure *WorkspaceEnsureResult `protobuf:"bytes,5,opt,name=workspace_ensure,json=workspaceEnsure,proto3" json:"workspace_ensure,omitempty"`
 	WorktreeCreate  *WorktreeCreateResult  `protobuf:"bytes,6,opt,name=worktree_create,json=worktreeCreate,proto3" json:"worktree_create,omitempty"`
 	AgentControl    *AgentControlResult    `protobuf:"bytes,7,opt,name=agent_control,json=agentControl,proto3" json:"agent_control,omitempty"`
+	SessionEnsure   *SessionView           `protobuf:"bytes,8,opt,name=session_ensure,json=sessionEnsure,proto3" json:"session_ensure,omitempty"`
+	AgentLifecycle  *AgentLifecycleReceipt `protobuf:"bytes,9,opt,name=agent_lifecycle,json=agentLifecycle,proto3" json:"agent_lifecycle,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1662,6 +1817,20 @@ func (x *CommandResult) GetAgentControl() *AgentControlResult {
 	return nil
 }
 
+func (x *CommandResult) GetSessionEnsure() *SessionView {
+	if x != nil {
+		return x.SessionEnsure
+	}
+	return nil
+}
+
+func (x *CommandResult) GetAgentLifecycle() *AgentLifecycleReceipt {
+	if x != nil {
+		return x.AgentLifecycle
+	}
+	return nil
+}
+
 type NodeEnvelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Body:
@@ -1678,6 +1847,11 @@ type NodeEnvelope struct {
 	//	*NodeEnvelope_AgentQuery
 	//	*NodeEnvelope_AgentQueryResult
 	//	*NodeEnvelope_AgentQueryCancel
+	//	*NodeEnvelope_ProjectConfig
+	//	*NodeEnvelope_ProjectAck
+	//	*NodeEnvelope_LegacyProjects
+	//	*NodeEnvelope_SessionInventory
+	//	*NodeEnvelope_CommandProgress
 	Body          isNodeEnvelope_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1828,6 +2002,51 @@ func (x *NodeEnvelope) GetAgentQueryCancel() *AgentQueryCancel {
 	return nil
 }
 
+func (x *NodeEnvelope) GetProjectConfig() *ProjectConfig {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_ProjectConfig); ok {
+			return x.ProjectConfig
+		}
+	}
+	return nil
+}
+
+func (x *NodeEnvelope) GetProjectAck() *ProjectAck {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_ProjectAck); ok {
+			return x.ProjectAck
+		}
+	}
+	return nil
+}
+
+func (x *NodeEnvelope) GetLegacyProjects() *LegacyProjects {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_LegacyProjects); ok {
+			return x.LegacyProjects
+		}
+	}
+	return nil
+}
+
+func (x *NodeEnvelope) GetSessionInventory() *SessionInventory {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_SessionInventory); ok {
+			return x.SessionInventory
+		}
+	}
+	return nil
+}
+
+func (x *NodeEnvelope) GetCommandProgress() *CommandProgress {
+	if x != nil {
+		if x, ok := x.Body.(*NodeEnvelope_CommandProgress); ok {
+			return x.CommandProgress
+		}
+	}
+	return nil
+}
+
 type isNodeEnvelope_Body interface {
 	isNodeEnvelope_Body()
 }
@@ -1880,6 +2099,26 @@ type NodeEnvelope_AgentQueryCancel struct {
 	AgentQueryCancel *AgentQueryCancel `protobuf:"bytes,12,opt,name=agent_query_cancel,json=agentQueryCancel,proto3,oneof"`
 }
 
+type NodeEnvelope_ProjectConfig struct {
+	ProjectConfig *ProjectConfig `protobuf:"bytes,13,opt,name=project_config,json=projectConfig,proto3,oneof"`
+}
+
+type NodeEnvelope_ProjectAck struct {
+	ProjectAck *ProjectAck `protobuf:"bytes,14,opt,name=project_ack,json=projectAck,proto3,oneof"`
+}
+
+type NodeEnvelope_LegacyProjects struct {
+	LegacyProjects *LegacyProjects `protobuf:"bytes,15,opt,name=legacy_projects,json=legacyProjects,proto3,oneof"`
+}
+
+type NodeEnvelope_SessionInventory struct {
+	SessionInventory *SessionInventory `protobuf:"bytes,16,opt,name=session_inventory,json=sessionInventory,proto3,oneof"`
+}
+
+type NodeEnvelope_CommandProgress struct {
+	CommandProgress *CommandProgress `protobuf:"bytes,17,opt,name=command_progress,json=commandProgress,proto3,oneof"`
+}
+
 func (*NodeEnvelope_Hello) isNodeEnvelope_Body() {}
 
 func (*NodeEnvelope_HelloAck) isNodeEnvelope_Body() {}
@@ -1904,6 +2143,1289 @@ func (*NodeEnvelope_AgentQueryResult) isNodeEnvelope_Body() {}
 
 func (*NodeEnvelope_AgentQueryCancel) isNodeEnvelope_Body() {}
 
+func (*NodeEnvelope_ProjectConfig) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_ProjectAck) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_LegacyProjects) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_SessionInventory) isNodeEnvelope_Body() {}
+
+func (*NodeEnvelope_CommandProgress) isNodeEnvelope_Body() {}
+
+// Launches use node-local project/workspace paths, never caller-supplied shell
+// commands or provider arguments. Prompt acknowledgement is not task success.
+type AgentStart struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BindingRevision    string                 `protobuf:"bytes,2,opt,name=binding_revision,json=bindingRevision,proto3" json:"binding_revision,omitempty"`
+	WorkspaceId        string                 `protobuf:"bytes,3,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Name               string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	Provider           string                 `protobuf:"bytes,5,opt,name=provider,proto3" json:"provider,omitempty"`
+	SessionName        string                 `protobuf:"bytes,6,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	SessionIncarnation string                 `protobuf:"bytes,7,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	StartupTimeoutMs   uint32                 `protobuf:"varint,8,opt,name=startup_timeout_ms,json=startupTimeoutMs,proto3" json:"startup_timeout_ms,omitempty"`
+	InitialPrompt      string                 `protobuf:"bytes,9,opt,name=initial_prompt,json=initialPrompt,proto3" json:"initial_prompt,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AgentStart) Reset() {
+	*x = AgentStart{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentStart) ProtoMessage() {}
+
+func (x *AgentStart) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentStart.ProtoReflect.Descriptor instead.
+func (*AgentStart) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *AgentStart) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *AgentStart) GetBindingRevision() string {
+	if x != nil {
+		return x.BindingRevision
+	}
+	return ""
+}
+
+func (x *AgentStart) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *AgentStart) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AgentStart) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AgentStart) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+func (x *AgentStart) GetSessionIncarnation() string {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return ""
+}
+
+func (x *AgentStart) GetStartupTimeoutMs() uint32 {
+	if x != nil {
+		return x.StartupTimeoutMs
+	}
+	return 0
+}
+
+func (x *AgentStart) GetInitialPrompt() string {
+	if x != nil {
+		return x.InitialPrompt
+	}
+	return ""
+}
+
+type AgentStop struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Target        *AgentTarget           `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TabId         string                 `protobuf:"bytes,3,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
+	Provider      string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentStop) Reset() {
+	*x = AgentStop{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentStop) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentStop) ProtoMessage() {}
+
+func (x *AgentStop) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentStop.ProtoReflect.Descriptor instead.
+func (*AgentStop) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *AgentStop) GetTarget() *AgentTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AgentStop) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *AgentStop) GetTabId() string {
+	if x != nil {
+		return x.TabId
+	}
+	return ""
+}
+
+func (x *AgentStop) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+type AgentLifecycleHandle struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Target        *AgentTarget           `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TabId         string                 `protobuf:"bytes,3,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
+	Provider      string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentLifecycleHandle) Reset() {
+	*x = AgentLifecycleHandle{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentLifecycleHandle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentLifecycleHandle) ProtoMessage() {}
+
+func (x *AgentLifecycleHandle) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentLifecycleHandle.ProtoReflect.Descriptor instead.
+func (*AgentLifecycleHandle) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AgentLifecycleHandle) GetTarget() *AgentTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AgentLifecycleHandle) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *AgentLifecycleHandle) GetTabId() string {
+	if x != nil {
+		return x.TabId
+	}
+	return ""
+}
+
+func (x *AgentLifecycleHandle) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+type AgentLifecycleStage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// create_pane, launch, prompt, or close_pane.
+	Stage  string `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`
+	Before bool   `protobuf:"varint,2,opt,name=before,proto3" json:"before,omitempty"`
+	// not_attempted, unknown, or confirmed.
+	Outcome       string `protobuf:"bytes,3,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentLifecycleStage) Reset() {
+	*x = AgentLifecycleStage{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentLifecycleStage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentLifecycleStage) ProtoMessage() {}
+
+func (x *AgentLifecycleStage) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentLifecycleStage.ProtoReflect.Descriptor instead.
+func (*AgentLifecycleStage) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *AgentLifecycleStage) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *AgentLifecycleStage) GetBefore() bool {
+	if x != nil {
+		return x.Before
+	}
+	return false
+}
+
+func (x *AgentLifecycleStage) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+type AgentLifecycleReceipt struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Handle         *AgentLifecycleHandle  `protobuf:"bytes,1,opt,name=handle,proto3" json:"handle,omitempty"`
+	PaneOutcome    string                 `protobuf:"bytes,2,opt,name=pane_outcome,json=paneOutcome,proto3" json:"pane_outcome,omitempty"`
+	LaunchOutcome  string                 `protobuf:"bytes,3,opt,name=launch_outcome,json=launchOutcome,proto3" json:"launch_outcome,omitempty"`
+	PromptOutcome  string                 `protobuf:"bytes,4,opt,name=prompt_outcome,json=promptOutcome,proto3" json:"prompt_outcome,omitempty"`
+	StopOutcome    string                 `protobuf:"bytes,5,opt,name=stop_outcome,json=stopOutcome,proto3" json:"stop_outcome,omitempty"`
+	ObservedStatus string                 `protobuf:"bytes,6,opt,name=observed_status,json=observedStatus,proto3" json:"observed_status,omitempty"`
+	Sequence       uint32                 `protobuf:"varint,7,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// Compact cumulative checkpoints; at most eight entries.
+	Stages        []*AgentLifecycleStage `protobuf:"bytes,8,rep,name=stages,proto3" json:"stages,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentLifecycleReceipt) Reset() {
+	*x = AgentLifecycleReceipt{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentLifecycleReceipt) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentLifecycleReceipt) ProtoMessage() {}
+
+func (x *AgentLifecycleReceipt) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentLifecycleReceipt.ProtoReflect.Descriptor instead.
+func (*AgentLifecycleReceipt) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *AgentLifecycleReceipt) GetHandle() *AgentLifecycleHandle {
+	if x != nil {
+		return x.Handle
+	}
+	return nil
+}
+
+func (x *AgentLifecycleReceipt) GetPaneOutcome() string {
+	if x != nil {
+		return x.PaneOutcome
+	}
+	return ""
+}
+
+func (x *AgentLifecycleReceipt) GetLaunchOutcome() string {
+	if x != nil {
+		return x.LaunchOutcome
+	}
+	return ""
+}
+
+func (x *AgentLifecycleReceipt) GetPromptOutcome() string {
+	if x != nil {
+		return x.PromptOutcome
+	}
+	return ""
+}
+
+func (x *AgentLifecycleReceipt) GetStopOutcome() string {
+	if x != nil {
+		return x.StopOutcome
+	}
+	return ""
+}
+
+func (x *AgentLifecycleReceipt) GetObservedStatus() string {
+	if x != nil {
+		return x.ObservedStatus
+	}
+	return ""
+}
+
+func (x *AgentLifecycleReceipt) GetSequence() uint32 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *AgentLifecycleReceipt) GetStages() []*AgentLifecycleStage {
+	if x != nil {
+		return x.Stages
+	}
+	return nil
+}
+
+type CommandProgress struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CommandId      string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	AgentLifecycle *AgentLifecycleReceipt `protobuf:"bytes,2,opt,name=agent_lifecycle,json=agentLifecycle,proto3" json:"agent_lifecycle,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CommandProgress) Reset() {
+	*x = CommandProgress{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandProgress) ProtoMessage() {}
+
+func (x *CommandProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandProgress.ProtoReflect.Descriptor instead.
+func (*CommandProgress) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *CommandProgress) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CommandProgress) GetAgentLifecycle() *AgentLifecycleReceipt {
+	if x != nil {
+		return x.AgentLifecycle
+	}
+	return nil
+}
+
+// Local endpoint paths never cross the mesh protocol.
+type SessionEnsure struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionEnsure) Reset() {
+	*x = SessionEnsure{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionEnsure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionEnsure) ProtoMessage() {}
+
+func (x *SessionEnsure) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionEnsure.ProtoReflect.Descriptor instead.
+func (*SessionEnsure) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *SessionEnsure) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ListSessionsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListSessionsRequest) Reset() {
+	*x = ListSessionsRequest{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsRequest) ProtoMessage() {}
+
+func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
+func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListSessionsRequest) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+type SessionList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*SessionView         `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	ErrorCode     string                 `protobuf:"bytes,2,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionList) Reset() {
+	*x = SessionList{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionList) ProtoMessage() {}
+
+func (x *SessionList) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionList.ProtoReflect.Descriptor instead.
+func (*SessionList) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SessionList) GetSessions() []*SessionView {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *SessionList) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+type SessionView struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Incarnation string                 `protobuf:"bytes,2,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	// stopped, starting, ready, unavailable, or unsupported.
+	Status    string      `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	ErrorCode string      `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	Herdr     *HerdrState `protobuf:"bytes,5,opt,name=herdr,proto3" json:"herdr,omitempty"`
+	// Coordinator-assigned receipt time of this session's latest observation.
+	// Nodes must omit both projection fields in SessionInventory.
+	HerdrReceivedAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=herdr_received_at,json=herdrReceivedAt,proto3" json:"herdr_received_at,omitempty"`
+	Stale           bool                   `protobuf:"varint,7,opt,name=stale,proto3" json:"stale,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SessionView) Reset() {
+	*x = SessionView{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionView) ProtoMessage() {}
+
+func (x *SessionView) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionView.ProtoReflect.Descriptor instead.
+func (*SessionView) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *SessionView) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SessionView) GetIncarnation() string {
+	if x != nil {
+		return x.Incarnation
+	}
+	return ""
+}
+
+func (x *SessionView) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SessionView) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *SessionView) GetHerdr() *HerdrState {
+	if x != nil {
+		return x.Herdr
+	}
+	return nil
+}
+
+func (x *SessionView) GetHerdrReceivedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.HerdrReceivedAt
+	}
+	return nil
+}
+
+func (x *SessionView) GetStale() bool {
+	if x != nil {
+		return x.Stale
+	}
+	return false
+}
+
+type SessionInventory struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*SessionView         `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	Sequence      uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	ErrorCode     string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionInventory) Reset() {
+	*x = SessionInventory{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionInventory) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionInventory) ProtoMessage() {}
+
+func (x *SessionInventory) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionInventory.ProtoReflect.Descriptor instead.
+func (*SessionInventory) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *SessionInventory) GetSessions() []*SessionView {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *SessionInventory) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *SessionInventory) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+func (x *SessionInventory) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+type RegisterProjectRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	ProjectId      string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	CheckoutPath   string                 `protobuf:"bytes,3,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	WorktreeRoot   string                 `protobuf:"bytes,4,opt,name=worktree_root,json=worktreeRoot,proto3" json:"worktree_root,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RegisterProjectRequest) Reset() {
+	*x = RegisterProjectRequest{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterProjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterProjectRequest) ProtoMessage() {}
+
+func (x *RegisterProjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterProjectRequest.ProtoReflect.Descriptor instead.
+func (*RegisterProjectRequest) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *RegisterProjectRequest) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+func (x *RegisterProjectRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *RegisterProjectRequest) GetCheckoutPath() string {
+	if x != nil {
+		return x.CheckoutPath
+	}
+	return ""
+}
+
+func (x *RegisterProjectRequest) GetWorktreeRoot() string {
+	if x != nil {
+		return x.WorktreeRoot
+	}
+	return ""
+}
+
+type GetProjectRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	ProjectId      string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetProjectRequest) Reset() {
+	*x = GetProjectRequest{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProjectRequest) ProtoMessage() {}
+
+func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProjectRequest.ProtoReflect.Descriptor instead.
+func (*GetProjectRequest) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *GetProjectRequest) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+func (x *GetProjectRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+type ListProjectsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	// Defaults to 64, also the maximum. CLI inspection follows all pages.
+	PageSize      uint32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProjectsRequest) Reset() {
+	*x = ListProjectsRequest{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProjectsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProjectsRequest) ProtoMessage() {}
+
+func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
+func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListProjectsRequest) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+func (x *ListProjectsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListProjectsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ProjectConfig struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	ProjectId      string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Generation     uint64                 `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`
+	CheckoutPath   string                 `protobuf:"bytes,4,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	WorktreeRoot   string                 `protobuf:"bytes,5,opt,name=worktree_root,json=worktreeRoot,proto3" json:"worktree_root,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProjectConfig) Reset() {
+	*x = ProjectConfig{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectConfig) ProtoMessage() {}
+
+func (x *ProjectConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectConfig.ProtoReflect.Descriptor instead.
+func (*ProjectConfig) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ProjectConfig) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+func (x *ProjectConfig) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ProjectConfig) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ProjectConfig) GetCheckoutPath() string {
+	if x != nil {
+		return x.CheckoutPath
+	}
+	return ""
+}
+
+func (x *ProjectConfig) GetWorktreeRoot() string {
+	if x != nil {
+		return x.WorktreeRoot
+	}
+	return ""
+}
+
+type ProjectAck struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId  string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Generation uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	// applied or invalid; errors are bounded categories, never raw filesystem errors.
+	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	CheckoutPath  string `protobuf:"bytes,4,opt,name=checkout_path,json=checkoutPath,proto3" json:"checkout_path,omitempty"`
+	WorktreeRoot  string `protobuf:"bytes,5,opt,name=worktree_root,json=worktreeRoot,proto3" json:"worktree_root,omitempty"`
+	ErrorCode     string `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectAck) Reset() {
+	*x = ProjectAck{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectAck) ProtoMessage() {}
+
+func (x *ProjectAck) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectAck.ProtoReflect.Descriptor instead.
+func (*ProjectAck) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ProjectAck) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ProjectAck) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ProjectAck) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ProjectAck) GetCheckoutPath() string {
+	if x != nil {
+		return x.CheckoutPath
+	}
+	return ""
+}
+
+func (x *ProjectAck) GetWorktreeRoot() string {
+	if x != nil {
+		return x.WorktreeRoot
+	}
+	return ""
+}
+
+func (x *ProjectAck) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+type ProjectRecord struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Desired *ProjectConfig         `protobuf:"bytes,1,opt,name=desired,proto3" json:"desired,omitempty"`
+	Applied *ProjectAck            `protobuf:"bytes,2,opt,name=applied,proto3" json:"applied,omitempty"`
+	// pending, offline, applied, invalid, or unsupported (computed per live stream).
+	Readiness      string `protobuf:"bytes,3,opt,name=readiness,proto3" json:"readiness,omitempty"`
+	AdoptionStatus string `protobuf:"bytes,4,opt,name=adoption_status,json=adoptionStatus,proto3" json:"adoption_status,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProjectRecord) Reset() {
+	*x = ProjectRecord{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectRecord) ProtoMessage() {}
+
+func (x *ProjectRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectRecord.ProtoReflect.Descriptor instead.
+func (*ProjectRecord) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ProjectRecord) GetDesired() *ProjectConfig {
+	if x != nil {
+		return x.Desired
+	}
+	return nil
+}
+
+func (x *ProjectRecord) GetApplied() *ProjectAck {
+	if x != nil {
+		return x.Applied
+	}
+	return nil
+}
+
+func (x *ProjectRecord) GetReadiness() string {
+	if x != nil {
+		return x.Readiness
+	}
+	return ""
+}
+
+func (x *ProjectRecord) GetAdoptionStatus() string {
+	if x != nil {
+		return x.AdoptionStatus
+	}
+	return ""
+}
+
+type ProjectList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Projects      []*ProjectRecord       `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectList) Reset() {
+	*x = ProjectList{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectList) ProtoMessage() {}
+
+func (x *ProjectList) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectList.ProtoReflect.Descriptor instead.
+func (*ProjectList) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ProjectList) GetProjects() []*ProjectRecord {
+	if x != nil {
+		return x.Projects
+	}
+	return nil
+}
+
+func (x *ProjectList) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+// Bounded upgrade-only offers. Old policy files never authorize managed commands.
+type LegacyProjects struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Projects      []*RegisterProjectRequest `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LegacyProjects) Reset() {
+	*x = LegacyProjects{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LegacyProjects) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LegacyProjects) ProtoMessage() {}
+
+func (x *LegacyProjects) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LegacyProjects.ProtoReflect.Descriptor instead.
+func (*LegacyProjects) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *LegacyProjects) GetProjects() []*RegisterProjectRequest {
+	if x != nil {
+		return x.Projects
+	}
+	return nil
+}
+
 type ServerInfo struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	InstanceId            string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
@@ -1916,7 +3438,7 @@ type ServerInfo struct {
 
 func (x *ServerInfo) Reset() {
 	*x = ServerInfo{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	mi := &file_agentflow_v1_control_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1928,7 +3450,7 @@ func (x *ServerInfo) String() string {
 func (*ServerInfo) ProtoMessage() {}
 
 func (x *ServerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	mi := &file_agentflow_v1_control_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1941,7 +3463,7 @@ func (x *ServerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerInfo.ProtoReflect.Descriptor instead.
 func (*ServerInfo) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{19}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ServerInfo) GetInstanceId() string {
@@ -1972,21 +3494,26 @@ func (x *ServerInfo) GetCapabilities() []string {
 	return nil
 }
 
-// Read-only allowlisted projection. No terminal text, titles, paths, or metadata.
+// Read-only allowlisted identity/agent metadata. No terminal text, titles, or paths.
 type HerdrEntity struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	TabId         string                 `protobuf:"bytes,3,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
-	AgentStatus   string                 `protobuf:"bytes,4,opt,name=agent_status,json=agentStatus,proto3" json:"agent_status,omitempty"`
-	Focused       bool                   `protobuf:"varint,5,opt,name=focused,proto3" json:"focused,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId       string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	TabId             string                 `protobuf:"bytes,3,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
+	AgentStatus       string                 `protobuf:"bytes,4,opt,name=agent_status,json=agentStatus,proto3" json:"agent_status,omitempty"`
+	Focused           bool                   `protobuf:"varint,5,opt,name=focused,proto3" json:"focused,omitempty"`
+	Provider          string                 `protobuf:"bytes,6,opt,name=provider,proto3" json:"provider,omitempty"`
+	InteractiveReady  *bool                  `protobuf:"varint,7,opt,name=interactive_ready,json=interactiveReady,proto3,oneof" json:"interactive_ready,omitempty"`
+	TerminalId        string                 `protobuf:"bytes,8,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	ProviderSessionId string                 `protobuf:"bytes,9,opt,name=provider_session_id,json=providerSessionId,proto3" json:"provider_session_id,omitempty"`
+	ProjectId         string                 `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *HerdrEntity) Reset() {
 	*x = HerdrEntity{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[20]
+	mi := &file_agentflow_v1_control_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1998,7 +3525,7 @@ func (x *HerdrEntity) String() string {
 func (*HerdrEntity) ProtoMessage() {}
 
 func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[20]
+	mi := &file_agentflow_v1_control_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2011,7 +3538,7 @@ func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HerdrEntity.ProtoReflect.Descriptor instead.
 func (*HerdrEntity) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{20}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *HerdrEntity) GetId() string {
@@ -2049,6 +3576,41 @@ func (x *HerdrEntity) GetFocused() bool {
 	return false
 }
 
+func (x *HerdrEntity) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetInteractiveReady() bool {
+	if x != nil && x.InteractiveReady != nil {
+		return *x.InteractiveReady
+	}
+	return false
+}
+
+func (x *HerdrEntity) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetProviderSessionId() string {
+	if x != nil {
+		return x.ProviderSessionId
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
 type HerdrState struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// disabled, waiting, ready, or unavailable
@@ -2069,7 +3631,7 @@ type HerdrState struct {
 
 func (x *HerdrState) Reset() {
 	*x = HerdrState{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[21]
+	mi := &file_agentflow_v1_control_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2081,7 +3643,7 @@ func (x *HerdrState) String() string {
 func (*HerdrState) ProtoMessage() {}
 
 func (x *HerdrState) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[21]
+	mi := &file_agentflow_v1_control_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2094,7 +3656,7 @@ func (x *HerdrState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HerdrState.ProtoReflect.Descriptor instead.
 func (*HerdrState) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{21}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *HerdrState) GetStatus() string {
@@ -2177,17 +3739,21 @@ type NodeView struct {
 	Stale             bool                   `protobuf:"varint,6,opt,name=stale,proto3" json:"stale,omitempty"`
 	HerdrReceivedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=herdr_received_at,json=herdrReceivedAt,proto3" json:"herdr_received_at,omitempty"`
 	// Only negotiated allowlisted command types are available, not general execution.
-	CommandReady   bool `protobuf:"varint,8,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
-	WorkspaceReady bool `protobuf:"varint,9,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
-	WorktreeReady  bool `protobuf:"varint,10,opt,name=worktree_ready,json=worktreeReady,proto3" json:"worktree_ready,omitempty"`
-	AgentReady     bool `protobuf:"varint,11,opt,name=agent_ready,json=agentReady,proto3" json:"agent_ready,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	CommandReady       bool                   `protobuf:"varint,8,opt,name=command_ready,json=commandReady,proto3" json:"command_ready,omitempty"`
+	WorkspaceReady     bool                   `protobuf:"varint,9,opt,name=workspace_ready,json=workspaceReady,proto3" json:"workspace_ready,omitempty"`
+	WorktreeReady      bool                   `protobuf:"varint,10,opt,name=worktree_ready,json=worktreeReady,proto3" json:"worktree_ready,omitempty"`
+	AgentReady         bool                   `protobuf:"varint,11,opt,name=agent_ready,json=agentReady,proto3" json:"agent_ready,omitempty"`
+	Sessions           []*SessionView         `protobuf:"bytes,12,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	SessionsReady      bool                   `protobuf:"varint,13,opt,name=sessions_ready,json=sessionsReady,proto3" json:"sessions_ready,omitempty"`
+	SessionsReceivedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=sessions_received_at,json=sessionsReceivedAt,proto3" json:"sessions_received_at,omitempty"`
+	SessionsErrorCode  string                 `protobuf:"bytes,15,opt,name=sessions_error_code,json=sessionsErrorCode,proto3" json:"sessions_error_code,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *NodeView) Reset() {
 	*x = NodeView{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[22]
+	mi := &file_agentflow_v1_control_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2199,7 +3765,7 @@ func (x *NodeView) String() string {
 func (*NodeView) ProtoMessage() {}
 
 func (x *NodeView) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[22]
+	mi := &file_agentflow_v1_control_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2212,7 +3778,7 @@ func (x *NodeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeView.ProtoReflect.Descriptor instead.
 func (*NodeView) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{22}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *NodeView) GetInstanceId() string {
@@ -2292,6 +3858,34 @@ func (x *NodeView) GetAgentReady() bool {
 	return false
 }
 
+func (x *NodeView) GetSessions() []*SessionView {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *NodeView) GetSessionsReady() bool {
+	if x != nil {
+		return x.SessionsReady
+	}
+	return false
+}
+
+func (x *NodeView) GetSessionsReceivedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SessionsReceivedAt
+	}
+	return nil
+}
+
+func (x *NodeView) GetSessionsErrorCode() string {
+	if x != nil {
+		return x.SessionsErrorCode
+	}
+	return ""
+}
+
 type NodeList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Nodes         []*NodeView            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
@@ -2301,7 +3895,7 @@ type NodeList struct {
 
 func (x *NodeList) Reset() {
 	*x = NodeList{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[23]
+	mi := &file_agentflow_v1_control_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2313,7 +3907,7 @@ func (x *NodeList) String() string {
 func (*NodeList) ProtoMessage() {}
 
 func (x *NodeList) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[23]
+	mi := &file_agentflow_v1_control_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2326,7 +3920,7 @@ func (x *NodeList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeList.ProtoReflect.Descriptor instead.
 func (*NodeList) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{23}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *NodeList) GetNodes() []*NodeView {
@@ -2337,17 +3931,19 @@ func (x *NodeList) GetNodes() []*NodeView {
 }
 
 type AgentTarget struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	PaneId         string                 `protobuf:"bytes,1,opt,name=pane_id,json=paneId,proto3" json:"pane_id,omitempty"`
-	TerminalId     string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	AgentSessionId string                 `protobuf:"bytes,3,opt,name=agent_session_id,json=agentSessionId,proto3" json:"agent_session_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	PaneId             string                 `protobuf:"bytes,1,opt,name=pane_id,json=paneId,proto3" json:"pane_id,omitempty"`
+	TerminalId         string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	AgentSessionId     string                 `protobuf:"bytes,3,opt,name=agent_session_id,json=agentSessionId,proto3" json:"agent_session_id,omitempty"`
+	SessionName        string                 `protobuf:"bytes,4,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	SessionIncarnation string                 `protobuf:"bytes,5,opt,name=session_incarnation,json=sessionIncarnation,proto3" json:"session_incarnation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AgentTarget) Reset() {
 	*x = AgentTarget{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	mi := &file_agentflow_v1_control_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2359,7 +3955,7 @@ func (x *AgentTarget) String() string {
 func (*AgentTarget) ProtoMessage() {}
 
 func (x *AgentTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	mi := &file_agentflow_v1_control_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2372,7 +3968,7 @@ func (x *AgentTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentTarget.ProtoReflect.Descriptor instead.
 func (*AgentTarget) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{24}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *AgentTarget) GetPaneId() string {
@@ -2396,6 +3992,20 @@ func (x *AgentTarget) GetAgentSessionId() string {
 	return ""
 }
 
+func (x *AgentTarget) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+func (x *AgentTarget) GetSessionIncarnation() string {
+	if x != nil {
+		return x.SessionIncarnation
+	}
+	return ""
+}
+
 type AgentView struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Target           *AgentTarget           `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
@@ -2413,7 +4023,7 @@ type AgentView struct {
 
 func (x *AgentView) Reset() {
 	*x = AgentView{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	mi := &file_agentflow_v1_control_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2425,7 +4035,7 @@ func (x *AgentView) String() string {
 func (*AgentView) ProtoMessage() {}
 
 func (x *AgentView) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	mi := &file_agentflow_v1_control_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2438,7 +4048,7 @@ func (x *AgentView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentView.ProtoReflect.Descriptor instead.
 func (*AgentView) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{25}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *AgentView) GetTarget() *AgentTarget {
@@ -2518,7 +4128,7 @@ type AgentQueryRequest struct {
 
 func (x *AgentQueryRequest) Reset() {
 	*x = AgentQueryRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	mi := &file_agentflow_v1_control_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2530,7 +4140,7 @@ func (x *AgentQueryRequest) String() string {
 func (*AgentQueryRequest) ProtoMessage() {}
 
 func (x *AgentQueryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	mi := &file_agentflow_v1_control_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2543,7 +4153,7 @@ func (x *AgentQueryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQueryRequest.ProtoReflect.Descriptor instead.
 func (*AgentQueryRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{26}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *AgentQueryRequest) GetNodeInstanceId() string {
@@ -2600,7 +4210,7 @@ type AgentQuery struct {
 
 func (x *AgentQuery) Reset() {
 	*x = AgentQuery{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	mi := &file_agentflow_v1_control_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2612,7 +4222,7 @@ func (x *AgentQuery) String() string {
 func (*AgentQuery) ProtoMessage() {}
 
 func (x *AgentQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	mi := &file_agentflow_v1_control_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2625,7 +4235,7 @@ func (x *AgentQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQuery.ProtoReflect.Descriptor instead.
 func (*AgentQuery) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{27}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *AgentQuery) GetQueryId() string {
@@ -2662,7 +4272,7 @@ type AgentQueryResult struct {
 
 func (x *AgentQueryResult) Reset() {
 	*x = AgentQueryResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	mi := &file_agentflow_v1_control_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2674,7 +4284,7 @@ func (x *AgentQueryResult) String() string {
 func (*AgentQueryResult) ProtoMessage() {}
 
 func (x *AgentQueryResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	mi := &file_agentflow_v1_control_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2687,7 +4297,7 @@ func (x *AgentQueryResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQueryResult.ProtoReflect.Descriptor instead.
 func (*AgentQueryResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{28}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *AgentQueryResult) GetQueryId() string {
@@ -2734,7 +4344,7 @@ type AgentQueryCancel struct {
 
 func (x *AgentQueryCancel) Reset() {
 	*x = AgentQueryCancel{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	mi := &file_agentflow_v1_control_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2746,7 +4356,7 @@ func (x *AgentQueryCancel) String() string {
 func (*AgentQueryCancel) ProtoMessage() {}
 
 func (x *AgentQueryCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	mi := &file_agentflow_v1_control_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2759,7 +4369,7 @@ func (x *AgentQueryCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQueryCancel.ProtoReflect.Descriptor instead.
 func (*AgentQueryCancel) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{29}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *AgentQueryCancel) GetQueryId() string {
@@ -2781,7 +4391,7 @@ type AgentControl struct {
 
 func (x *AgentControl) Reset() {
 	*x = AgentControl{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	mi := &file_agentflow_v1_control_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2793,7 +4403,7 @@ func (x *AgentControl) String() string {
 func (*AgentControl) ProtoMessage() {}
 
 func (x *AgentControl) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	mi := &file_agentflow_v1_control_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2806,7 +4416,7 @@ func (x *AgentControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentControl.ProtoReflect.Descriptor instead.
 func (*AgentControl) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{30}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *AgentControl) GetAction() AgentControlAction {
@@ -2848,7 +4458,7 @@ type AgentControlResult struct {
 
 func (x *AgentControlResult) Reset() {
 	*x = AgentControlResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	mi := &file_agentflow_v1_control_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2860,7 +4470,7 @@ func (x *AgentControlResult) String() string {
 func (*AgentControlResult) ProtoMessage() {}
 
 func (x *AgentControlResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	mi := &file_agentflow_v1_control_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2873,7 +4483,7 @@ func (x *AgentControlResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentControlResult.ProtoReflect.Descriptor instead.
 func (*AgentControlResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{31}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *AgentControlResult) GetTarget() *AgentTarget {
@@ -2918,7 +4528,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\bHelloAck\x12+\n" +
 	"\x11selected_protocol\x18\x01 \x01(\rR\x10selectedProtocol\x12,\n" +
 	"\x12server_instance_id\x18\x02 \x01(\tR\x10serverInstanceId\x12\"\n" +
-	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"\xf2\x01\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\"\x99\x02\n" +
 	"\tHeartbeat\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x123\n" +
 	"\asent_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12#\n" +
@@ -2926,7 +4536,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x0fworkspace_ready\x18\x04 \x01(\bR\x0eworkspaceReady\x12%\n" +
 	"\x0eworktree_ready\x18\x05 \x01(\bR\rworktreeReady\x12\x1f\n" +
 	"\vagent_ready\x18\x06 \x01(\bR\n" +
-	"agentReady\"~\n" +
+	"agentReady\x12%\n" +
+	"\x0esessions_ready\x18\a \x01(\bR\rsessionsReady\"~\n" +
 	"\bSnapshot\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12#\n" +
 	"\rsnapshot_type\x18\x02 \x01(\tR\fsnapshotType\x121\n" +
@@ -2938,7 +4549,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\tentity_id\x18\x03 \x01(\tR\bentityId\x12;\n" +
 	"\voccurred_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"occurredAt\x121\n" +
-	"\apayload\x18\x05 \x01(\v2\x17.google.protobuf.StructR\apayload\"\xe8\x04\n" +
+	"\apayload\x18\x05 \x01(\v2\x17.google.protobuf.StructR\apayload\"\xbe\a\n" +
 	"\aCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12'\n" +
@@ -2954,7 +4565,14 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x10workspace_ensure\x18\n" +
 	" \x01(\v2\x1d.agentflow.v1.WorkspaceEnsureR\x0fworkspaceEnsure\x12E\n" +
 	"\x0fworktree_create\x18\v \x01(\v2\x1c.agentflow.v1.WorktreeCreateR\x0eworktreeCreate\x12?\n" +
-	"\ragent_control\x18\f \x01(\v2\x1a.agentflow.v1.AgentControlR\fagentControl\"\xa7\x01\n" +
+	"\ragent_control\x18\f \x01(\v2\x1a.agentflow.v1.AgentControlR\fagentControl\x12O\n" +
+	"\x11submitted_request\x18\r \x01(\v2\".agentflow.v1.SubmitCommandRequestR\x10submittedRequest\x12B\n" +
+	"\x0esession_ensure\x18\x0e \x01(\v2\x1b.agentflow.v1.SessionEnsureR\rsessionEnsure\x129\n" +
+	"\vagent_start\x18\x0f \x01(\v2\x18.agentflow.v1.AgentStartR\n" +
+	"agentStart\x126\n" +
+	"\n" +
+	"agent_stop\x18\x10 \x01(\v2\x17.agentflow.v1.AgentStopR\tagentStop\x12L\n" +
+	"\x14execution_expires_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\x12executionExpiresAt\"\xfb\x01\n" +
 	"\x0eWorktreeCreate\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
@@ -2962,7 +4580,9 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x16\n" +
 	"\x06branch\x18\x04 \x01(\tR\x06branch\x12\x1f\n" +
 	"\vbase_commit\x18\x05 \x01(\tR\n" +
-	"baseCommit\"\xd0\x01\n" +
+	"baseCommit\x12!\n" +
+	"\fsession_name\x18\x06 \x01(\tR\vsessionName\x12/\n" +
+	"\x13session_incarnation\x18\a \x01(\tR\x12sessionIncarnation\"\xa4\x02\n" +
 	"\x14WorktreeCreateResult\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
@@ -2971,17 +4591,23 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x16\n" +
 	"\x06branch\x18\x05 \x01(\tR\x06branch\x12\x1f\n" +
 	"\vbase_commit\x18\x06 \x01(\tR\n" +
-	"baseCommit\"[\n" +
+	"baseCommit\x12!\n" +
+	"\fsession_name\x18\a \x01(\tR\vsessionName\x12/\n" +
+	"\x13session_incarnation\x18\b \x01(\tR\x12sessionIncarnation\"\xaf\x01\n" +
 	"\x0fWorkspaceEnsure\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
-	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\"\x9e\x01\n" +
+	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\x12!\n" +
+	"\fsession_name\x18\x03 \x01(\tR\vsessionName\x12/\n" +
+	"\x13session_incarnation\x18\x04 \x01(\tR\x12sessionIncarnation\"\xf2\x01\n" +
 	"\x15WorkspaceEnsureResult\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
 	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\x12!\n" +
 	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x18\n" +
-	"\acreated\x18\x04 \x01(\bR\acreated\"\x8b\x03\n" +
+	"\acreated\x18\x04 \x01(\bR\acreated\x12!\n" +
+	"\fsession_name\x18\x05 \x01(\tR\vsessionName\x12/\n" +
+	"\x13session_incarnation\x18\x06 \x01(\tR\x12sessionIncarnation\"\xc2\x04\n" +
 	"\x14SubmitCommandRequest\x12(\n" +
 	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +
@@ -2989,7 +4615,13 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x03ttl\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x12H\n" +
 	"\x10workspace_ensure\x18\x05 \x01(\v2\x1d.agentflow.v1.WorkspaceEnsureR\x0fworkspaceEnsure\x12E\n" +
 	"\x0fworktree_create\x18\x06 \x01(\v2\x1c.agentflow.v1.WorktreeCreateR\x0eworktreeCreate\x12?\n" +
-	"\ragent_control\x18\a \x01(\v2\x1a.agentflow.v1.AgentControlR\fagentControl\"2\n" +
+	"\ragent_control\x18\a \x01(\v2\x1a.agentflow.v1.AgentControlR\fagentControl\x12B\n" +
+	"\x0esession_ensure\x18\b \x01(\v2\x1b.agentflow.v1.SessionEnsureR\rsessionEnsure\x129\n" +
+	"\vagent_start\x18\t \x01(\v2\x18.agentflow.v1.AgentStartR\n" +
+	"agentStart\x126\n" +
+	"\n" +
+	"agent_stop\x18\n" +
+	" \x01(\v2\x17.agentflow.v1.AgentStopR\tagentStop\"2\n" +
 	"\x11GetCommandRequest\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\"\x98\x01\n" +
@@ -2997,7 +4629,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12;\n" +
 	"\voccurred_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"occurredAt\"\x99\x04\n" +
+	"occurredAt\"\xa9\x05\n" +
 	"\rCommandRecord\x12/\n" +
 	"\acommand\x18\x01 \x01(\v2\x15.agentflow.v1.CommandR\acommand\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
@@ -3009,7 +4641,10 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x05audit\x18\x06 \x03(\v2\x1a.agentflow.v1.CommandAuditR\x05audit\x12N\n" +
 	"\x10workspace_ensure\x18\a \x01(\v2#.agentflow.v1.WorkspaceEnsureResultR\x0fworkspaceEnsure\x12K\n" +
 	"\x0fworktree_create\x18\b \x01(\v2\".agentflow.v1.WorktreeCreateResultR\x0eworktreeCreate\x12E\n" +
-	"\ragent_control\x18\t \x01(\v2 .agentflow.v1.AgentControlResultR\fagentControl\"\x9a\x01\n" +
+	"\ragent_control\x18\t \x01(\v2 .agentflow.v1.AgentControlResultR\fagentControl\x12@\n" +
+	"\x0esession_ensure\x18\n" +
+	" \x01(\v2\x19.agentflow.v1.SessionViewR\rsessionEnsure\x12L\n" +
+	"\x0fagent_lifecycle\x18\v \x01(\v2#.agentflow.v1.AgentLifecycleReceiptR\x0eagentLifecycle\"\x9a\x01\n" +
 	"\x05Actor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12&\n" +
 	"\x04role\x18\x02 \x01(\x0e2\x12.agentflow.v1.RoleR\x04role\x121\n" +
@@ -3020,7 +4655,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.agentflow.v1.CommandStatusR\x06status\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\x92\x03\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xa2\x04\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x123\n" +
@@ -3029,7 +4664,9 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\apayload\x18\x04 \x01(\v2\x17.google.protobuf.StructR\apayload\x12N\n" +
 	"\x10workspace_ensure\x18\x05 \x01(\v2#.agentflow.v1.WorkspaceEnsureResultR\x0fworkspaceEnsure\x12K\n" +
 	"\x0fworktree_create\x18\x06 \x01(\v2\".agentflow.v1.WorktreeCreateResultR\x0eworktreeCreate\x12E\n" +
-	"\ragent_control\x18\a \x01(\v2 .agentflow.v1.AgentControlResultR\fagentControl\"\xe6\x05\n" +
+	"\ragent_control\x18\a \x01(\v2 .agentflow.v1.AgentControlResultR\fagentControl\x12@\n" +
+	"\x0esession_ensure\x18\b \x01(\v2\x19.agentflow.v1.SessionViewR\rsessionEnsure\x12L\n" +
+	"\x0fagent_lifecycle\x18\t \x01(\v2#.agentflow.v1.AgentLifecycleReceiptR\x0eagentLifecycle\"\xcd\b\n" +
 	"\fNodeEnvelope\x12+\n" +
 	"\x05hello\x18\x01 \x01(\v2\x13.agentflow.v1.HelloH\x00R\x05hello\x125\n" +
 	"\thello_ack\x18\x02 \x01(\v2\x16.agentflow.v1.HelloAckH\x00R\bhelloAck\x127\n" +
@@ -3046,21 +4683,145 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	" \x01(\v2\x18.agentflow.v1.AgentQueryH\x00R\n" +
 	"agentQuery\x12N\n" +
 	"\x12agent_query_result\x18\v \x01(\v2\x1e.agentflow.v1.AgentQueryResultH\x00R\x10agentQueryResult\x12N\n" +
-	"\x12agent_query_cancel\x18\f \x01(\v2\x1e.agentflow.v1.AgentQueryCancelH\x00R\x10agentQueryCancelB\x06\n" +
-	"\x04body\"\xc1\x01\n" +
+	"\x12agent_query_cancel\x18\f \x01(\v2\x1e.agentflow.v1.AgentQueryCancelH\x00R\x10agentQueryCancel\x12D\n" +
+	"\x0eproject_config\x18\r \x01(\v2\x1b.agentflow.v1.ProjectConfigH\x00R\rprojectConfig\x12;\n" +
+	"\vproject_ack\x18\x0e \x01(\v2\x18.agentflow.v1.ProjectAckH\x00R\n" +
+	"projectAck\x12G\n" +
+	"\x0flegacy_projects\x18\x0f \x01(\v2\x1c.agentflow.v1.LegacyProjectsH\x00R\x0elegacyProjects\x12M\n" +
+	"\x11session_inventory\x18\x10 \x01(\v2\x1e.agentflow.v1.SessionInventoryH\x00R\x10sessionInventory\x12J\n" +
+	"\x10command_progress\x18\x11 \x01(\v2\x1d.agentflow.v1.CommandProgressH\x00R\x0fcommandProgressB\x06\n" +
+	"\x04body\"\xd2\x02\n" +
+	"\n" +
+	"AgentStart\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12)\n" +
+	"\x10binding_revision\x18\x02 \x01(\tR\x0fbindingRevision\x12!\n" +
+	"\fworkspace_id\x18\x03 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12\x1a\n" +
+	"\bprovider\x18\x05 \x01(\tR\bprovider\x12!\n" +
+	"\fsession_name\x18\x06 \x01(\tR\vsessionName\x12/\n" +
+	"\x13session_incarnation\x18\a \x01(\tR\x12sessionIncarnation\x12,\n" +
+	"\x12startup_timeout_ms\x18\b \x01(\rR\x10startupTimeoutMs\x12%\n" +
+	"\x0einitial_prompt\x18\t \x01(\tR\rinitialPrompt\"\x94\x01\n" +
+	"\tAgentStop\x121\n" +
+	"\x06target\x18\x01 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
+	"\x06tab_id\x18\x03 \x01(\tR\x05tabId\x12\x1a\n" +
+	"\bprovider\x18\x04 \x01(\tR\bprovider\"\x9f\x01\n" +
+	"\x14AgentLifecycleHandle\x121\n" +
+	"\x06target\x18\x01 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
+	"\x06tab_id\x18\x03 \x01(\tR\x05tabId\x12\x1a\n" +
+	"\bprovider\x18\x04 \x01(\tR\bprovider\"]\n" +
+	"\x13AgentLifecycleStage\x12\x14\n" +
+	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x16\n" +
+	"\x06before\x18\x02 \x01(\bR\x06before\x12\x18\n" +
+	"\aoutcome\x18\x03 \x01(\tR\aoutcome\"\xe7\x02\n" +
+	"\x15AgentLifecycleReceipt\x12:\n" +
+	"\x06handle\x18\x01 \x01(\v2\".agentflow.v1.AgentLifecycleHandleR\x06handle\x12!\n" +
+	"\fpane_outcome\x18\x02 \x01(\tR\vpaneOutcome\x12%\n" +
+	"\x0elaunch_outcome\x18\x03 \x01(\tR\rlaunchOutcome\x12%\n" +
+	"\x0eprompt_outcome\x18\x04 \x01(\tR\rpromptOutcome\x12!\n" +
+	"\fstop_outcome\x18\x05 \x01(\tR\vstopOutcome\x12'\n" +
+	"\x0fobserved_status\x18\x06 \x01(\tR\x0eobservedStatus\x12\x1a\n" +
+	"\bsequence\x18\a \x01(\rR\bsequence\x129\n" +
+	"\x06stages\x18\b \x03(\v2!.agentflow.v1.AgentLifecycleStageR\x06stages\"~\n" +
+	"\x0fCommandProgress\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12L\n" +
+	"\x0fagent_lifecycle\x18\x02 \x01(\v2#.agentflow.v1.AgentLifecycleReceiptR\x0eagentLifecycle\"#\n" +
+	"\rSessionEnsure\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"?\n" +
+	"\x13ListSessionsRequest\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\"c\n" +
+	"\vSessionList\x125\n" +
+	"\bsessions\x18\x01 \x03(\v2\x19.agentflow.v1.SessionViewR\bsessions\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x02 \x01(\tR\terrorCode\"\x88\x02\n" +
+	"\vSessionView\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vincarnation\x18\x02 \x01(\tR\vincarnation\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode\x12.\n" +
+	"\x05herdr\x18\x05 \x01(\v2\x18.agentflow.v1.HerdrStateR\x05herdr\x12F\n" +
+	"\x11herdr_received_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fherdrReceivedAt\x12\x14\n" +
+	"\x05stale\x18\a \x01(\bR\x05stale\"\xc1\x01\n" +
+	"\x10SessionInventory\x125\n" +
+	"\bsessions\x18\x01 \x03(\v2\x19.agentflow.v1.SessionViewR\bsessions\x12\x1a\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12;\n" +
+	"\vobserved_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode\"\xab\x01\n" +
+	"\x16RegisterProjectRequest\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12#\n" +
+	"\rcheckout_path\x18\x03 \x01(\tR\fcheckoutPath\x12#\n" +
+	"\rworktree_root\x18\x04 \x01(\tR\fworktreeRoot\"\\\n" +
+	"\x11GetProjectRequest\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\"{\n" +
+	"\x13ListProjectsRequest\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\rR\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xc2\x01\n" +
+	"\rProjectConfig\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x03 \x01(\x04R\n" +
+	"generation\x12#\n" +
+	"\rcheckout_path\x18\x04 \x01(\tR\fcheckoutPath\x12#\n" +
+	"\rworktree_root\x18\x05 \x01(\tR\fworktreeRoot\"\xcc\x01\n" +
+	"\n" +
+	"ProjectAck\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12#\n" +
+	"\rcheckout_path\x18\x04 \x01(\tR\fcheckoutPath\x12#\n" +
+	"\rworktree_root\x18\x05 \x01(\tR\fworktreeRoot\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x06 \x01(\tR\terrorCode\"\xc1\x01\n" +
+	"\rProjectRecord\x125\n" +
+	"\adesired\x18\x01 \x01(\v2\x1b.agentflow.v1.ProjectConfigR\adesired\x122\n" +
+	"\aapplied\x18\x02 \x01(\v2\x18.agentflow.v1.ProjectAckR\aapplied\x12\x1c\n" +
+	"\treadiness\x18\x03 \x01(\tR\treadiness\x12'\n" +
+	"\x0fadoption_status\x18\x04 \x01(\tR\x0eadoptionStatus\"n\n" +
+	"\vProjectList\x127\n" +
+	"\bprojects\x18\x01 \x03(\v2\x1b.agentflow.v1.ProjectRecordR\bprojects\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"R\n" +
+	"\x0eLegacyProjects\x12@\n" +
+	"\bprojects\x18\x01 \x03(\v2$.agentflow.v1.RegisterProjectRequestR\bprojects\"\xc1\x01\n" +
 	"\n" +
 	"ServerInfo\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x125\n" +
 	"\x16implementation_version\x18\x02 \x01(\tR\x15implementationVersion\x127\n" +
 	"\bprotocol\x18\x03 \x01(\v2\x1b.agentflow.v1.ProtocolRangeR\bprotocol\x12\"\n" +
-	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\x94\x01\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\xe8\x02\n" +
 	"\vHerdrEntity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
 	"\x06tab_id\x18\x03 \x01(\tR\x05tabId\x12!\n" +
 	"\fagent_status\x18\x04 \x01(\tR\vagentStatus\x12\x18\n" +
-	"\afocused\x18\x05 \x01(\bR\afocused\"\xa0\x03\n" +
+	"\afocused\x18\x05 \x01(\bR\afocused\x12\x1a\n" +
+	"\bprovider\x18\x06 \x01(\tR\bprovider\x120\n" +
+	"\x11interactive_ready\x18\a \x01(\bH\x00R\x10interactiveReady\x88\x01\x01\x12\x1f\n" +
+	"\vterminal_id\x18\b \x01(\tR\n" +
+	"terminalId\x12.\n" +
+	"\x13provider_session_id\x18\t \x01(\tR\x11providerSessionId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\n" +
+	" \x01(\tR\tprojectIdB\x14\n" +
+	"\x12_interactive_ready\"\xa0\x03\n" +
 	"\n" +
 	"HerdrState\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
@@ -3077,7 +4838,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x04tabs\x18\b \x03(\v2\x19.agentflow.v1.HerdrEntityR\x04tabs\x12/\n" +
 	"\x05panes\x18\t \x03(\v2\x19.agentflow.v1.HerdrEntityR\x05panes\x121\n" +
 	"\x06agents\x18\n" +
-	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xd6\x03\n" +
+	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xb2\x05\n" +
 	"\bNodeView\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12.\n" +
@@ -3092,14 +4853,20 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x0eworktree_ready\x18\n" +
 	" \x01(\bR\rworktreeReady\x12\x1f\n" +
 	"\vagent_ready\x18\v \x01(\bR\n" +
-	"agentReady\"8\n" +
+	"agentReady\x125\n" +
+	"\bsessions\x18\f \x03(\v2\x19.agentflow.v1.SessionViewR\bsessions\x12%\n" +
+	"\x0esessions_ready\x18\r \x01(\bR\rsessionsReady\x12L\n" +
+	"\x14sessions_received_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x12sessionsReceivedAt\x12.\n" +
+	"\x13sessions_error_code\x18\x0f \x01(\tR\x11sessionsErrorCode\"8\n" +
 	"\bNodeList\x12,\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes\"q\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes\"\xc5\x01\n" +
 	"\vAgentTarget\x12\x17\n" +
 	"\apane_id\x18\x01 \x01(\tR\x06paneId\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
 	"terminalId\x12(\n" +
-	"\x10agent_session_id\x18\x03 \x01(\tR\x0eagentSessionId\"\xc6\x02\n" +
+	"\x10agent_session_id\x18\x03 \x01(\tR\x0eagentSessionId\x12!\n" +
+	"\fsession_name\x18\x04 \x01(\tR\vsessionName\x12/\n" +
+	"\x13session_incarnation\x18\x05 \x01(\tR\x12sessionIncarnation\"\xc6\x02\n" +
 	"\tAgentView\x121\n" +
 	"\x06target\x18\x01 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
@@ -3173,15 +4940,22 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x1aAGENT_CONTROL_ACTION_INPUT\x10\x02\x12\"\n" +
 	"\x1eAGENT_CONTROL_ACTION_INTERRUPT\x10\x032T\n" +
 	"\vNodeControl\x12E\n" +
-	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\xf4\x02\n" +
+	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\xf2\x05\n" +
 	"\x05Fleet\x12A\n" +
 	"\rGetServerInfo\x12\x16.google.protobuf.Empty\x1a\x18.agentflow.v1.ServerInfo\x12;\n" +
-	"\tListNodes\x12\x16.google.protobuf.Empty\x1a\x16.agentflow.v1.NodeList\x12P\n" +
+	"\tListNodes\x12\x16.google.protobuf.Empty\x1a\x16.agentflow.v1.NodeList\x12>\n" +
+	"\n" +
+	"WatchNodes\x12\x16.google.protobuf.Empty\x1a\x16.agentflow.v1.NodeList0\x01\x12P\n" +
 	"\rSubmitCommand\x12\".agentflow.v1.SubmitCommandRequest\x1a\x1b.agentflow.v1.CommandRecord\x12J\n" +
 	"\n" +
 	"GetCommand\x12\x1f.agentflow.v1.GetCommandRequest\x1a\x1b.agentflow.v1.CommandRecord\x12M\n" +
 	"\n" +
-	"QueryAgent\x12\x1f.agentflow.v1.AgentQueryRequest\x1a\x1e.agentflow.v1.AgentQueryResultBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
+	"QueryAgent\x12\x1f.agentflow.v1.AgentQueryRequest\x1a\x1e.agentflow.v1.AgentQueryResult\x12T\n" +
+	"\x0fRegisterProject\x12$.agentflow.v1.RegisterProjectRequest\x1a\x1b.agentflow.v1.ProjectRecord\x12L\n" +
+	"\fListProjects\x12!.agentflow.v1.ListProjectsRequest\x1a\x19.agentflow.v1.ProjectList\x12J\n" +
+	"\n" +
+	"GetProject\x12\x1f.agentflow.v1.GetProjectRequest\x1a\x1b.agentflow.v1.ProjectRecord\x12L\n" +
+	"\fListSessions\x12!.agentflow.v1.ListSessionsRequest\x1a\x19.agentflow.v1.SessionListBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
 
 var (
 	file_agentflow_v1_control_proto_rawDescOnce sync.Once
@@ -3196,135 +4970,197 @@ func file_agentflow_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_agentflow_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
 var file_agentflow_v1_control_proto_goTypes = []any{
-	(Role)(0),                     // 0: agentflow.v1.Role
-	(CommandStatus)(0),            // 1: agentflow.v1.CommandStatus
-	(ActorOrigin)(0),              // 2: agentflow.v1.ActorOrigin
-	(AgentQueryKind)(0),           // 3: agentflow.v1.AgentQueryKind
-	(AgentControlAction)(0),       // 4: agentflow.v1.AgentControlAction
-	(*ProtocolRange)(nil),         // 5: agentflow.v1.ProtocolRange
-	(*Hello)(nil),                 // 6: agentflow.v1.Hello
-	(*HelloAck)(nil),              // 7: agentflow.v1.HelloAck
-	(*Heartbeat)(nil),             // 8: agentflow.v1.Heartbeat
-	(*Snapshot)(nil),              // 9: agentflow.v1.Snapshot
-	(*Event)(nil),                 // 10: agentflow.v1.Event
-	(*Command)(nil),               // 11: agentflow.v1.Command
-	(*WorktreeCreate)(nil),        // 12: agentflow.v1.WorktreeCreate
-	(*WorktreeCreateResult)(nil),  // 13: agentflow.v1.WorktreeCreateResult
-	(*WorkspaceEnsure)(nil),       // 14: agentflow.v1.WorkspaceEnsure
-	(*WorkspaceEnsureResult)(nil), // 15: agentflow.v1.WorkspaceEnsureResult
-	(*SubmitCommandRequest)(nil),  // 16: agentflow.v1.SubmitCommandRequest
-	(*GetCommandRequest)(nil),     // 17: agentflow.v1.GetCommandRequest
-	(*CommandAudit)(nil),          // 18: agentflow.v1.CommandAudit
-	(*CommandRecord)(nil),         // 19: agentflow.v1.CommandRecord
-	(*Actor)(nil),                 // 20: agentflow.v1.Actor
-	(*CommandAck)(nil),            // 21: agentflow.v1.CommandAck
-	(*CommandResult)(nil),         // 22: agentflow.v1.CommandResult
-	(*NodeEnvelope)(nil),          // 23: agentflow.v1.NodeEnvelope
-	(*ServerInfo)(nil),            // 24: agentflow.v1.ServerInfo
-	(*HerdrEntity)(nil),           // 25: agentflow.v1.HerdrEntity
-	(*HerdrState)(nil),            // 26: agentflow.v1.HerdrState
-	(*NodeView)(nil),              // 27: agentflow.v1.NodeView
-	(*NodeList)(nil),              // 28: agentflow.v1.NodeList
-	(*AgentTarget)(nil),           // 29: agentflow.v1.AgentTarget
-	(*AgentView)(nil),             // 30: agentflow.v1.AgentView
-	(*AgentQueryRequest)(nil),     // 31: agentflow.v1.AgentQueryRequest
-	(*AgentQuery)(nil),            // 32: agentflow.v1.AgentQuery
-	(*AgentQueryResult)(nil),      // 33: agentflow.v1.AgentQueryResult
-	(*AgentQueryCancel)(nil),      // 34: agentflow.v1.AgentQueryCancel
-	(*AgentControl)(nil),          // 35: agentflow.v1.AgentControl
-	(*AgentControlResult)(nil),    // 36: agentflow.v1.AgentControlResult
-	(*timestamppb.Timestamp)(nil), // 37: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 38: google.protobuf.Struct
-	(*durationpb.Duration)(nil),   // 39: google.protobuf.Duration
-	(*emptypb.Empty)(nil),         // 40: google.protobuf.Empty
+	(Role)(0),                      // 0: agentflow.v1.Role
+	(CommandStatus)(0),             // 1: agentflow.v1.CommandStatus
+	(ActorOrigin)(0),               // 2: agentflow.v1.ActorOrigin
+	(AgentQueryKind)(0),            // 3: agentflow.v1.AgentQueryKind
+	(AgentControlAction)(0),        // 4: agentflow.v1.AgentControlAction
+	(*ProtocolRange)(nil),          // 5: agentflow.v1.ProtocolRange
+	(*Hello)(nil),                  // 6: agentflow.v1.Hello
+	(*HelloAck)(nil),               // 7: agentflow.v1.HelloAck
+	(*Heartbeat)(nil),              // 8: agentflow.v1.Heartbeat
+	(*Snapshot)(nil),               // 9: agentflow.v1.Snapshot
+	(*Event)(nil),                  // 10: agentflow.v1.Event
+	(*Command)(nil),                // 11: agentflow.v1.Command
+	(*WorktreeCreate)(nil),         // 12: agentflow.v1.WorktreeCreate
+	(*WorktreeCreateResult)(nil),   // 13: agentflow.v1.WorktreeCreateResult
+	(*WorkspaceEnsure)(nil),        // 14: agentflow.v1.WorkspaceEnsure
+	(*WorkspaceEnsureResult)(nil),  // 15: agentflow.v1.WorkspaceEnsureResult
+	(*SubmitCommandRequest)(nil),   // 16: agentflow.v1.SubmitCommandRequest
+	(*GetCommandRequest)(nil),      // 17: agentflow.v1.GetCommandRequest
+	(*CommandAudit)(nil),           // 18: agentflow.v1.CommandAudit
+	(*CommandRecord)(nil),          // 19: agentflow.v1.CommandRecord
+	(*Actor)(nil),                  // 20: agentflow.v1.Actor
+	(*CommandAck)(nil),             // 21: agentflow.v1.CommandAck
+	(*CommandResult)(nil),          // 22: agentflow.v1.CommandResult
+	(*NodeEnvelope)(nil),           // 23: agentflow.v1.NodeEnvelope
+	(*AgentStart)(nil),             // 24: agentflow.v1.AgentStart
+	(*AgentStop)(nil),              // 25: agentflow.v1.AgentStop
+	(*AgentLifecycleHandle)(nil),   // 26: agentflow.v1.AgentLifecycleHandle
+	(*AgentLifecycleStage)(nil),    // 27: agentflow.v1.AgentLifecycleStage
+	(*AgentLifecycleReceipt)(nil),  // 28: agentflow.v1.AgentLifecycleReceipt
+	(*CommandProgress)(nil),        // 29: agentflow.v1.CommandProgress
+	(*SessionEnsure)(nil),          // 30: agentflow.v1.SessionEnsure
+	(*ListSessionsRequest)(nil),    // 31: agentflow.v1.ListSessionsRequest
+	(*SessionList)(nil),            // 32: agentflow.v1.SessionList
+	(*SessionView)(nil),            // 33: agentflow.v1.SessionView
+	(*SessionInventory)(nil),       // 34: agentflow.v1.SessionInventory
+	(*RegisterProjectRequest)(nil), // 35: agentflow.v1.RegisterProjectRequest
+	(*GetProjectRequest)(nil),      // 36: agentflow.v1.GetProjectRequest
+	(*ListProjectsRequest)(nil),    // 37: agentflow.v1.ListProjectsRequest
+	(*ProjectConfig)(nil),          // 38: agentflow.v1.ProjectConfig
+	(*ProjectAck)(nil),             // 39: agentflow.v1.ProjectAck
+	(*ProjectRecord)(nil),          // 40: agentflow.v1.ProjectRecord
+	(*ProjectList)(nil),            // 41: agentflow.v1.ProjectList
+	(*LegacyProjects)(nil),         // 42: agentflow.v1.LegacyProjects
+	(*ServerInfo)(nil),             // 43: agentflow.v1.ServerInfo
+	(*HerdrEntity)(nil),            // 44: agentflow.v1.HerdrEntity
+	(*HerdrState)(nil),             // 45: agentflow.v1.HerdrState
+	(*NodeView)(nil),               // 46: agentflow.v1.NodeView
+	(*NodeList)(nil),               // 47: agentflow.v1.NodeList
+	(*AgentTarget)(nil),            // 48: agentflow.v1.AgentTarget
+	(*AgentView)(nil),              // 49: agentflow.v1.AgentView
+	(*AgentQueryRequest)(nil),      // 50: agentflow.v1.AgentQueryRequest
+	(*AgentQuery)(nil),             // 51: agentflow.v1.AgentQuery
+	(*AgentQueryResult)(nil),       // 52: agentflow.v1.AgentQueryResult
+	(*AgentQueryCancel)(nil),       // 53: agentflow.v1.AgentQueryCancel
+	(*AgentControl)(nil),           // 54: agentflow.v1.AgentControl
+	(*AgentControlResult)(nil),     // 55: agentflow.v1.AgentControlResult
+	(*timestamppb.Timestamp)(nil),  // 56: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),        // 57: google.protobuf.Struct
+	(*durationpb.Duration)(nil),    // 58: google.protobuf.Duration
+	(*emptypb.Empty)(nil),          // 59: google.protobuf.Empty
 }
 var file_agentflow_v1_control_proto_depIdxs = []int32{
-	5,  // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
-	0,  // 1: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
-	37, // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
-	38, // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
-	37, // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	38, // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
-	20, // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
-	39, // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
-	38, // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
-	38, // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
-	37, // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
-	14, // 11: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
-	12, // 12: agentflow.v1.Command.worktree_create:type_name -> agentflow.v1.WorktreeCreate
-	35, // 13: agentflow.v1.Command.agent_control:type_name -> agentflow.v1.AgentControl
-	39, // 14: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
-	14, // 15: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
-	12, // 16: agentflow.v1.SubmitCommandRequest.worktree_create:type_name -> agentflow.v1.WorktreeCreate
-	35, // 17: agentflow.v1.SubmitCommandRequest.agent_control:type_name -> agentflow.v1.AgentControl
-	1,  // 18: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
-	37, // 19: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
-	11, // 20: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
-	1,  // 21: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
-	37, // 22: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
-	37, // 23: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
-	18, // 24: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
-	15, // 25: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
-	13, // 26: agentflow.v1.CommandRecord.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
-	36, // 27: agentflow.v1.CommandRecord.agent_control:type_name -> agentflow.v1.AgentControlResult
-	0,  // 28: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
-	2,  // 29: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
-	1,  // 30: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
-	1,  // 31: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
-	38, // 32: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
-	15, // 33: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
-	13, // 34: agentflow.v1.CommandResult.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
-	36, // 35: agentflow.v1.CommandResult.agent_control:type_name -> agentflow.v1.AgentControlResult
-	6,  // 36: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
-	7,  // 37: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
-	8,  // 38: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
-	9,  // 39: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
-	10, // 40: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
-	11, // 41: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
-	21, // 42: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
-	22, // 43: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
-	26, // 44: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
-	32, // 45: agentflow.v1.NodeEnvelope.agent_query:type_name -> agentflow.v1.AgentQuery
-	33, // 46: agentflow.v1.NodeEnvelope.agent_query_result:type_name -> agentflow.v1.AgentQueryResult
-	34, // 47: agentflow.v1.NodeEnvelope.agent_query_cancel:type_name -> agentflow.v1.AgentQueryCancel
-	5,  // 48: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
-	37, // 49: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
-	25, // 50: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
-	25, // 51: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
-	25, // 52: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
-	25, // 53: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
-	37, // 54: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
-	26, // 55: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
-	37, // 56: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
-	27, // 57: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
-	29, // 58: agentflow.v1.AgentView.target:type_name -> agentflow.v1.AgentTarget
-	3,  // 59: agentflow.v1.AgentQueryRequest.kind:type_name -> agentflow.v1.AgentQueryKind
-	29, // 60: agentflow.v1.AgentQueryRequest.target:type_name -> agentflow.v1.AgentTarget
-	31, // 61: agentflow.v1.AgentQuery.request:type_name -> agentflow.v1.AgentQueryRequest
-	37, // 62: agentflow.v1.AgentQuery.expires_at:type_name -> google.protobuf.Timestamp
-	30, // 63: agentflow.v1.AgentQueryResult.agent:type_name -> agentflow.v1.AgentView
-	4,  // 64: agentflow.v1.AgentControl.action:type_name -> agentflow.v1.AgentControlAction
-	29, // 65: agentflow.v1.AgentControl.target:type_name -> agentflow.v1.AgentTarget
-	29, // 66: agentflow.v1.AgentControlResult.target:type_name -> agentflow.v1.AgentTarget
-	23, // 67: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
-	40, // 68: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
-	40, // 69: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
-	16, // 70: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
-	17, // 71: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
-	31, // 72: agentflow.v1.Fleet.QueryAgent:input_type -> agentflow.v1.AgentQueryRequest
-	23, // 73: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
-	24, // 74: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
-	28, // 75: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
-	19, // 76: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
-	19, // 77: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
-	33, // 78: agentflow.v1.Fleet.QueryAgent:output_type -> agentflow.v1.AgentQueryResult
-	73, // [73:79] is the sub-list for method output_type
-	67, // [67:73] is the sub-list for method input_type
-	67, // [67:67] is the sub-list for extension type_name
-	67, // [67:67] is the sub-list for extension extendee
-	0,  // [0:67] is the sub-list for field type_name
+	5,   // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
+	0,   // 1: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
+	56,  // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
+	57,  // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
+	56,  // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	57,  // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
+	20,  // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
+	58,  // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
+	57,  // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
+	57,  // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
+	56,  // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
+	14,  // 11: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	12,  // 12: agentflow.v1.Command.worktree_create:type_name -> agentflow.v1.WorktreeCreate
+	54,  // 13: agentflow.v1.Command.agent_control:type_name -> agentflow.v1.AgentControl
+	16,  // 14: agentflow.v1.Command.submitted_request:type_name -> agentflow.v1.SubmitCommandRequest
+	30,  // 15: agentflow.v1.Command.session_ensure:type_name -> agentflow.v1.SessionEnsure
+	24,  // 16: agentflow.v1.Command.agent_start:type_name -> agentflow.v1.AgentStart
+	25,  // 17: agentflow.v1.Command.agent_stop:type_name -> agentflow.v1.AgentStop
+	56,  // 18: agentflow.v1.Command.execution_expires_at:type_name -> google.protobuf.Timestamp
+	58,  // 19: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
+	14,  // 20: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	12,  // 21: agentflow.v1.SubmitCommandRequest.worktree_create:type_name -> agentflow.v1.WorktreeCreate
+	54,  // 22: agentflow.v1.SubmitCommandRequest.agent_control:type_name -> agentflow.v1.AgentControl
+	30,  // 23: agentflow.v1.SubmitCommandRequest.session_ensure:type_name -> agentflow.v1.SessionEnsure
+	24,  // 24: agentflow.v1.SubmitCommandRequest.agent_start:type_name -> agentflow.v1.AgentStart
+	25,  // 25: agentflow.v1.SubmitCommandRequest.agent_stop:type_name -> agentflow.v1.AgentStop
+	1,   // 26: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
+	56,  // 27: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
+	11,  // 28: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
+	1,   // 29: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
+	56,  // 30: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
+	56,  // 31: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
+	18,  // 32: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
+	15,  // 33: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	13,  // 34: agentflow.v1.CommandRecord.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
+	55,  // 35: agentflow.v1.CommandRecord.agent_control:type_name -> agentflow.v1.AgentControlResult
+	33,  // 36: agentflow.v1.CommandRecord.session_ensure:type_name -> agentflow.v1.SessionView
+	28,  // 37: agentflow.v1.CommandRecord.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
+	0,   // 38: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
+	2,   // 39: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
+	1,   // 40: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
+	1,   // 41: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
+	57,  // 42: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
+	15,  // 43: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	13,  // 44: agentflow.v1.CommandResult.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
+	55,  // 45: agentflow.v1.CommandResult.agent_control:type_name -> agentflow.v1.AgentControlResult
+	33,  // 46: agentflow.v1.CommandResult.session_ensure:type_name -> agentflow.v1.SessionView
+	28,  // 47: agentflow.v1.CommandResult.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
+	6,   // 48: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
+	7,   // 49: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
+	8,   // 50: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
+	9,   // 51: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
+	10,  // 52: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
+	11,  // 53: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
+	21,  // 54: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
+	22,  // 55: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
+	45,  // 56: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
+	51,  // 57: agentflow.v1.NodeEnvelope.agent_query:type_name -> agentflow.v1.AgentQuery
+	52,  // 58: agentflow.v1.NodeEnvelope.agent_query_result:type_name -> agentflow.v1.AgentQueryResult
+	53,  // 59: agentflow.v1.NodeEnvelope.agent_query_cancel:type_name -> agentflow.v1.AgentQueryCancel
+	38,  // 60: agentflow.v1.NodeEnvelope.project_config:type_name -> agentflow.v1.ProjectConfig
+	39,  // 61: agentflow.v1.NodeEnvelope.project_ack:type_name -> agentflow.v1.ProjectAck
+	42,  // 62: agentflow.v1.NodeEnvelope.legacy_projects:type_name -> agentflow.v1.LegacyProjects
+	34,  // 63: agentflow.v1.NodeEnvelope.session_inventory:type_name -> agentflow.v1.SessionInventory
+	29,  // 64: agentflow.v1.NodeEnvelope.command_progress:type_name -> agentflow.v1.CommandProgress
+	48,  // 65: agentflow.v1.AgentStop.target:type_name -> agentflow.v1.AgentTarget
+	48,  // 66: agentflow.v1.AgentLifecycleHandle.target:type_name -> agentflow.v1.AgentTarget
+	26,  // 67: agentflow.v1.AgentLifecycleReceipt.handle:type_name -> agentflow.v1.AgentLifecycleHandle
+	27,  // 68: agentflow.v1.AgentLifecycleReceipt.stages:type_name -> agentflow.v1.AgentLifecycleStage
+	28,  // 69: agentflow.v1.CommandProgress.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
+	33,  // 70: agentflow.v1.SessionList.sessions:type_name -> agentflow.v1.SessionView
+	45,  // 71: agentflow.v1.SessionView.herdr:type_name -> agentflow.v1.HerdrState
+	56,  // 72: agentflow.v1.SessionView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	33,  // 73: agentflow.v1.SessionInventory.sessions:type_name -> agentflow.v1.SessionView
+	56,  // 74: agentflow.v1.SessionInventory.observed_at:type_name -> google.protobuf.Timestamp
+	38,  // 75: agentflow.v1.ProjectRecord.desired:type_name -> agentflow.v1.ProjectConfig
+	39,  // 76: agentflow.v1.ProjectRecord.applied:type_name -> agentflow.v1.ProjectAck
+	40,  // 77: agentflow.v1.ProjectList.projects:type_name -> agentflow.v1.ProjectRecord
+	35,  // 78: agentflow.v1.LegacyProjects.projects:type_name -> agentflow.v1.RegisterProjectRequest
+	5,   // 79: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
+	56,  // 80: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
+	44,  // 81: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
+	44,  // 82: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
+	44,  // 83: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
+	44,  // 84: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
+	56,  // 85: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
+	45,  // 86: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
+	56,  // 87: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	33,  // 88: agentflow.v1.NodeView.sessions:type_name -> agentflow.v1.SessionView
+	56,  // 89: agentflow.v1.NodeView.sessions_received_at:type_name -> google.protobuf.Timestamp
+	46,  // 90: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
+	48,  // 91: agentflow.v1.AgentView.target:type_name -> agentflow.v1.AgentTarget
+	3,   // 92: agentflow.v1.AgentQueryRequest.kind:type_name -> agentflow.v1.AgentQueryKind
+	48,  // 93: agentflow.v1.AgentQueryRequest.target:type_name -> agentflow.v1.AgentTarget
+	50,  // 94: agentflow.v1.AgentQuery.request:type_name -> agentflow.v1.AgentQueryRequest
+	56,  // 95: agentflow.v1.AgentQuery.expires_at:type_name -> google.protobuf.Timestamp
+	49,  // 96: agentflow.v1.AgentQueryResult.agent:type_name -> agentflow.v1.AgentView
+	4,   // 97: agentflow.v1.AgentControl.action:type_name -> agentflow.v1.AgentControlAction
+	48,  // 98: agentflow.v1.AgentControl.target:type_name -> agentflow.v1.AgentTarget
+	48,  // 99: agentflow.v1.AgentControlResult.target:type_name -> agentflow.v1.AgentTarget
+	23,  // 100: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
+	59,  // 101: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
+	59,  // 102: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
+	59,  // 103: agentflow.v1.Fleet.WatchNodes:input_type -> google.protobuf.Empty
+	16,  // 104: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
+	17,  // 105: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
+	50,  // 106: agentflow.v1.Fleet.QueryAgent:input_type -> agentflow.v1.AgentQueryRequest
+	35,  // 107: agentflow.v1.Fleet.RegisterProject:input_type -> agentflow.v1.RegisterProjectRequest
+	37,  // 108: agentflow.v1.Fleet.ListProjects:input_type -> agentflow.v1.ListProjectsRequest
+	36,  // 109: agentflow.v1.Fleet.GetProject:input_type -> agentflow.v1.GetProjectRequest
+	31,  // 110: agentflow.v1.Fleet.ListSessions:input_type -> agentflow.v1.ListSessionsRequest
+	23,  // 111: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
+	43,  // 112: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
+	47,  // 113: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
+	47,  // 114: agentflow.v1.Fleet.WatchNodes:output_type -> agentflow.v1.NodeList
+	19,  // 115: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
+	19,  // 116: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
+	52,  // 117: agentflow.v1.Fleet.QueryAgent:output_type -> agentflow.v1.AgentQueryResult
+	40,  // 118: agentflow.v1.Fleet.RegisterProject:output_type -> agentflow.v1.ProjectRecord
+	41,  // 119: agentflow.v1.Fleet.ListProjects:output_type -> agentflow.v1.ProjectList
+	40,  // 120: agentflow.v1.Fleet.GetProject:output_type -> agentflow.v1.ProjectRecord
+	32,  // 121: agentflow.v1.Fleet.ListSessions:output_type -> agentflow.v1.SessionList
+	111, // [111:122] is the sub-list for method output_type
+	100, // [100:111] is the sub-list for method input_type
+	100, // [100:100] is the sub-list for extension type_name
+	100, // [100:100] is the sub-list for extension extendee
+	0,   // [0:100] is the sub-list for field type_name
 }
 
 func init() { file_agentflow_v1_control_proto_init() }
@@ -3345,14 +5181,20 @@ func file_agentflow_v1_control_proto_init() {
 		(*NodeEnvelope_AgentQuery)(nil),
 		(*NodeEnvelope_AgentQueryResult)(nil),
 		(*NodeEnvelope_AgentQueryCancel)(nil),
+		(*NodeEnvelope_ProjectConfig)(nil),
+		(*NodeEnvelope_ProjectAck)(nil),
+		(*NodeEnvelope_LegacyProjects)(nil),
+		(*NodeEnvelope_SessionInventory)(nil),
+		(*NodeEnvelope_CommandProgress)(nil),
 	}
+	file_agentflow_v1_control_proto_msgTypes[39].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentflow_v1_control_proto_rawDesc), len(file_agentflow_v1_control_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   32,
+			NumMessages:   51,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

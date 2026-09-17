@@ -12,6 +12,35 @@ import (
 )
 
 func runCommandQuery(ctx context.Context, command string, args []string, streams IO) error {
+	query, err := parseCommandQuery(command, args, streams)
+	if err != nil {
+		return err
+	}
+	op, cancel := context.WithTimeout(ctx, query.timeout)
+	defer cancel()
+	if command == "ping" {
+		return control.Ping(op, query.options, query.nodeID, query.key, query.ttl)
+	}
+	if command == "ensure-workspace" {
+		return control.EnsureWorkspaceInSession(op, query.options, query.nodeID, query.key, &pb.WorkspaceEnsure{
+			ProjectId: query.worktree.ProjectId, BindingRevision: query.worktree.BindingRevision,
+			SessionName: query.worktree.SessionName, SessionIncarnation: query.worktree.SessionIncarnation,
+		}, query.ttl)
+	}
+	if command == "create-worktree" {
+		return control.CreateWorktree(op, query.options, query.nodeID, query.key, query.worktree, query.ttl)
+	}
+	return control.CommandStatus(op, query.options, query.id)
+}
+
+type commandQuery struct {
+	options         control.Options
+	timeout, ttl    time.Duration
+	nodeID, key, id string
+	worktree        *pb.WorktreeCreate
+}
+
+func parseCommandQuery(command string, args []string, streams IO) (*commandQuery, error) {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
 	network := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
@@ -21,6 +50,7 @@ func runCommandQuery(ctx context.Context, command string, args []string, streams
 	timeout := flags.Duration("timeout", 60*time.Second, "overall connection and operation timeout")
 	var nodeID, key, id, projectID, revision string
 	var name, branch, baseCommit string
+	var sessionName, sessionIncarnation string
 	ttl := protocol.DefaultCommandTTL
 	if command == "create-worktree" {
 		ttl = protocol.MaxCommandTTL
@@ -32,63 +62,64 @@ func runCommandQuery(ctx context.Context, command string, args []string, streams
 		flags.DurationVar(&ttl, "ttl", ttl, "execution deadline after admission; at most 30s")
 		if command == "ensure-workspace" || command == "create-worktree" {
 			flags.StringVar(&projectID, "project", "", "stable configured project ID, never a checkout path")
-			flags.StringVar(&revision, "binding-revision", "", "expected local/coordinator project binding revision")
+			flags.StringVar(&revision, "binding-revision", "", "optional exact binding revision override; otherwise derived by the coordinator")
+			flags.StringVar(&sessionName, "session", "", "named Herdr session; omission selects only the configured default")
+			flags.StringVar(&sessionIncarnation, "session-incarnation", "", "expected 64-hex Herdr session incarnation; preserve for exact retries")
 		}
 		if command == "create-worktree" {
 			flags.StringVar(&name, "name", "", "portable lowercase destination name within the node's configured worktree root")
-			flags.StringVar(&branch, "branch", "", "new portable lowercase single-component Git branch")
-			flags.StringVar(&baseCommit, "base-commit", "", "full lowercase base commit ID; refs and HEAD are not accepted")
+			flags.StringVar(&branch, "branch", "", "new portable lowercase single-component Git branch; defaults to name")
+			flags.StringVar(&baseCommit, "base-commit", "", "optional full lowercase commit ID; omission resolves exact HEAD on the node")
 		}
 	} else {
 		flags.StringVar(&id, "id", "", "command ID returned by a previous operation")
 	}
 	if err := flags.Parse(args); err != nil {
-		return err
+		return nil, err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected positional arguments")
+		return nil, errors.New("unexpected positional arguments")
 	}
 	if *server == "" {
-		return errors.New("-server is required")
+		return nil, errors.New("-server is required")
 	}
 	if *requiredServerTag == "" {
-		return errors.New("-required-server-tag must not be empty")
+		return nil, errors.New("-required-server-tag must not be empty")
 	}
 	if *timeout <= 0 {
-		return errors.New("-timeout must be positive")
+		return nil, errors.New("-timeout must be positive")
+	}
+	if err := protocol.ValidateSessionSelector(sessionName, sessionIncarnation, false); err != nil {
+		return nil, err
 	}
 	if submit {
 		if nodeID == "" {
-			return errors.New("-node is required")
+			return nil, errors.New("-node is required")
 		}
 		if ttl <= 0 || ttl > protocol.MaxCommandTTL {
-			return errors.New("-ttl must be positive and at most 30s")
+			return nil, errors.New("-ttl must be positive and at most 30s")
 		}
 		if key == "" {
 			key = protocol.NewCommandID()
 		}
-		if (command == "ensure-workspace" || command == "create-worktree") && (projectID == "" || revision == "") {
-			return errors.New("-project and -binding-revision are required")
+		if (command == "ensure-workspace" || command == "create-worktree") && projectID == "" {
+			return nil, errors.New("-project is required")
 		}
-		if command == "create-worktree" && (name == "" || branch == "" || baseCommit == "") {
-			return errors.New("-name, -branch and -base-commit are required")
+		if command == "create-worktree" && name == "" {
+			return nil, errors.New("-name is required")
+		}
+		if command == "create-worktree" && branch == "" {
+			branch = name
 		}
 	} else if !protocol.ValidCommandID(id) {
-		return errors.New("-id requires a valid command ID")
+		return nil, errors.New("-id requires a valid command ID")
 	}
-	op, cancel := context.WithTimeout(ctx, *timeout)
-	defer cancel()
 	options := control.Options{JSON: *jsonOutput, Output: streams.Out, ServerAddress: *server, RequiredServerTag: *requiredServerTag, Transport: network.config()}
-	if command == "ping" {
-		return control.Ping(op, options, nodeID, key, ttl)
-	}
-	if command == "ensure-workspace" {
-		return control.EnsureWorkspace(op, options, nodeID, key, projectID, revision, ttl)
-	}
-	if command == "create-worktree" {
-		return control.CreateWorktree(op, options, nodeID, key, &pb.WorktreeCreate{
+	return &commandQuery{
+		options: options, timeout: *timeout, ttl: ttl, nodeID: nodeID, key: key, id: id,
+		worktree: &pb.WorktreeCreate{
 			ProjectId: projectID, BindingRevision: revision, Name: name, Branch: branch, BaseCommit: baseCommit,
-		}, ttl)
-	}
-	return control.CommandStatus(op, options, id)
+			SessionName: sessionName, SessionIncarnation: sessionIncarnation,
+		},
+	}, nil
 }

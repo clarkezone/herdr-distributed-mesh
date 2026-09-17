@@ -25,11 +25,11 @@ func ValidateWorktreeCreate(request *pb.WorktreeCreate) error {
 		len(request.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("worktree create requires project/revision, portable name/branch, and a full lowercase commit ID")
 	}
-	return nil
+	return ValidateSessionSelector(request.SessionName, request.SessionIncarnation, false)
 }
 
 func ValidateWorktreeResult(result *pb.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.AgentControl != nil ||
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorkspaceEnsure != nil || result.AgentControl != nil || result.SessionEnsure != nil || result.AgentLifecycle != nil ||
 		len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid worktree result")
 	}
@@ -41,7 +41,7 @@ func ValidateWorktreeResult(result *pb.CommandResult) error {
 	}
 	value := result.WorktreeCreate
 	if result.Detail != "worktree_created" || value == nil || !commandToken.MatchString(value.WorkspaceId) ||
-		len(value.ProtoReflect().GetUnknown()) != 0 {
+		len(value.ProtoReflect().GetUnknown()) != 0 || ValidateSessionSelector(value.SessionName, value.SessionIncarnation, true) != nil {
 		return errors.New("worktree success requires confirmed typed result")
 	}
 	return ValidateWorktreeCreate(&pb.WorktreeCreate{
@@ -55,6 +55,8 @@ func CommandProject(command *pb.Command) (projectID, revision string) {
 	}
 
 	switch command.CommandType {
+	case AgentStartCommandType:
+		return command.AgentStart.GetProjectId(), command.AgentStart.GetBindingRevision()
 	case WorkspaceEnsureCommandType:
 		return command.WorkspaceEnsure.GetProjectId(), command.WorkspaceEnsure.GetBindingRevision()
 	case WorktreeCreateCommandType:
@@ -69,6 +71,8 @@ func RequestProject(request *pb.SubmitCommandRequest) (projectID, revision strin
 		return "", ""
 	}
 	switch request.CommandType {
+	case AgentStartCommandType:
+		return request.AgentStart.GetProjectId(), request.AgentStart.GetBindingRevision()
 	case WorkspaceEnsureCommandType:
 		return request.WorkspaceEnsure.GetProjectId(), request.WorkspaceEnsure.GetBindingRevision()
 	case WorktreeCreateCommandType:

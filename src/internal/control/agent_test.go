@@ -114,3 +114,75 @@ func TestAgentClientRejectsUnsafeOrFailedQueries(t *testing.T) {
 		t.Fatal("cancellation lost")
 	}
 }
+
+func TestNamedAgentDiscoveryAndExactRetry(t *testing.T) {
+	for _, operation := range []string{"get", "read", "wait", "prompt", "input", "interrupt", "retry"} {
+		t.Run(operation, func(t *testing.T) {
+			view := agentClientView()
+			view.Target.SessionName = "worker"
+			view.Target.SessionIncarnation = strings.Repeat("a", 64)
+			target := proto.Clone(view.Target).(*pb.AgentTarget)
+			if operation != "retry" {
+				target.SessionIncarnation = ""
+			}
+			selection := &pb.AgentQueryRequest{NodeInstanceId: "node-1", Kind: pb.AgentQueryKind_AGENT_QUERY_KIND_GET, Target: target}
+			var action *pb.AgentControl
+			switch operation {
+			case "read":
+				selection.Kind = pb.AgentQueryKind_AGENT_QUERY_KIND_READ
+			case "wait":
+				selection.Kind = pb.AgentQueryKind_AGENT_QUERY_KIND_WAIT
+			case "prompt":
+				action = &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT, Target: target, Text: "hello"}
+			case "input":
+				action = &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_INPUT, Target: target, Keys: []string{"enter"}}
+			case "interrupt", "retry":
+				action = &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT, Target: target}
+			}
+			original := proto.Clone(selection)
+			var originalAction proto.Message
+			if action != nil {
+				originalAction = proto.Clone(action)
+			}
+			queries, submissions := 0, 0
+			client := agentClientFixture{
+				query: func(_ context.Context, request *pb.AgentQueryRequest) (*pb.AgentQueryResult, error) {
+					queries++
+					if operation == "retry" {
+						t.Fatal("fully pinned retry performed GET/preflight")
+					}
+					if queries == 1 && (request.Kind != pb.AgentQueryKind_AGENT_QUERY_KIND_GET || request.Target.SessionName != "worker" || request.Target.SessionIncarnation != "") {
+						t.Fatalf("named unpinned terminal did not discover: %v", request)
+					}
+					if queries > 1 && !proto.Equal(request.Target, view.Target) {
+						t.Fatalf("query not fully pinned: %v", request)
+					}
+					return &pb.AgentQueryResult{QueryId: protocol.NewCommandID(), Agent: view}, nil
+				},
+				submit: func(_ context.Context, request *pb.SubmitCommandRequest) (*pb.CommandRecord, error) {
+					submissions++
+					if !proto.Equal(request.AgentControl.Target, view.Target) || request.IdempotencyKey != "fixed-key" {
+						t.Fatalf("submission changed identity: %v", request)
+					}
+					return &pb.CommandRecord{Command: &pb.Command{CommandId: protocol.NewCommandID()}, Status: pb.CommandStatus_COMMAND_STATUS_SUCCEEDED}, nil
+				},
+			}
+			err := Agent(context.Background(), Options{RequiredServerTag: "tag:server", FleetClient: client, Output: &bytes.Buffer{}}, selection, action, "fixed-key", time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantQueries := 1
+			if operation == "retry" {
+				wantQueries = 0
+			} else if operation == "read" || operation == "wait" {
+				wantQueries = 2
+			}
+			if queries != wantQueries || (submissions == 1) != (action != nil) {
+				t.Fatalf("queries=%d submissions=%d", queries, submissions)
+			}
+			if !proto.Equal(selection, original) || (action != nil && !proto.Equal(action, originalAction)) {
+				t.Fatal("caller request mutated")
+			}
+		})
+	}
+}

@@ -42,11 +42,15 @@ func storageError(operation string, err error) error {
 }
 
 func openJournal(ctx context.Context, options Options) (*state.NodeJournal, error) {
-	if options.EnableAgentControl && (options.CommandJournalPath == "" || strings.TrimSpace(options.HerdrSocket) == "" || strings.TrimSpace(options.RequiredServerTag) == "") {
-		return nil, errors.New("agent control requires a command journal, Herdr socket, and required server tag")
+	hasHerdr := strings.TrimSpace(options.HerdrSocket) != "" || options.SessionManager != nil
+	if (options.ManagedProjects != nil || options.SessionManager != nil) && (options.CommandJournalPath == "" || !hasHerdr || strings.TrimSpace(options.RequiredServerTag) == "") {
+		return nil, errors.New("managed projects and sessions require a command journal, Herdr socket or executable, and required server tag")
 	}
-	if options.WorkspacePolicy != nil && (options.CommandJournalPath == "" || strings.TrimSpace(options.HerdrSocket) == "" || strings.TrimSpace(options.RequiredServerTag) == "") {
-		return nil, errors.New("workspace policy requires a command journal, Herdr socket, and required server tag")
+	if options.EnableAgentControl && (options.CommandJournalPath == "" || !hasHerdr || strings.TrimSpace(options.RequiredServerTag) == "") {
+		return nil, errors.New("agent control requires a command journal, Herdr socket or executable, and required server tag")
+	}
+	if options.WorkspacePolicy != nil && (options.CommandJournalPath == "" || !hasHerdr || strings.TrimSpace(options.RequiredServerTag) == "") {
+		return nil, errors.New("workspace policy requires a command journal, Herdr socket or executable, and required server tag")
 	}
 	if options.CommandJournalPath == "" {
 		return nil, nil
@@ -88,21 +92,35 @@ func RunSession(ctx context.Context, client pb.NodeControlClient, options Option
 }
 
 type commandHandler struct {
-	journal             commandJournal
-	nodeID              string
-	execute             func()
-	ephemeral           map[string]*pb.Command
-	ephemeralMu         sync.Mutex
-	workspacePolicy     *projects.Policy
-	workspaceNegotiated bool
-	worktreeNegotiated  bool
-	herdrConfig         herdr.Config
-	ensureWorkspace     workspaceExecutor
-	createWorktree      worktreeExecutor
-	verifyCoordinator   func(context.Context) error
-	agentNegotiated     bool
-	agentBaseline       atomic.Pointer[pb.HerdrState]
-	controlAgent        func(context.Context, herdr.Config, *pb.AgentControl) (*pb.AgentControlResult, error)
+	journal                   commandJournal
+	nodeID                    string
+	execute                   func()
+	ephemeral                 map[string]*pb.Command
+	ephemeralMu               sync.Mutex
+	workspacePolicy           *projects.Policy
+	managedProjects           *projects.Managed
+	projectCache              projectJournal
+	projectMu                 sync.RWMutex
+	projectSeen               map[string]*pb.ProjectConfig
+	projectCurrent            map[string]*pb.ProjectAck
+	projectLegacy             map[string]projects.Binding
+	projectOwnership          map[string]*pb.ProjectAck
+	workspaceNegotiated       bool
+	worktreeNegotiated        bool
+	herdrConfig               herdr.Config
+	ensureWorkspace           workspaceExecutor
+	createWorktree            worktreeExecutor
+	verifyCoordinator         func(context.Context) error
+	agentNegotiated           bool
+	agentBaseline             atomic.Pointer[pb.HerdrState]
+	controlAgent              func(context.Context, herdr.Config, *pb.AgentControl) (*pb.AgentControlResult, error)
+	sessions                  SessionManager
+	sessionsNegotiated        bool
+	lifecycleNegotiated       bool
+	startAgent                startAgentExecutor
+	stopAgent                 stopAgentExecutor
+	resolveLifecycleWorkspace func(context.Context, herdr.Config, string, projects.Binding) (string, error)
+	lifecycleProgress         chan<- *pb.CommandProgress
 }
 
 type workspaceExecutor func(context.Context, herdr.Config, projects.Binding) (*pb.WorkspaceEnsureResult, error)
@@ -120,6 +138,12 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	}
 	if command.CommandType == protocol.AgentControlCommandType && !h.agentNegotiated {
 		return nil, status.Error(codes.FailedPrecondition, "agent capability was not negotiated")
+	}
+	if command.CommandType == protocol.SessionEnsureCommandType && !h.sessionsNegotiated {
+		return nil, status.Error(codes.FailedPrecondition, "session capability was not negotiated")
+	}
+	if protocol.IsLifecycleCommand(command.CommandType) && !h.lifecycleNegotiated {
+		return nil, status.Error(codes.FailedPrecondition, "lifecycle capability was not negotiated")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -171,6 +195,16 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 	now := time.Now()
 	if !now.Before(command.ExpiresAt.AsTime()) || !now.Before(receivedAt.Add(command.Ttl.AsDuration())) {
 		result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_TIMED_OUT, "deadline_expired"
+	} else if protocol.IsLifecycleCommand(command.CommandType) {
+		result, err = h.lifecycleMutation(ctx, command)
+		if err != nil {
+			return nil, err
+		}
+	} else if command.CommandType == protocol.SessionEnsureCommandType {
+		result = h.ensureSession(ctx, command, receivedAt)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	} else if command.CommandType == protocol.AgentControlCommandType {
 		result = h.agentMutation(ctx, command, receivedAt)
 		if err := ctx.Err(); err != nil {
@@ -205,11 +239,17 @@ func (h *commandHandler) handle(ctx context.Context, command *pb.Command, receiv
 
 func (h *commandHandler) mutation(ctx context.Context, command *pb.Command, receivedAt time.Time) *pb.CommandResult {
 	result := &pb.CommandResult{CommandId: command.CommandId, Status: pb.CommandStatus_COMMAND_STATUS_REJECTED, Detail: "project_not_authorized"}
-	if h.workspacePolicy == nil {
+	if h.workspacePolicy == nil && h.managedProjects == nil {
 		return result
 	}
 	projectID, revision := protocol.CommandProject(command)
-	binding, err := h.workspacePolicy.Resolve(h.nodeID, projectID, revision, command.Actor.ActorId)
+	var binding projects.Binding
+	var err error
+	if h.managedProjects != nil {
+		binding, err = h.resolveManaged(projectID, revision)
+	} else {
+		binding, err = h.workspacePolicy.Resolve(h.nodeID, projectID, revision, command.Actor.ActorId)
+	}
 	if err != nil {
 		return result
 	}
@@ -242,14 +282,23 @@ func (h *commandHandler) mutation(ctx context.Context, command *pb.Command, rece
 		result.Detail = "precondition_failed"
 		return result
 	}
+	name, expected := protocol.CommandSession(command)
+	config, incarnation, err := h.resolveSession(effect, name, expected)
+	if err != nil {
+		result.Detail = sessionError(err)
+		return result
+	}
 	if command.CommandType == protocol.WorktreeCreateCommandType {
 		execute := h.createWorktree
 		if execute == nil {
 			execute = herdr.CreateWorktree
 		}
-		value, effectErr := execute(effect, h.herdrConfig, binding, proto.Clone(command.WorktreeCreate).(*pb.WorktreeCreate))
+		value, effectErr := execute(effect, config, binding, proto.Clone(command.WorktreeCreate).(*pb.WorktreeCreate))
 		err = effectErr
 		if err == nil {
+			if value != nil {
+				value.SessionName, value.SessionIncarnation = name, incarnation
+			}
 			result.Status, result.Detail, result.WorktreeCreate = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, "worktree_created", value
 		}
 	} else {
@@ -257,9 +306,12 @@ func (h *commandHandler) mutation(ctx context.Context, command *pb.Command, rece
 		if execute == nil {
 			execute = herdr.EnsureWorkspace
 		}
-		value, effectErr := execute(effect, h.herdrConfig, binding)
+		value, effectErr := execute(effect, config, binding)
 		err = effectErr
 		if err == nil {
+			if value != nil {
+				value.SessionName, value.SessionIncarnation = name, incarnation
+			}
 			result.Status, result.Detail, result.WorkspaceEnsure = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, "workspace_present", value
 			if value.GetCreated() {
 				result.Detail = "workspace_created"
@@ -267,9 +319,18 @@ func (h *commandHandler) mutation(ctx context.Context, command *pb.Command, rece
 		}
 	}
 	if err == nil {
+		if incarnation != "" {
+			if _, _, refreshErr := h.resolveSession(effect, name, incarnation); refreshErr != nil {
+				result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_INDETERMINATE, "herdr_outcome_unknown"
+				result.WorkspaceEnsure, result.WorktreeCreate = nil, nil
+			}
+		}
 		return result
 	}
+	var sessionErr sessionFailure
 	switch {
+	case errors.As(err, &sessionErr):
+		result.Detail = sessionError(err)
 	case errors.Is(err, herdr.ErrWorkspacePrecondition):
 		result.Detail = "precondition_failed"
 	case command.CommandType == protocol.WorkspaceEnsureCommandType && errors.Is(err, herdr.ErrWorkspaceAmbiguous):

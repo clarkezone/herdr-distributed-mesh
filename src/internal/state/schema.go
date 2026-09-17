@@ -92,9 +92,9 @@ func (s *Store) inspectSchema(ctx context.Context, ownerID string, created bool,
 	if err := s.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&application); err != nil {
 		return 0, err
 	}
-	maxVersion := 5
+	maxVersion := 7
 	if kind == nodeKind {
-		maxVersion = 4
+		maxVersion = 6
 	}
 	if version < 0 || version > maxVersion {
 		return 0, fmt.Errorf("unsupported state schema version %d", version)
@@ -124,18 +124,37 @@ func (s *Store) inspectSchema(ctx context.Context, ownerID string, created bool,
 	identityQuery := "SELECT server_instance_id FROM metadata WHERE singleton = 1"
 	countQuery := "SELECT count(*) FROM metadata"
 	if kind == nodeKind {
+		commandSchema := nodeCommandsSchema
+		if version >= 6 {
+			commandSchema = lifecycleNodeCommandsSchema
+		}
 		schemas = []struct{ name, kind, sql string }{
 			{"node_metadata", "table", nodeMetadataSchema},
-			{"node_commands", "table", nodeCommandsSchema},
+			{"node_commands", "table", commandSchema},
 			{"node_commands_pending", "index", nodePendingIndex},
 		}
 		identityQuery = "SELECT node_instance_id FROM node_metadata WHERE singleton = 1"
 		countQuery = "SELECT count(*) FROM node_metadata"
 	} else if version >= 2 {
+		commandSchema := commandsSchema
+		if version >= 7 {
+			commandSchema = lifecycleCommandsSchema
+		}
 		schemas = append(schemas,
-			struct{ name, kind, sql string }{"commands", "table", commandsSchema},
+			struct{ name, kind, sql string }{"commands", "table", commandSchema},
 			struct{ name, kind, sql string }{"commands_target_status", "index", commandTargetIndex},
 			struct{ name, kind, sql string }{"commands_status_expiry", "index", commandExpiryIndex})
+	}
+	if kind == coordinatorKind && version >= 6 {
+		schemas = append(schemas, struct{ name, kind, sql string }{"projects", "table", projectsSchema})
+	}
+	if kind == nodeKind && version >= 5 {
+		schemas = append(schemas, struct{ name, kind, sql string }{"node_projects", "table", nodeProjectsSchema})
+	}
+	if kind == nodeKind && version >= 6 {
+		schemas = append(schemas,
+			struct{ name, kind, sql string }{"node_lifecycle", "table", nodeLifecycleSchema},
+			struct{ name, kind, sql string }{"node_command_scopes", "table", nodeCommandScopesSchema})
 	}
 	for _, schema := range schemas {
 		if err := s.requireSchema(ctx, schema.name, schema.kind, schema.sql); err != nil {
@@ -212,11 +231,29 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 			}
 		}
 		if version < 4 {
-			_, err = tx.ExecContext(ctx, "PRAGMA user_version = 4")
+			if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
+				return err
+			}
 		}
+		if version < 5 {
+			for _, statement := range []string{nodeProjectsSchema, "PRAGMA user_version = 5"} {
+				if _, err := tx.ExecContext(ctx, statement); err != nil {
+					return err
+				}
+			}
+		}
+		if version < 6 {
+			if err := migrateLifecycleSchema(ctx, tx, kind); err != nil {
+				return err
+			}
+		}
+		if err := validateNodeLifecycleData(ctx, tx, ownerID, entries); err != nil {
+			return err
+		}
+		_, err = readNodeProjects(ctx, tx, ownerID)
 		return err
 	}
-	if version > 0 && version < 5 {
+	if version > 0 && version < 6 {
 		if err := validateLegacyBindings(ctx, tx); err != nil {
 			return err
 		}
@@ -272,8 +309,23 @@ func initializeSchema(ctx context.Context, tx *sql.Tx, ownerID string, version i
 	}
 	// Older binaries must not interpret retained agent controls as unknown data.
 	if version < 5 {
-		_, err = tx.ExecContext(ctx, "PRAGMA user_version = 5")
+		if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 5"); err != nil {
+			return err
+		}
 	}
+	if version < 6 {
+		for _, statement := range []string{projectsSchema, "PRAGMA user_version = 6"} {
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+	}
+	if version < 7 {
+		if err := migrateLifecycleSchema(ctx, tx, kind); err != nil {
+			return err
+		}
+	}
+	_, err = readProjects(ctx, tx, "", "")
 	return err
 }
 

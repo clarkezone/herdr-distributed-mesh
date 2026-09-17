@@ -14,9 +14,7 @@ import (
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/control"
-	"github.com/clarkezone/herdr-distributed-mesh/src/internal/identity"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/node"
-	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/server"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 )
@@ -50,6 +48,14 @@ func Run(ctx context.Context, args []string, streams IO) error {
 		return runNode(ctx, args[1:], streams)
 	case "ctl":
 		return runControl(ctx, args[1:], streams)
+	case "mcp":
+		return runMCP(ctx, args[1:], streams)
+	case "maintenance":
+		return RunMaintenance(ctx, args[1:], streams)
+	case "setup":
+		return RunSetup(ctx, args[1:], streams)
+	case "bootstrap":
+		return RunBootstrap(ctx, args[1:], streams)
 	case "doctor":
 		return runDoctor(ctx, args[1:], streams)
 	case "dashboard":
@@ -70,42 +76,37 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 	flags.SetOutput(streams.Err)
 	network := addNetworkFlags(flags, "herdr-mesh-server", "server", "TS_AUTHKEY_SERVER", "tag:herdr-mesh-server")
 	listen := flags.String("listen", ":"+defaultPort, "tsnet TCP listen address")
+	dashboardListen := flags.String("dashboard-listen", "", "optional tsnet-only dashboard port, such as :8787")
+	dashboardOrigin := flags.String("dashboard-origin", "", "exact HTTP(S) dashboard origin; HTTPS uses the full coordinator Tailscale DNS name")
 	requiredClientTag := flags.String("required-client-tag", "tag:herdr-mesh-client", "Tailscale tag required for fleet read requests")
-	requiredCommandTag := flags.String("required-command-tag", "tag:herdr-mesh-client", "Tailscale tag required for command admission and history; workspace mutations also require project policy")
+	requiredCommandTag := flags.String("required-command-tag", "tag:herdr-mesh-client", "Tailscale tag required for commands, history, and project configuration")
 	requiredNodeTag := flags.String("required-node-tag", "tag:herdr-mesh-node", "Tailscale tag required for node streams")
-	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in project/actor allowlist for workspace and worktree operations; no local paths")
+	flags.String("workspace-policy", "", "deprecated: remove this flag and use ctl project register")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if strings.TrimSpace(*requiredCommandTag) == "" {
 		return errors.New("-required-command-tag must not be empty")
 	}
-	var workspacePolicy *projects.Policy
-	if *workspacePolicyPath != "" {
-		if strings.TrimSpace(*requiredNodeTag) == "" {
-			return errors.New("-required-node-tag must not be empty with workspace policy")
-		}
-		var err error
-		workspacePolicy, err = projects.Load(*workspacePolicyPath, "")
-		if err != nil {
-			return fmt.Errorf("load workspace policy: %w", err)
-		}
+	legacyPolicyFlag := false
+	flags.Visit(func(value *flag.Flag) {
+		legacyPolicyFlag = legacyPolicyFlag || value.Name == "workspace-policy"
+	})
+	if legacyPolicyFlag {
+		return errors.New("server -workspace-policy is deprecated; remove it and use ctl project register (legacy node files may be supplied to node -workspace-policy for migration)")
 	}
 
-	instanceID, err := identity.LoadOrCreate(network.stateDir)
-	if err != nil {
-		return err
-	}
 	return server.Run(ctx, server.Options{
-		BindingPath:        filepath.Join(network.stateDir, "node-bindings.jsonl"),
-		DatabasePath:       filepath.Join(network.stateDir, "coordinator", "mesh.db"),
-		InstanceID:         instanceID,
-		ListenAddress:      *listen,
-		RequiredClientTag:  *requiredClientTag,
-		RequiredCommandTag: *requiredCommandTag,
-		RequiredNodeTag:    *requiredNodeTag,
-		Transport:          network.config(),
-		WorkspacePolicy:    workspacePolicy,
+		BindingPath:            filepath.Join(network.stateDir, "node-bindings.jsonl"),
+		DatabasePath:           filepath.Join(network.stateDir, "coordinator", "mesh.db"),
+		ListenAddress:          *listen,
+		RequiredClientTag:      *requiredClientTag,
+		RequiredCommandTag:     *requiredCommandTag,
+		RequiredNodeTag:        *requiredNodeTag,
+		Transport:              network.config(),
+		DashboardListenAddress: *dashboardListen,
+		DashboardOrigin:        *dashboardOrigin,
+		Output:                 streams.Out,
 	})
 }
 
@@ -115,9 +116,10 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 	network := addNetworkFlags(flags, defaultNodeHostname(), "node", "TS_AUTHKEY_NODE", "tag:herdr-mesh-node")
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
-	herdrSocket := flags.String("herdr-socket", "", "local Herdr socket marker path; enables observation and authenticated existing-agent control")
+	herdrSocket := flags.String("herdr-socket", "", "local Herdr socket marker path; enables observation, managed projects, and authenticated existing-agent control")
+	herdrExecutable := flags.String("herdr-executable", "", "explicit Herdr executable enabling named headless sessions; no default socket is required")
 	enableProbes := flags.Bool("enable-probes", false, "opt in to durably journaled read-only node ping commands; no Herdr mutations")
-	workspacePolicyPath := flags.String("workspace-policy", "", "opt-in local project checkout/actor bindings and optional worktree roots")
+	workspacePolicyPath := flags.String("workspace-policy", "", "deprecated: legacy local project file for one-time central adoption; use ctl project register for changes")
 	requiredServerTag := flags.String("required-server-tag", "tag:herdr-mesh-server", "Tailscale tag required on the coordinator when commands are enabled")
 	reconnectDelay := flags.Duration("reconnect-delay", 2*time.Second, "delay before reopening a failed stream")
 	reconnectMaximum := flags.Duration("reconnect-max-delay", time.Minute, "maximum delay before reopening a failed stream")
@@ -137,55 +139,53 @@ func runNode(ctx context.Context, args []string, streams IO) error {
 		return errors.New("-reconnect-max-delay must be greater than or equal to -reconnect-delay")
 	}
 	journalPath := ""
-	if *workspacePolicyPath != "" && *herdrSocket == "" {
-		return errors.New("-herdr-socket is required with workspace policy")
+	if *workspacePolicyPath != "" && *herdrSocket == "" && *herdrExecutable == "" {
+		return errors.New("-herdr-socket or -herdr-executable is required with workspace policy")
 	}
-	if *enableProbes || *workspacePolicyPath != "" || *herdrSocket != "" {
+	if *enableProbes || *workspacePolicyPath != "" || *herdrSocket != "" || *herdrExecutable != "" {
 		if strings.TrimSpace(*requiredServerTag) == "" {
 			return errors.New("-required-server-tag must not be empty when commands are enabled")
 		}
 		journalPath = filepath.Join(network.stateDir, "commands", "journal.db")
 	}
 
-	instanceID, err := identity.LoadOrCreate(network.stateDir)
-	if err != nil {
-		return err
-	}
-	var workspacePolicy *projects.Policy
 	if *workspacePolicyPath != "" {
-		workspacePolicy, err = projects.Load(*workspacePolicyPath, instanceID)
-		if err != nil {
-			return fmt.Errorf("load local workspace policy: %w", err)
-		}
+		fmt.Fprintln(streams.Err, "node -workspace-policy is deprecated migration input, not ongoing authority; inspect adoption with ctl projects and use ctl project register for changes")
 	}
 	return node.Run(ctx, node.Options{
 		HeartbeatInterval:  *heartbeat,
 		HerdrSocket:        *herdrSocket,
+		HerdrExecutable:    *herdrExecutable,
 		CommandJournalPath: journalPath,
 		RequiredServerTag:  *requiredServerTag,
-		InstanceID:         instanceID,
 		ReconnectDelay:     *reconnectDelay,
 		ReconnectMaximum:   *reconnectMaximum,
 		ServerAddress:      *serverAddress,
 		Transport:          network.config(),
-		WorkspacePolicy:    workspacePolicy,
-		EnableAgentControl: *herdrSocket != "",
+		LegacyPolicyPath:   *workspacePolicyPath,
+		EnableAgentControl: *herdrSocket != "" || *herdrExecutable != "",
 	})
 }
 
 func runControl(ctx context.Context, args []string, streams IO) error {
 	if len(args) == 0 {
-		return errors.New("ctl requires a command; currently supported: server-info, nodes, ping, ensure-workspace, create-worktree, command")
+		return errors.New("ctl requires a command; currently supported: server-info, nodes, agents, sessions, session, projects, project, ping, ensure-workspace, create-worktree, command, agent")
 	}
 	switch args[0] {
 	case "server-info":
 		return runFleetQuery(ctx, args[1:], streams, false, false)
 	case "nodes":
 		return runFleetQuery(ctx, args[1:], streams, false, true)
+	case "sessions", "session":
+		return runSessionQuery(ctx, args[0], args[1:], streams)
 	case "ping", "ensure-workspace", "create-worktree", "command":
 		return runCommandQuery(ctx, args[0], args[1:], streams)
 	case "agent":
 		return runAgent(ctx, args[1:], streams)
+	case "agents":
+		return runAgentInventory(ctx, args[1:], streams)
+	case "project", "projects":
+		return runProjectQuery(ctx, args[0], args[1:], streams)
 	default:
 		return fmt.Errorf("unknown ctl command %q", args[0])
 	}
@@ -215,6 +215,10 @@ func runFleetQuery(ctx context.Context, args []string, streams IO, doctor, nodes
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	jsonOutput := flags.Bool("json", false, "write machine-readable JSON")
 	timeout := flags.Duration("timeout", 20*time.Second, "overall operation timeout")
+	watch := false
+	if nodes {
+		flags.BoolVar(&watch, "watch", false, "subscribe to replacement fleet snapshots; reconnects report gaps and begin with a full snapshot")
+	}
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -235,6 +239,9 @@ func runFleetQuery(ctx context.Context, args []string, streams IO, doctor, nodes
 		Transport:     network.config(),
 	}
 	if nodes {
+		if watch {
+			return control.WatchNodes(operationContext, options)
+		}
 		return control.Nodes(operationContext, options)
 	}
 	return control.ServerInfo(operationContext, options)
@@ -252,11 +259,12 @@ func addNetworkFlags(flags *flag.FlagSet, hostname, stateName, authKeyEnv, defau
 
 func (flags *networkFlags) config() transport.Config {
 	return transport.Config{
-		AuthKeyEnv: flags.authKeyEnv,
-		Debug:      flags.debug,
-		Hostname:   flags.hostname,
-		StateDir:   filepath.Join(flags.stateDir, "tsnet"),
-		Tags:       splitList(flags.tags),
+		AuthKeyEnv:   flags.authKeyEnv,
+		Debug:        flags.debug,
+		Hostname:     flags.hostname,
+		RoleStateDir: flags.stateDir,
+		StateDir:     filepath.Join(flags.stateDir, "tsnet"),
+		Tags:         splitList(flags.tags),
 	}
 }
 
@@ -298,16 +306,29 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, `Herdr distributed mesh
 
 Usage:
-  herdr-mesh server [flags]
-  herdr-mesh node -server <host:port> [flags]
+  herdr-mesh server [-dashboard-listen :8787 -dashboard-origin <origin>] [flags]
+  herdr-mesh node -server <host:port> [-herdr-socket <marker>] [-herdr-executable <executable>] [flags]
   herdr-mesh ctl server-info -server <host:port> [flags]
-  herdr-mesh ctl nodes -server <host:port> [-json] [flags]
+  herdr-mesh ctl nodes -server <host:port> [-watch] [-json] [flags]
+  herdr-mesh ctl agents -server <host:port> [-node <id>] [-project <id>] [-workspace <id>] [-provider <id>] [-ready <any|true|false|unknown>] [-json] [flags]
+  herdr-mesh ctl sessions -server <host:port> -node <instance-id> [-json] [flags]
+  herdr-mesh ctl session ensure -server <host:port> -node <instance-id> -name <name> [-key <retry-key>] [-ttl <duration>] [flags]
   herdr-mesh ctl ping -server <host:port> -node <instance-id> [-idempotency-key <retry-key>] [flags]
-  herdr-mesh ctl ensure-workspace -server <host:port> -node <instance-id> -project <id> -binding-revision <revision> [flags]
-  herdr-mesh ctl create-worktree -server <host:port> -node <instance-id> -project <id> -binding-revision <revision> -name <name> -branch <branch> -base-commit <sha> [flags]
+  herdr-mesh ctl project register -server <host:port> -node <instance-id> -project <id> -path <node-checkout> [-worktree-root <node-root>] [flags]
+  herdr-mesh ctl projects -server <host:port> [-node <instance-id>] [-json] [flags]
+  herdr-mesh ctl project get -server <host:port> -node <instance-id> -project <id> [-json] [flags]
+  herdr-mesh ctl ensure-workspace -server <host:port> -node <instance-id> -project <id> [-binding-revision <revision>] [-session <name>] [-session-incarnation <64hex>] [flags]
+  herdr-mesh ctl create-worktree -server <host:port> -node <instance-id> -project <id> -name <name> [-binding-revision <revision>] [-branch <branch>] [-base-commit <sha>] [-session <name>] [-session-incarnation <64hex>] [flags]
   herdr-mesh ctl command -server <host:port> -id <command-id> [flags]
-  herdr-mesh ctl agent <get|read|wait|prompt|input|interrupt> -server <host:port> -node <instance-id> -agent <pane-id> [flags]
+  herdr-mesh ctl agent <get|read|wait|prompt|input|interrupt> -server <host:port> -node <instance-id> -agent <pane-id> [-session <name>] [-session-incarnation <64hex>] [flags]
+  herdr-mesh ctl agent start -server <host:port> -node <instance-id> -project <id> -workspace <id> -provider <provider> -name <name> [flags]
+  herdr-mesh ctl agent stop -server <host:port> -node <instance-id> -agent <pane-id> -terminal <id> -workspace <id> -tab <id> -provider <provider> -session-incarnation <64hex> [flags]
+  herdr-mesh ctl agent read -server <host:port> -node <instance-id> -agent <pane-id> [-session <name>] [-session-incarnation <64hex>] -follow [-poll-interval <duration>] [flags]
   herdr-mesh doctor -server <host:port> [flags]
+  herdr-mesh mcp -server <host:port> [flags]
+  herdr-mesh maintenance <inspect|backup|verify-backup> -role <server|node> -state-dir <path> [flags]
+  herdr-mesh setup tailnet -tailnet <name> [-apply] [flags]
+  herdr-mesh bootstrap [flags]
   herdr-mesh dashboard -server <host:port> [-listen 127.0.0.1:8787] [flags]
   herdr-mesh version`)
 }

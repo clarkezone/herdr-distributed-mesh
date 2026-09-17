@@ -108,19 +108,24 @@ $global:HerdrTailnetMockPolicy = @'
 $global:HerdrTailnetMockRestCalls = [Collections.Generic.List[object]]::new()
 $global:HerdrFailSecretAcl = $false
 $global:HerdrFailureOutput = $failureOutput
+$global:HerdrRemoteFailure = ''
+$global:HerdrMockEtag = '"test-etag"'
+$global:HerdrMalformedKey = $false
 
 function global:Set-Acl {
     param(
         [string]$LiteralPath,
-        $AclObject
+        $AclObject,
+        [switch]$WhatIf
     )
 
-    if ($global:HerdrFailSecretAcl -and $LiteralPath.StartsWith($global:HerdrFailureOutput)) {
+    if ($global:HerdrFailSecretAcl -and $LiteralPath.StartsWith($global:HerdrFailureOutput) -and
+        [IO.Path]::GetFileName($LiteralPath) -like 'server-key-1.ps1.*.tmp') {
         throw 'simulated ACL failure'
     }
     Microsoft.PowerShell.Security\Set-Acl `
         -LiteralPath $LiteralPath `
-        -AclObject $AclObject
+        -AclObject $AclObject -WhatIf:$false
 }
 
 function global:Invoke-WebRequest {
@@ -131,6 +136,7 @@ function global:Invoke-WebRequest {
         [switch]$UseBasicParsing
     )
 
+    if ($global:HerdrRemoteFailure -eq 'read') { throw 'raw remote response tskey-api-test-payload' }
     Assert-Equal -Expected 'Get' -Actual $Method -Message 'Policy request method mismatch.'
     Assert-True -Condition $Uri.EndsWith('/api/v2/tailnet/example.com/acl') `
         -Message "Unexpected policy URI: $Uri"
@@ -138,7 +144,7 @@ function global:Invoke-WebRequest {
         -Message 'Policy request did not use the configured API token.'
 
     return [pscustomobject]@{
-        Headers = @{ ETag = @('"test-etag"') }
+        Headers = @{ ETag = @($global:HerdrMockEtag) }
         Content = $global:HerdrTailnetMockPolicy
     }
 }
@@ -161,16 +167,22 @@ function global:Invoke-RestMethod {
     })
 
     if ($Method -eq 'Delete') {
+        if ($global:HerdrRemoteFailure -eq 'delete') { throw 'raw remote response tskey-api-test-payload' }
         return
+    }
+    if ($Uri.EndsWith('/acl') -and $global:HerdrRemoteFailure -eq 'update') {
+        throw 'raw remote response tskey-api-test-payload'
     }
     if ($Uri.EndsWith('/keys')) {
         $request = ConvertFrom-TestJson -Json $Body
         $tag = $request.capabilities.devices.create.tags[0]
         $role = $tag.Replace('tag:herdr-mesh-', '')
         $keyNumber = $request.description.Split(' ')[-1]
+        $key = "tskey-auth-$role-$keyNumber-test"
+        if ($global:HerdrMalformedKey) { $key = "tskey-auth-invalid'; unexpected code" }
         return @{
             id = "key-id-$role-$keyNumber"
-            key = "tskey-auth-$role-$keyNumber-test"
+            key = $key
         }
     }
 }
@@ -211,6 +223,7 @@ try {
         -ApiTokenEnvironmentVariable $tokenVariable `
         -OutputDirectory $firstOutput `
         -WarningVariable warnings `
+        -Apply `
         -Confirm:$false
 
     Assert-Equal -Expected 7 -Actual $global:HerdrTailnetMockRestCalls.Count `
@@ -263,6 +276,9 @@ try {
         -Message 'Node grant was duplicated or omitted.'
     Assert-Equal -Expected 1 -Actual $clientGrants.Count `
         -Message 'Client grant was duplicated or omitted.'
+    Assert-Equal -Expected 0 -Actual @($policy.grants | Where-Object {
+        'tcp:8787' -in @($_.ip)
+    }).Count -Message 'Dashboard reachability was enabled without an explicit port.'
 
     foreach ($role in @('server', 'node', 'client')) {
         $keyCalls = @($global:HerdrTailnetMockRestCalls |
@@ -323,6 +339,7 @@ try {
             -Tailnet 'example.com' `
             -ApiTokenEnvironmentVariable $tokenVariable `
             -OutputDirectory $firstOutput `
+            -Apply `
             -Confirm:$false
         throw 'Expected existing numbered key files to block another run.'
     } catch {
@@ -342,6 +359,7 @@ try {
             -ApiTokenEnvironmentVariable $tokenVariable `
             -OutputDirectory $failureOutput `
             -KeysPerRole 1 `
+            -Apply `
             -Confirm:$false
         throw 'Expected secure secret persistence to fail.'
     } catch {
@@ -399,6 +417,86 @@ try {
             -Message "Repeated merge duplicated the grant for $source."
     }
 
+    foreach ($attempt in @(1, 2)) {
+        $dashboardOutput = Join-Path $testRoot "dashboard-$attempt"
+        & $scriptPath `
+            -Tailnet 'example.com' `
+            -ApiTokenEnvironmentVariable $tokenVariable `
+            -OutputDirectory $dashboardOutput `
+            -DashboardPort 8787 `
+            -WhatIf
+        $global:HerdrTailnetMockPolicy = Get-Content `
+            -LiteralPath (Join-Path $dashboardOutput 'policy-proposed.json') -Raw
+        $dashboardPolicy = ConvertFrom-TestJson -Json $global:HerdrTailnetMockPolicy
+        $dashboardGrants = @($dashboardPolicy.grants | Where-Object { 'tcp:8787' -in @($_.ip) })
+        Assert-Equal -Expected 1 -Actual $dashboardGrants.Count `
+            -Message 'Dashboard grant was duplicated or omitted.'
+        Assert-Equal -Expected 'tag:herdr-mesh-client' -Actual $dashboardGrants[0].src[0] `
+            -Message 'Dashboard port was opened to the wrong role.'
+        Assert-Equal -Expected 'tag:herdr-mesh-server' -Actual $dashboardGrants[0].dst[0] `
+            -Message 'Dashboard grant targeted the wrong role.'
+        Assert-Equal -Expected 0 -Actual $global:HerdrTailnetMockRestCalls.Count `
+            -Message 'Dashboard WhatIf changed remote policy or created keys.'
+    }
+    foreach ($invalidPort in @(0, 65536)) {
+        $rejected = $false
+        try {
+            & $scriptPath -Tailnet 'example.com' -DashboardPort $invalidPort -WhatIf
+        } catch [Management.Automation.ParameterBindingException] {
+            $rejected = $true
+        }
+        Assert-True -Condition $rejected -Message 'Invalid dashboard port was accepted.'
+    }
+
+    $defaultOutput = Join-Path $testRoot 'default-preview'
+    $global:HerdrTailnetMockRestCalls.Clear()
+    & $scriptPath -Tailnet 'example.com' -ApiTokenEnvironmentVariable $tokenVariable -OutputDirectory $defaultOutput
+    Assert-Equal -Expected 0 -Actual $global:HerdrTailnetMockRestCalls.Count -Message 'Default invocation was not PREVIEW.'
+    foreach ($file in @(Get-ChildItem -LiteralPath $defaultOutput -File)) {
+        Assert-True -Condition (Get-Acl -LiteralPath $file.FullName).AreAccessRulesProtected -Message 'Policy artifact was not private.'
+    }
+    $before = (Get-FileHash -LiteralPath (Join-Path $defaultOutput 'policy-proposed.json')).Hash
+    $rejected = $false
+    try { & $scriptPath -Tailnet 'example.com' -ApiTokenEnvironmentVariable $tokenVariable -OutputDirectory $defaultOutput } catch { $rejected = $true }
+    Assert-True -Condition $rejected -Message 'Existing proposal was overwritten.'
+    Assert-Equal -Expected $before -Actual (Get-FileHash -LiteralPath (Join-Path $defaultOutput 'policy-proposed.json')).Hash -Message 'Proposal changed on rejected rerun.'
+
+    $linkedOutput = Join-Path $testRoot 'linked-output'
+    New-Item -ItemType Junction -Path $linkedOutput -Target $defaultOutput | Out-Null
+    $rejected = $false
+    try { & $scriptPath -Tailnet 'example.com' -ApiTokenEnvironmentVariable $tokenVariable -OutputDirectory $linkedOutput } catch { $rejected = $true }
+    Assert-True -Condition $rejected -Message 'Linked output directory was accepted.'
+    [IO.Directory]::Delete($linkedOutput)
+
+    $entryPath = Join-Path $PSScriptRoot '..\src\internal\setup\assets\entry.ps1'
+    foreach ($failure in @('read', 'update', 'etag', 'malformed', 'delete')) {
+        $global:HerdrRemoteFailure = $failure
+        $global:HerdrMalformedKey = $failure -in @('malformed', 'delete')
+        $global:HerdrMockEtag = if ($failure -eq 'etag') { '' } else { '"test-etag"' }
+        $global:HerdrTailnetMockRestCalls.Clear()
+        $optionsPath = Join-Path $testRoot "$failure-options.json"
+        @{
+            Tailnet = 'example.com'; ApiTokenEnvironmentVariable = $tokenVariable
+            OutputDirectory = (Join-Path $testRoot "structured-$failure")
+            KeysPerRole = 1; Apply = $true
+        } | ConvertTo-Json | Set-Content -LiteralPath $optionsPath -Encoding UTF8
+        $output = (& $entryPath -OptionsPath $optionsPath) -join "`n"
+        Assert-True -Condition (-not $output.Contains('tskey-') -and -not $output.Contains('raw remote')) -Message 'Structured failure leaked remote payload.'
+        $result = $output | ConvertFrom-Json
+        Assert-Equal -Expected $false -Actual $result.ok -Message 'Failure was reported as success.'
+        $expected = switch ($failure) {
+            read { 'api_read_failed' }; update { 'api_update_failed' }; etag { 'etag_missing' }
+            malformed { 'key_response_invalid' }; delete { 'key_revocation_unconfirmed' }
+        }
+        Assert-Equal -Expected $expected -Actual $result.error_code -Message 'Incorrect safe failure category.'
+        $writes = @($global:HerdrTailnetMockRestCalls | Where-Object { $_.Method -ne 'Delete' })
+        if ($failure -in @('read', 'etag')) {
+            Assert-Equal -Expected 0 -Actual $writes.Count -Message 'Missing policy/ETag authorized a write.'
+        }
+        if ($failure -in @('malformed', 'delete')) {
+            Assert-Equal -Expected 1 -Actual @($global:HerdrTailnetMockRestCalls | Where-Object { $_.Method -eq 'Delete' }).Count -Message 'Invalid key was not revoked.'
+        }
+    }
     Write-Host 'configure-tailnet.ps1 tests passed.'
 } finally {
     [Environment]::SetEnvironmentVariable($tokenVariable, $null)
@@ -409,6 +507,9 @@ try {
     Remove-Item Variable:\global:HerdrTailnetMockRestCalls -ErrorAction SilentlyContinue
     Remove-Item Variable:\global:HerdrFailSecretAcl -ErrorAction SilentlyContinue
     Remove-Item Variable:\global:HerdrFailureOutput -ErrorAction SilentlyContinue
+    Remove-Item Variable:\global:HerdrRemoteFailure -ErrorAction SilentlyContinue
+    Remove-Item Variable:\global:HerdrMockEtag -ErrorAction SilentlyContinue
+    Remove-Item Variable:\global:HerdrMalformedKey -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }

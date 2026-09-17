@@ -8,13 +8,18 @@ import (
 	"log"
 	"math/rand/v2"
 	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdr"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrsession"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/identity"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,26 +30,33 @@ import (
 var capabilities = []string{"node.heartbeat.v1"}
 
 type Options struct {
+	ManagedProjects *projects.Managed
+	HerdrExecutable string
+	SessionManager  SessionManager
 	// EnableAgentControl requires a socket, journal, and fresh coordinator
 	// verification before effects. Run installs the production peer verifier.
 	EnableAgentControl bool
 	// QueryAgent and ControlAgent inject executors for RunSession. Run always
 	// uses the local Herdr adapter instead.
-	QueryAgent         func(context.Context, herdr.Config, *agentflowv1.AgentQueryRequest) (*agentflowv1.AgentQueryResult, error)
-	ControlAgent       func(context.Context, herdr.Config, *agentflowv1.AgentControl) (*agentflowv1.AgentControlResult, error)
-	CommandJournalPath string
-	RequiredServerTag  string
-	HeartbeatInterval  time.Duration
-	HerdrSocket        string
-	InstanceID         string
-	ReconnectDelay     time.Duration
-	ReconnectMaximum   time.Duration
-	ServerAddress      string
-	Transport          transport.Config
-	// WorkspacePolicy opts into local workspace mutations and per-binding
-	// allow_worktrees opts into worktree creation. It requires a journal,
-	// explicit Herdr socket, and expected server tag; nil permits replay only.
-	WorkspacePolicy *projects.Policy
+	QueryAgent                func(context.Context, herdr.Config, *agentflowv1.AgentQueryRequest) (*agentflowv1.AgentQueryResult, error)
+	ControlAgent              func(context.Context, herdr.Config, *agentflowv1.AgentControl) (*agentflowv1.AgentControlResult, error)
+	StartAgent                startAgentExecutor
+	StopAgent                 stopAgentExecutor
+	ResolveLifecycleWorkspace func(context.Context, herdr.Config, string, projects.Binding) (string, error)
+	CommandJournalPath        string
+	RequiredServerTag         string
+	HeartbeatInterval         time.Duration
+	HerdrSocket               string
+	InstanceID                string
+	ReconnectDelay            time.Duration
+	ReconnectMaximum          time.Duration
+	ServerAddress             string
+	Transport                 transport.Config
+	// WorkspacePolicy is upgrade-only migration input in production. Run exports
+	// it to the coordinator; it never authorizes managed mutations. Low-level
+	// session fixtures without ManagedProjects retain legacy replay contracts.
+	WorkspacePolicy  *projects.Policy
+	LegacyPolicyPath string
 	// VerifyServerPeer refreshes authorization of the actual stream peer before
 	// workspace/worktree/agent effects in RunSession. A nil verifier fails closed. Run always
 	// overrides this callback with its production WhoIs and required-tag check.
@@ -52,6 +64,38 @@ type Options struct {
 }
 
 func Run(ctx context.Context, options Options) (err error) {
+	guard, err := state.PrepareRoleState(ctx, options.Transport.RoleStateDir, "node")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, guard.Close()) }()
+	instanceID, err := identity.LoadOrCreate(options.Transport.RoleStateDir)
+	if err != nil {
+		return err
+	}
+	if options.InstanceID != "" && options.InstanceID != instanceID {
+		return errors.New("node instance identity differs from persistent role state")
+	}
+	options.InstanceID = instanceID
+	if options.LegacyPolicyPath != "" {
+		if options.WorkspacePolicy != nil {
+			return errors.New("node accepts only one legacy project migration source")
+		}
+		options.WorkspacePolicy, err = projects.Load(options.LegacyPolicyPath, instanceID)
+		if err != nil {
+			return fmt.Errorf("load local workspace policy: %w", err)
+		}
+	}
+	options.SessionManager = nil
+	if options.HerdrExecutable != "" {
+		options.SessionManager, err = herdrsession.New(herdrsession.Config{Executable: options.HerdrExecutable})
+		if err != nil {
+			return err
+		}
+	}
+	if (options.HerdrSocket != "" || options.SessionManager != nil) && options.ManagedProjects == nil {
+		options.ManagedProjects = projects.NewManaged(options.InstanceID)
+	}
 	if options.ReconnectMaximum <= 0 {
 		options.ReconnectMaximum = time.Minute
 	}
@@ -72,11 +116,15 @@ func Run(ctx context.Context, options Options) (err error) {
 	if err != nil {
 		return err
 	}
-	defer network.Close()
+	defer func() { err = errors.Join(err, network.Close()) }()
+	if err := guard.Activate(); err != nil {
+		return err
+	}
 	// Always override any injected verifier in production with fresh WhoIs of
 	// the actual stream peer, not the configured server address or DNS identity.
 	options.VerifyServerPeer = workspacePeerTagVerifier(network.IdentifyPeer, options.RequiredServerTag)
 	options.QueryAgent, options.ControlAgent = nil, nil
+	options.StartAgent, options.StopAgent, options.ResolveLifecycleWorkspace = nil, nil, nil
 	self := network.SelfStatus()
 	if err := self.Validate(options.Transport.Tags, time.Now()); err != nil {
 		return fmt.Errorf("validate node tsnet identity: %w", err)
@@ -181,15 +229,29 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		return stream.Send(envelope)
 	}
 	advertised := slices.Clone(capabilities)
+	_, lifecycleAvailable := journal.(lifecycleJournal)
+	// Raw Windows pipes have no protocol-18 PID:start marker to pin.
+	// Existing read/control support remains, but lifecycle must fail closed.
+	lifecycleAvailable = lifecycleAvailable && (options.SessionManager != nil || !strings.HasPrefix(strings.ToLower(options.HerdrSocket), `\\.\pipe\`))
+	projectCache, projectsEnabled := journal.(projectJournal)
+	projectsEnabled = projectsEnabled && (options.HerdrSocket != "" || options.SessionManager != nil) && options.ManagedProjects != nil
 	if options.HerdrSocket != "" {
 		advertised = append(advertised, protocol.HerdrReadCapability)
 	}
 	if journal != nil {
 		advertised = append(advertised, protocol.ProbeCapability)
-		if options.EnableAgentControl && options.HerdrSocket != "" {
-			advertised = append(advertised, protocol.AgentControlCapability)
+		if options.SessionManager != nil {
+			advertised = append(advertised, protocol.SessionManageCapability)
 		}
-		if options.WorkspacePolicy != nil && options.HerdrSocket != "" {
+		if options.EnableAgentControl && (options.HerdrSocket != "" || options.SessionManager != nil) {
+			advertised = append(advertised, protocol.AgentControlCapability)
+			if lifecycleAvailable {
+				advertised = append(advertised, protocol.AgentLifecycleCapability)
+			}
+		}
+		if projectsEnabled {
+			advertised = append(advertised, protocol.ProjectConfigCapability, protocol.WorkspaceEnsureCapability, protocol.WorktreeCreateCapability)
+		} else if options.WorkspacePolicy != nil && options.HerdrSocket != "" {
 			advertised = append(advertised, protocol.WorkspaceEnsureCapability)
 			if options.WorkspacePolicy.HasWorktrees() {
 				advertised = append(advertised, protocol.WorktreeCreateCapability)
@@ -227,7 +289,12 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		return false, status.Error(codes.FailedPrecondition, "server does not support read-only Herdr state; upgrade server first")
 	}
 	commandReady := journal != nil && slices.Contains(ack.Capabilities, protocol.ProbeCapability)
-	agentNegotiated := options.EnableAgentControl && options.HerdrSocket != "" && commandReady && slices.Contains(ack.Capabilities, protocol.AgentControlCapability)
+	sessionsNegotiated := options.SessionManager != nil && commandReady && slices.Contains(ack.Capabilities, protocol.SessionManageCapability)
+	if options.SessionManager != nil && !sessionsNegotiated {
+		return false, status.Error(codes.FailedPrecondition, "server does not support named sessions; upgrade server first")
+	}
+	agentNegotiated := options.EnableAgentControl && (options.HerdrSocket != "" || options.SessionManager != nil) && commandReady && slices.Contains(ack.Capabilities, protocol.AgentControlCapability)
+	lifecycleNegotiated := lifecycleAvailable && agentNegotiated && slices.Contains(ack.Capabilities, protocol.AgentLifecycleCapability)
 	if options.EnableAgentControl && !agentNegotiated {
 		return false, status.Error(codes.FailedPrecondition, "server does not support agent control; upgrade server first")
 	}
@@ -245,10 +312,38 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		workspacePolicy: options.WorkspacePolicy, workspaceNegotiated: workspaceNegotiated,
 		worktreeNegotiated: worktreeNegotiated, createWorktree: create,
 		agentNegotiated: agentNegotiated, controlAgent: options.ControlAgent,
+		lifecycleNegotiated: lifecycleNegotiated, startAgent: options.StartAgent, stopAgent: options.StopAgent,
+		resolveLifecycleWorkspace: options.ResolveLifecycleWorkspace,
+		sessionsNegotiated:        sessionsNegotiated, sessions: options.SessionManager,
 		herdrConfig: herdr.Config{SocketPath: options.HerdrSocket}, ensureWorkspace: ensure,
 		verifyCoordinator: streamPeerVerifier(stream.Context(), options.VerifyServerPeer)}
 	if options.VerifyServerPeer == nil {
 		handler.verifyCoordinator = nil
+	}
+	if projectsEnabled {
+		if !slices.Contains(ack.Capabilities, protocol.ProjectConfigCapability) {
+			// Existing-agent controls remain available against an older server.
+			// Legacy files must not become fallback authority in managed mode.
+			projectsEnabled = false
+			handler.workspacePolicy = nil
+		}
+	}
+	if projectsEnabled {
+		handler.managedProjects = projects.NewManaged(options.InstanceID)
+		if err := handler.restoreProjects(sessionContext, projectCache, options.WorkspacePolicy); err != nil {
+			return true, err
+		}
+		offer := &agentflowv1.LegacyProjects{}
+		for _, binding := range options.WorkspacePolicy.LegacyBindings() {
+			offer.Projects = append(offer.Projects, &agentflowv1.RegisterProjectRequest{
+				NodeInstanceId: options.InstanceID, ProjectId: binding.ProjectID,
+				CheckoutPath: binding.Path, WorktreeRoot: binding.WorktreeRoot})
+		}
+		if len(offer.Projects) > 0 {
+			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_LegacyProjects{LegacyProjects: offer}}); err != nil {
+				return true, err
+			}
+		}
 	}
 	queries := newAgentQueries(sessionContext, options, handler)
 	defer func() { cancel(); queries.join() }()
@@ -300,19 +395,28 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		err    error
 	}
 	work := make(chan commandWork, 16)
-	outcomes := make(chan commandOutcome, 1)
-	workerDone := make(chan struct{})
-	var workerErr error
-	// The worker owns execution only; this goroutine remains the sole sender.
-	go func() {
-		defer close(workerDone)
+	sessionWork := make(chan commandWork, 4)
+	interruptWork := make(chan commandWork, 4)
+	lifecycleWork := make(chan commandWork, 4)
+	progress := make(chan *agentflowv1.CommandProgress, 16)
+	handler.lifecycleProgress = progress
+	outcomes := make(chan commandOutcome, 4)
+	var workers sync.WaitGroup
+	var workerErrors commandWorkerErrors
+	// Long ensure and query waits cannot serialize an unrelated interrupt.
+	runWorker := func(queue <-chan commandWork) {
+		defer workers.Done()
 		for {
 			select {
 			case <-sessionContext.Done():
 				return
-			case item := <-work:
+			case item := <-queue:
 				result, err := handler.handle(sessionContext, item.command, item.receivedAt)
-				workerErr = err
+				if err != nil {
+					workerErrors.Lock()
+					workerErrors.errors = append(workerErrors.errors, err)
+					workerErrors.Unlock()
+				}
 				select {
 				case outcomes <- commandOutcome{result: result, err: err}:
 				case <-sessionContext.Done():
@@ -323,23 +427,45 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 				}
 			}
 		}
-	}()
+	}
+	for _, queue := range []<-chan commandWork{work, sessionWork, interruptWork, lifecycleWork} {
+		workers.Add(1)
+		go runWorker(queue)
+	}
 	defer func() {
 		cancel()
-		<-workerDone
-		var fatal *journalError
-		if errors.As(workerErr, &fatal) {
-			sessionErr = errors.Join(sessionErr, workerErr)
+		workers.Wait()
+		for _, workerErr := range workerErrors.errors {
+			var fatal *journalError
+			if errors.As(workerErr, &fatal) {
+				sessionErr = errors.Join(sessionErr, workerErr)
+			}
 		}
 	}()
 
 	updates := make(chan *agentflowv1.HerdrState, 1)
-	observerErr := make(chan error, 1)
+	sessionUpdates := make(chan *agentflowv1.SessionInventory, 1)
+	observerErr := make(chan error, 2)
+	if sessionsNegotiated {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			observerErr <- handler.observeSessions(sessionContext, func(inventory *agentflowv1.SessionInventory) error {
+				select {
+				case sessionUpdates <- inventory:
+					return nil
+				case <-sessionContext.Done():
+					return sessionContext.Err()
+				}
+			})
+		}()
+		defer func() { cancel(); <-done }()
+	}
 	if options.HerdrSocket != "" {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			observerErr <- herdr.Observe(sessionContext, herdr.Config{SocketPath: options.HerdrSocket},
+			observerErr <- herdr.Observe(sessionContext, herdr.Config{SocketPath: options.HerdrSocket, ProjectResolver: handler.managedProjects},
 				func(state *agentflowv1.HerdrState) error {
 					select {
 					case updates <- state:
@@ -376,6 +502,7 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 					WorkspaceReady: workspaceReady,
 					WorktreeReady:  worktreeReady,
 					AgentReady:     handler.agentReady(),
+					SessionsReady:  handler.sessionsReady(),
 				},
 			},
 		})
@@ -393,6 +520,19 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 		envelope := message.envelope
 		if envelope == nil {
 			return status.Error(codes.InvalidArgument, "empty server envelope")
+		}
+		if config := envelope.GetProjectConfig(); config != nil {
+			if !projectsEnabled || len(envelope.ProtoReflect().GetUnknown()) != 0 {
+				return status.Error(codes.FailedPrecondition, "project capability not negotiated")
+			}
+			ack, err := handler.applyProject(sessionContext, config)
+			if err != nil {
+				return err
+			}
+			if ack != nil {
+				return send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_ProjectAck{ProjectAck: ack}})
+			}
+			return nil
 		}
 		if envelope.GetAgentQuery() != nil || envelope.GetAgentQueryCancel() != nil {
 			if len(envelope.ProtoReflect().GetUnknown()) != 0 || !agentNegotiated {
@@ -419,11 +559,21 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 			if (command.CommandType == protocol.ProbeCommandType && !commandReady) ||
 				(command.CommandType == protocol.WorkspaceEnsureCommandType && !workspaceNegotiated) ||
 				(command.CommandType == protocol.WorktreeCreateCommandType && !worktreeNegotiated) ||
-				(command.CommandType == protocol.AgentControlCommandType && !agentNegotiated) {
+				(command.CommandType == protocol.AgentControlCommandType && !agentNegotiated) ||
+				(protocol.IsLifecycleCommand(command.CommandType) && !lifecycleNegotiated) ||
+				(command.CommandType == protocol.SessionEnsureCommandType && !sessionsNegotiated) {
 				return status.Error(codes.FailedPrecondition, "command capability was not negotiated")
 			}
+			queue := work
+			if command.SessionEnsure != nil {
+				queue = sessionWork
+			} else if command.AgentStart != nil {
+				queue = lifecycleWork
+			} else if command.AgentStop != nil || command.AgentControl.GetAction() == agentflowv1.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT {
+				queue = interruptWork
+			}
 			select {
-			case work <- commandWork{command: command, receivedAt: message.receivedAt}:
+			case queue <- commandWork{command: command, receivedAt: message.receivedAt}:
 				return nil
 			default:
 				return status.Error(codes.ResourceExhausted, "command queue full; reconnect required")
@@ -457,6 +607,10 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 			if err := sendOutcome(outcome); err != nil {
 				return true, err
 			}
+		case checkpoint := <-progress:
+			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_CommandProgress{CommandProgress: checkpoint}}); err != nil {
+				return true, err
+			}
 		case err := <-observerErr:
 			if err == nil {
 				err = errors.New("Herdr observer stopped unexpectedly")
@@ -467,6 +621,10 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 			handler.agentBaseline.Store(state)
 			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_HerdrState{HerdrState: state}}); err != nil {
 				return true, fmt.Errorf("send Herdr state: %w", err)
+			}
+		case inventory := <-sessionUpdates:
+			if err := send(&agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_SessionInventory{SessionInventory: inventory}}); err != nil {
+				return true, fmt.Errorf("send session inventory: %w", err)
 			}
 		case message := <-incoming:
 			if err := handleIncoming(message); err != nil {
@@ -502,6 +660,10 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 }
 
 func (h *commandHandler) mutationReadiness(state *agentflowv1.HerdrState, now time.Time, commandReady bool) (workspace, worktree bool) {
+	if h.managedProjects != nil {
+		workspace = h.workspaceNegotiated && commandReady && workspaceBaselineReady(state, now)
+		return workspace, workspace && h.worktreeNegotiated
+	}
 	workspace = h.workspaceNegotiated && h.workspacePolicy != nil && workspaceBaselineReady(state, now)
 	worktree = h.worktreeNegotiated && commandReady && workspace && h.workspacePolicy.HasWorktrees()
 	return workspace, worktree

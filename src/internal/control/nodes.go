@@ -37,9 +37,10 @@ func writeNodes(options Options, list *agentflowv1.NodeList) error {
 	}
 	for _, node := range list.Nodes {
 		state := node.GetHerdr()
-		if _, err := fmt.Fprintf(options.Output, "node=%s connected=%t herdr=%s stale=%t workspaces=%d tabs=%d panes=%d agents=%d error=%s\n",
+		if _, err := fmt.Fprintf(options.Output, "node=%s connected=%t herdr=%s stale=%t workspaces=%d tabs=%d panes=%d agents=%d error=%s sessions=%d sessions_ready=%t sessions_error=%s\n",
 			node.InstanceId, node.Connected, state.GetStatus(), node.Stale,
-			len(state.GetWorkspaces()), len(state.GetTabs()), len(state.GetPanes()), len(state.GetAgents()), state.GetErrorCode()); err != nil {
+			len(state.GetWorkspaces()), len(state.GetTabs()), len(state.GetPanes()), len(state.GetAgents()), state.GetErrorCode(),
+			len(node.Sessions), node.SessionsReady, node.SessionsErrorCode); err != nil {
 			return err
 		}
 	}

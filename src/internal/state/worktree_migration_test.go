@@ -61,14 +61,16 @@ func TestWorktreeMigrationPreservesWorkspaceAndProbeJournals(t *testing.T) {
 			Scan(&value.commandBytes, &value.resultBytes, &value.delivered))
 		snapshots = append(snapshots, value)
 	}
-	_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 3")
+	removeLifecycleSchema(t, s, coordinatorKind)
+	removeLifecycleSchema(t, j.store, nodeKind)
+	_, err := s.conn.ExecContext(ctx, "DROP TABLE projects; PRAGMA user_version = 3")
 	requireOK(t, err)
-	_, err = j.store.conn.ExecContext(ctx, "PRAGMA user_version = 2")
+	_, err = j.store.conn.ExecContext(ctx, "DROP TABLE node_projects; PRAGMA user_version = 2")
 	requireOK(t, err)
 	requireOK(t, s.Close())
 	requireOK(t, j.Close())
 	s, j = openTestStore(t, coordinatorPath), openTestNodeJournal(t, nodePath)
-	if rowCount(t, s, "PRAGMA user_version") != 5 || rowCount(t, j.store, "PRAGMA user_version") != 4 {
+	if rowCount(t, s, "PRAGMA user_version") != 7 || rowCount(t, j.store, "PRAGMA user_version") != 6 {
 		t.Fatal("worktree migration did not fence workspace-only binaries")
 	}
 	var gotFleet []byte
@@ -134,14 +136,16 @@ func TestWorktreeMigrationFailsClosedWithoutRewriting(t *testing.T) {
 					s = commandStoreAtPath(t, path)
 					admitWorkspace(t, s, command, true)
 					requireOK(t, s.SaveNode(ctx, node("stable", "node")))
-					_, err := s.conn.ExecContext(ctx, "PRAGMA user_version = 3")
+					removeLifecycleSchema(t, s, coordinatorKind)
+					_, err := s.conn.ExecContext(ctx, "DROP TABLE projects; PRAGMA user_version = 3")
 					requireOK(t, err)
 				} else {
 					j := openTestNodeJournal(t, path)
 					s, owner = j.store, "node"
 					_, _, err := j.Claim(ctx, command)
 					requireOK(t, err)
-					_, err = s.conn.ExecContext(ctx, "PRAGMA user_version = 2")
+					removeLifecycleSchema(t, s, nodeKind)
+					_, err = s.conn.ExecContext(ctx, "DROP TABLE node_projects; PRAGMA user_version = 2")
 					requireOK(t, err)
 				}
 				statement := ""

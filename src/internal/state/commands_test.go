@@ -52,7 +52,7 @@ func createTestCommand(t *testing.T, s *Store, id int) *pb.CommandRecord {
 
 func downgradeToVersionOne(t *testing.T, s *Store) {
 	t.Helper()
-	for _, statement := range []string{"DROP TABLE commands", "PRAGMA application_id = 0", "PRAGMA user_version = 1"} {
+	for _, statement := range []string{"DROP TABLE projects", "DROP TABLE commands", "PRAGMA application_id = 0", "PRAGMA user_version = 1"} {
 		_, err := s.conn.ExecContext(context.Background(), statement)
 		requireOK(t, err)
 	}
@@ -345,7 +345,7 @@ func TestCoordinatorMigrationPreservesVersionOneData(t *testing.T) {
 	downgradeToVersionOne(t, s)
 	requireOK(t, s.Close())
 	s = openTestStore(t, path)
-	if version := rowCount(t, s, "PRAGMA user_version"); version != 5 {
+	if version := rowCount(t, s, "PRAGMA user_version"); version != 7 {
 		t.Fatalf("migration version = %d", version)
 	}
 	fleet, err := s.LoadFleet(ctx)

@@ -1,14 +1,14 @@
 import {
   initialState, acceptSnapshot, rejectSnapshot, freshness, nodeFreshness, summary,
-  projectAgents, projectWorkspaces, projectNodes, countLabel, ageLabel, fetchSnapshot, createPoller,
+  projectAgents, projectWorkspaces, projectNodes, sessionContexts, entityProject, countLabel, ageLabel, fetchSnapshot, createPoller,
 } from "/model.mjs";
 
 const $ = (id) => document.getElementById(id);
 let state = initialState();
 let currentView = "agents";
-const filters = { search: "", status: "all" };
+const filters = { search: "", status: "all", session: "", project: "", provider: "", readiness: "all" };
 const badgeClasses = new Set(["working", "blocked", "done", "idle", "unknown",
-  "ready", "waiting", "disabled", "unavailable", "connected", "disconnected", "fresh", "stale"]);
+  "ready", "waiting", "disabled", "unavailable", "stopped", "starting", "unsupported", "connected", "disconnected", "fresh", "stale"]);
 
 function el(tag, className = "", text) {
   const result = document.createElement(tag);
@@ -105,7 +105,7 @@ function renderSummary(now) {
     ["workspaces", "Workspaces", "On fresh nodes", `${counts.known.workspaces} last known`],
     ["working", "Agents working", "In progress · fresh nodes", `${counts.known.working} last known`],
     ["blocked", "Agents blocked", "Needs attention · fresh nodes", `${counts.known.blocked} last known`],
-    ["done", "Agents done", "Completed · fresh nodes", `${counts.known.done} last known`],
+    ["done", "Agents done", "Observed state · not task success", `${counts.known.done} last known`],
   ];
   reconcile($("summary"), specs.map(([key, label, note, retained]) => {
     const card = keyed(el("div", `metric metric-${key}`), [key]);
@@ -141,9 +141,9 @@ function renderConnection(now) {
   $("refresh-button").setAttribute("aria-disabled", String(state.refreshing));
 }
 
-const tableLabels = ["Agent (pane ID) / status", "Node", "Workspace", "Tab", "Pane", "Focus", "Data freshness"];
+const tableLabels = ["Agent (pane ID) / status", "Node", "Session", "Project", "Provider", "Readiness", "Workspace", "Tab", "Pane", "Focus", "Data freshness"];
 function agentRow({ node, agent, pane }, now) {
-  const row = keyed(el("tr"), [node.instance_id, agent.workspace_id, agent.tab_id, agent.id]);
+  const row = keyed(el("tr"), [node.instance_id, node.session_name, node.session_incarnation, agent.workspace_id, agent.tab_id, agent.id]);
   row.dataset.stale = String(!nodeFreshness(node, state, now).live);
   row.dataset.agentStatus = agent.agent_status;
   const identity = el("div", "agent-cell");
@@ -152,7 +152,13 @@ function agentRow({ node, agent, pane }, now) {
   paneReference.dataset.paneState = pane ? "resolved" : "missing";
   paneReference.append(identifier(agent.id, "Empty pane reference"));
   if (!pane) paneReference.append(badge("Unresolved pane · missing from snapshot", "stale"));
-  const values = [identity, identifier(node.instance_id), identifier(agent.workspace_id), identifier(agent.tab_id),
+  const project = entityProject(node, agent);
+  const readiness = agent.interactive_ready === null ? "Not reported" : agent.interactive_ready ? "Ready" : "Not ready";
+  const session = identifier(node.session_label ?? node.session_name);
+  session.title = node.session_incarnation ? `Incarnation: ${node.session_incarnation}` : "Legacy default socket; incarnation not reported";
+  const values = [identity, identifier(node.instance_id), session, identifier(project, "Unmapped"),
+    identifier(agent.provider, "Unknown"), badge(readiness, agent.interactive_ready ? "ready" : "unknown"),
+    identifier(agent.workspace_id), identifier(agent.tab_id),
     paneReference, focusBadge(agent), freshnessCell(node, now)];
   values.forEach((value, i) => {
     const cell = el("td");
@@ -189,7 +195,7 @@ function treeChildren(group) {
   });
 }
 function workspaceCard({ node, workspace: ws }, now) {
-  const card = keyed(el("article", "workspace-card"), [node.instance_id, ws.id]);
+  const card = keyed(el("article", "workspace-card"), [node.instance_id, node.session_name, node.session_incarnation, ws.id]);
   card.dataset.stale = String(!nodeFreshness(node, state, now).live);
   const header = el("div", "card-heading");
   const heading = el("h3");
@@ -199,7 +205,9 @@ function workspaceCard({ node, workspace: ws }, now) {
   badges.append(freshnessBadge(node, now));
   header.append(heading, badges);
   const origin = el("div", "tree-row");
-  origin.append(el("span", "tree-label", "Node"), identifier(node.instance_id), age(node.herdr_received_at, now));
+  origin.append(el("span", "tree-label", "Node"), identifier(node.instance_id),
+    el("span", "tree-label", "Session"), identifier(node.session_label ?? node.session_name),
+    el("span", "tree-label", "Project"), identifier(ws.entity?.project_id, "Unmapped"), age(node.herdr_received_at, now));
   const tree = el("ul", "tree");
   tree.append(...ws.tabs.map((tab) => {
     const item = keyed(el("li"), ["tab", tab.id]);
@@ -238,7 +246,7 @@ function nodeCard(node, now) {
   const globallyLive = freshness(state, now) === "live";
   badges.append(badge(`${globallyLive ? "" : "Last known: "}${node.connected ? "connected" : "disconnected"}`,
     globallyLive ? node.connected ? "connected" : "disconnected" : "stale"));
-  badges.append(badge(`Herdr ${node.herdr.status}`, globallyLive ? node.herdr.status : "stale"));
+  badges.append(badge(`Default Herdr ${node.herdr.status}`, globallyLive ? node.herdr.status : "stale"));
   header.append(heading, badges);
   const metadata = el("dl", "node-metadata");
   const fields = [
@@ -255,23 +263,33 @@ function nodeCard(node, now) {
     detail.append(value);
     metadata.append(el("dt", "", label), detail);
   }
-  const h = node.herdr;
+  const contexts = sessionContexts(node);
+  const counts = { workspaces: 0, tabs: 0, panes: 0, agents: 0 };
+  const sessions = el("ul", "tree");
+  for (const session of contexts) {
+    for (const kind of Object.keys(counts)) counts[kind] += session.herdr[kind].length;
+    const row = keyed(el("li", "tree-row"), [session.session_name, session.session_incarnation]);
+    row.append(el("span", "tree-label", "Session"), identifier(session.session_label ?? session.session_name),
+      badge(session.session_status, session.session_status), freshnessBadge(session, now));
+    if (session.session_error_code) row.append(identifier(session.session_error_code));
+    sessions.append(row);
+  }
   card.append(header, freshnessBadge(node, now), metadata,
-    el("p", "node-counts", `${nodeFreshness(node, state, now).live ? "Snapshot" : "Last known inventory"} · ${countLabel(h.workspaces.length, "workspace")} · ${countLabel(h.tabs.length, "tab")} · ${countLabel(h.panes.length, "pane")} · ${countLabel(h.agents.length, "agent")}`));
+    sessions, el("p", "node-counts", `Inventory including retained sessions · ${countLabel(counts.workspaces, "workspace")} · ${countLabel(counts.tabs, "tab")} · ${countLabel(counts.panes, "pane")} · ${countLabel(counts.agents, "agent")}`));
   return card;
 }
 
 function renderInventory(now) {
   const nodes = state.snapshot?.nodes ?? [];
   const projections = {
-    agents: () => projectAgents(nodes, filters.search, filters.status),
-    workspaces: () => projectWorkspaces(nodes, filters.search, filters.status),
-    nodes: () => projectNodes(nodes, filters.search, filters.status),
+    agents: () => projectAgents(nodes, filters.search, filters.status, filters),
+    workspaces: () => projectWorkspaces(nodes, filters.search, filters.status, filters),
+    nodes: () => projectNodes(nodes, filters.search, filters.status, filters),
   };
   const rows = projections[currentView]();
   const phase = freshness(state, now);
   const descriptions = {
-    agents: "Agent IDs are pane references, matched within the same node, workspace, and tab. Missing panes remain visible as unresolved references. Status filters match agents.",
+    agents: "Agent IDs are matched within the same node, session incarnation, workspace, and tab. Missing panes stay visible. Project/provider/readiness are reported metadata, never inferred from names; unknown values remain explicit.",
     workspaces: "Workspace → tab → pane → agent identifiers. Missing pane references remain visible. Filters select whole matching workspaces; sibling context stays visible. Expand or collapse tabs with the keyboard.",
     nodes: "Connectivity and Herdr readiness are separate. Filters select nodes containing matching identifiers and agent statuses.",
   };
@@ -291,7 +309,8 @@ function renderInventory(now) {
     } else if (!nodes.length) {
       title = phase === "stale" ? "Last snapshot had no nodes · not live" : "No nodes registered";
       detail = phase === "stale" ? "The current fleet is unknown. Refresh to retrieve an up-to-date snapshot." : "The mesh server is reachable, but its fleet is empty. Registered nodes will appear automatically.";
-    } else if (filters.search.trim() || filters.status !== "all") {
+    } else if (filters.search.trim() || filters.status !== "all" || filters.session.trim() ||
+      filters.project.trim() || filters.provider.trim() || filters.readiness !== "all") {
       title = "No matching inventory";
       detail = "Try another identifier or clear the filters. Fleet pulse above always describes the unfiltered fleet.";
     } else {
@@ -326,11 +345,21 @@ $("auto-refresh").addEventListener("change", (event) => {
 });
 $("search-input").addEventListener("input", (event) => { filters.search = event.target.value; render(); });
 $("status-filter").addEventListener("change", (event) => { filters.status = event.target.value; render(); });
+for (const key of ["session", "project", "provider"]) {
+  $(`${key}-filter`).addEventListener("input", (event) => { filters[key] = event.target.value; render(); });
+}
+$("readiness-filter").addEventListener("change", (event) => { filters.readiness = event.target.value; render(); });
 $("clear-filters").addEventListener("click", () => {
   filters.search = "";
   filters.status = "all";
   $("search-input").value = "";
   $("status-filter").value = "all";
+  for (const key of ["session", "project", "provider"]) {
+    filters[key] = "";
+    $(`${key}-filter`).value = "";
+  }
+  filters.readiness = "all";
+  $("readiness-filter").value = "all";
   render();
   $("search-input").focus();
 });

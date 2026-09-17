@@ -20,7 +20,25 @@ const (
 	MaxAgentQueryTimeout    = 5 * time.Minute
 )
 
-func validateCommandBody(kind string, workspace *pb.WorkspaceEnsure, worktree *pb.WorktreeCreate, agent *pb.AgentControl) error {
+func validateCommandBody(kind string, workspace *pb.WorkspaceEnsure, worktree *pb.WorktreeCreate, agent *pb.AgentControl, session *pb.SessionEnsure, start *pb.AgentStart, stop *pb.AgentStop) error {
+	if start != nil || stop != nil || IsLifecycleCommand(kind) {
+		if workspace != nil || worktree != nil || agent != nil || session != nil {
+			return errors.New("mixed lifecycle command arguments")
+		}
+		if kind == AgentStartCommandType && stop == nil {
+			return ValidateAgentStart(start)
+		}
+		if kind == AgentStopCommandType && start == nil {
+			return ValidateAgentStop(stop)
+		}
+		return errors.New("invalid lifecycle command arguments")
+	}
+	if session != nil {
+		if kind == SessionEnsureCommandType && workspace == nil && worktree == nil && agent == nil {
+			return ValidateSessionEnsure(session)
+		}
+		return errors.New("unsupported or mixed command arguments")
+	}
 	switch kind {
 	case ProbeCommandType:
 		if workspace == nil && worktree == nil && agent == nil {
@@ -48,7 +66,7 @@ func ValidateAgentTarget(target *pb.AgentTarget, requireTerminal bool) error {
 		(target.AgentSessionId != "" && !commandToken.MatchString(target.AgentSessionId)) {
 		return errors.New("agent target requires bounded pane and terminal identifiers")
 	}
-	return nil
+	return ValidateSessionSelector(target.SessionName, target.SessionIncarnation, requireTerminal)
 }
 
 func validAgentStatus(value string) bool {
@@ -196,6 +214,7 @@ func ValidateAgentQueryResult(result *pb.AgentQueryResult, request *pb.AgentQuer
 	if result.ErrorCode != "" {
 		if result.Agent != nil || result.Text != "" || result.Truncated || !slices.Contains([]string{
 			"target_unavailable", "target_changed", "agent_busy", "agent_blocked", "herdr_unavailable", "timeout", "unsupported", "invalid_request", "overloaded", "canceled",
+			"session_manager_unavailable", "session_unavailable", "session_replaced", "session_start_failed", "unsupported_protocol", "session_default_unmanaged", "session_capacity", "precondition_failed",
 		}, result.ErrorCode) {
 			return errors.New("invalid agent query error")
 		}
@@ -221,11 +240,21 @@ func ValidateAgentQueryResult(result *pb.AgentQueryResult, request *pb.AgentQuer
 
 func matchesAgentTarget(actual, want *pb.AgentTarget) bool {
 	return actual != nil && want != nil && actual.PaneId == want.PaneId &&
+		matchesSession(actual.SessionName, actual.SessionIncarnation, want.SessionName, want.SessionIncarnation) &&
 		(want.TerminalId == "" || actual.TerminalId == want.TerminalId) &&
 		(want.AgentSessionId == "" || actual.AgentSessionId == want.AgentSessionId)
 }
 
-func equalAgentTarget(a, b *pb.AgentTarget) bool { return proto.Equal(a, b) }
+func equalAgentTarget(a, b *pb.AgentTarget) bool {
+	if a == nil || b == nil {
+		return proto.Equal(a, b)
+	}
+	actual := proto.Clone(a).(*pb.AgentTarget)
+	if b.SessionIncarnation == "" {
+		actual.SessionIncarnation = ""
+	}
+	return proto.Equal(actual, b)
+}
 
 func AgentControlSuccessDetail(action pb.AgentControlAction) string {
 	switch action {
@@ -242,7 +271,7 @@ func AgentControlSuccessDetail(action pb.AgentControlAction) string {
 
 func ValidateAgentControlResult(result *pb.CommandResult) error {
 	if result == nil || !ValidCommandID(result.CommandId) || len(result.ProtoReflect().GetUnknown()) != 0 ||
-		result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil {
+		result.Payload != nil || result.WorkspaceEnsure != nil || result.WorktreeCreate != nil || result.SessionEnsure != nil || result.AgentLifecycle != nil {
 		return errors.New("invalid agent command result")
 	}
 	if result.Status == pb.CommandStatus_COMMAND_STATUS_SUCCEEDED {
@@ -258,7 +287,7 @@ func ValidateAgentControlResult(result *pb.CommandResult) error {
 	}
 	switch result.Status {
 	case pb.CommandStatus_COMMAND_STATUS_REJECTED:
-		if slices.Contains([]string{"journal_full", "precondition_failed", "agent_busy", "agent_blocked", "target_changed", "herdr_unavailable", "unsupported", "authorization_changed"}, result.Detail) {
+		if ValidSessionError(result.Detail) || slices.Contains([]string{"journal_full", "precondition_failed", "agent_busy", "agent_blocked", "target_changed", "herdr_unavailable", "unsupported", "authorization_changed", "lifecycle_unresolved"}, result.Detail) {
 			return nil
 		}
 	case pb.CommandStatus_COMMAND_STATUS_TIMED_OUT:

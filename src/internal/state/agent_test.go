@@ -304,10 +304,10 @@ func TestAgentRecoveryAndProjectNamespaceIsolation(t *testing.T) {
 			if projectID, revision := protocol.CommandProject(newKey); projectID != "" || revision != "" {
 				t.Fatal("agent target acquired an invented project binding")
 			}
-			_, claimed, err = j.Claim(ctx, newKey)
+			rejected, claimed, err := j.Claim(ctx, newKey)
 			requireOK(t, err)
-			if !claimed {
-				t.Fatal("project uncertainty or prior agent key silently quarantined an agent")
+			if claimed || rejected.Detail != "lifecycle_unresolved" {
+				t.Fatal("new input key escaped retained agent uncertainty")
 			}
 			blocked := workspaceCommand(4, project.WorktreeCreate.ProjectId)
 			got, claimed, err := j.Claim(ctx, blocked)

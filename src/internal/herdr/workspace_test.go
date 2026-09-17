@@ -86,14 +86,15 @@ func workspaceList(values ...any) step {
 }
 
 func workspaceCreate(value any) step {
-	return workspaceReply("workspace.create", "workspace_created", map[string]any{
-		"workspace": value, "tab": map[string]any{"private": "never returned"},
+	return workspaceReply("worktree.open", "worktree_opened", map[string]any{
+		"already_open": false,
+		"workspace":    value, "tab": map[string]any{"private": "never returned"},
 		"root_pane": map[string]any{"private": "never returned"},
 	})
 }
 
 // This fake only permits the three ensure methods and checks the complete
-// create parameter allowlist. It never dials a real Herdr instance.
+// checkout-open parameter allowlist. It never dials a real Herdr instance.
 func workspaceDial(t *testing.T, binding projects.Binding, steps ...step) dialFunc {
 	t.Helper()
 	var mu sync.Mutex
@@ -146,12 +147,13 @@ func workspaceDial(t *testing.T, binding projects.Binding, steps ...step) dialFu
 				if len(request.Params) != 0 {
 					t.Error("read request parameters must be empty")
 				}
-			case "workspace.create":
-				var cwd string
+			case "worktree.open":
+				var cwd, path string
 				var focus bool
-				if len(request.Params) != 2 || required(request.Params, "cwd", &cwd) != nil ||
-					required(request.Params, "focus", &focus) != nil || cwd != binding.Path || focus {
-					t.Error("create must send exactly canonical cwd and focus:false")
+				if len(request.Params) != 3 || required(request.Params, "cwd", &cwd) != nil ||
+					required(request.Params, "path", &path) != nil ||
+					required(request.Params, "focus", &focus) != nil || cwd != binding.Path || path != binding.Path || focus {
+					t.Error("open must send exactly canonical cwd/path and focus:false")
 				}
 			default:
 				t.Error("forbidden mutation")
@@ -205,6 +207,18 @@ func TestEnsureWorkspaceAmbiguous(t *testing.T) {
 	dial := workspaceDial(t, b, workspacePong(), workspaceList(workspaceInfo("ws:1", b.Path), workspaceInfo("ws:2", b.Path)))
 	result, err := ensureWorkspace(context.Background(), testConfig(), b, dial)
 	assertWorkspaceError(t, result, err, ErrWorkspaceAmbiguous)
+}
+
+func TestEnsureWorkspaceNativeConcurrentReuseIsNotCreated(t *testing.T) {
+	b := workspaceBinding(t)
+	dial := workspaceDial(t, b, workspacePong(), workspaceList(),
+		workspaceReply("worktree.open", "worktree_opened", map[string]any{
+			"workspace": workspaceInfo("ws:bound", b.Path), "already_open": true,
+		}))
+	result, err := ensureWorkspace(context.Background(), testConfig(), b, dial)
+	if err != nil || result.GetCreated() || result.GetWorkspaceId() != "ws:bound" {
+		t.Fatalf("native reuse was reported as creation: %v, %v", result, err)
+	}
 }
 
 func TestEnsureWorkspaceMalformedListNeverCreates(t *testing.T) {
@@ -284,22 +298,23 @@ func TestEnsureWorkspaceCreateUnknownNeverRetries(t *testing.T) {
 	b := workspaceBinding(t)
 	other := workspaceBinding(t)
 	for name, create := range map[string]step{
-		"lost reply": {"workspace.create", func(net.Conn, testRequest) {}},
-		"API error": {"workspace.create", func(conn net.Conn, request testRequest) {
+		"lost reply": {"worktree.open", func(net.Conn, testRequest) {}},
+		"API error": {"worktree.open", func(conn net.Conn, request testRequest) {
 			json.NewEncoder(conn).Encode(map[string]any{"id": request.ID, "error": map[string]any{"message": "PRIVATE-error"}})
 		}},
-		"malformed JSON": {"workspace.create", func(conn net.Conn, request testRequest) {
+		"malformed JSON": {"worktree.open", func(conn net.Conn, request testRequest) {
 			io.WriteString(conn, "PRIVATE-not-json\n")
 		}},
-		"duplicate keys": {"workspace.create", func(conn net.Conn, request testRequest) {
-			io.WriteString(conn, `{"id":"herdr-3","result":{"type":"workspace_created","workspace":null,"workspace":{}}}`+"\n")
+		"duplicate keys": {"worktree.open", func(conn net.Conn, request testRequest) {
+			io.WriteString(conn, `{"id":"herdr-3","result":{"type":"worktree_opened","workspace":null,"workspace":{}}}`+"\n")
 		}},
-		"wrong response ID": {"workspace.create", func(conn net.Conn, request testRequest) {
+		"wrong response ID": {"worktree.open", func(conn net.Conn, request testRequest) {
 			request.ID = "wrong"
-			reply(conn, request, map[string]any{"type": "workspace_created", "workspace": workspaceInfo("ws:1", b.Path)})
+			reply(conn, request, map[string]any{"type": "worktree_opened", "workspace": workspaceInfo("ws:1", b.Path)})
 		}},
-		"wrong type":          workspaceReply("workspace.create", "workspace_list", map[string]any{"workspaces": []any{}}),
-		"missing workspace":   workspaceReply("workspace.create", "workspace_created", nil),
+		"wrong type":          workspaceReply("worktree.open", "workspace_list", map[string]any{"workspaces": []any{}}),
+		"missing workspace":   workspaceReply("worktree.open", "worktree_opened", nil),
+		"missing reuse flag":  workspaceReply("worktree.open", "worktree_opened", map[string]any{"workspace": workspaceInfo("ws:1", b.Path)}),
 		"null workspace":      workspaceCreate(nil),
 		"unsafe ID":           workspaceCreate(workspaceInfo("PRIVATE/path", b.Path)),
 		"mismatched checkout": workspaceCreate(workspaceInfo("ws:1", other.Path)),
@@ -428,7 +443,7 @@ func TestEnsureWorkspaceCancellation(t *testing.T) {
 			steps := []step{workspacePong()}
 			want := ErrWorkspaceUnavailable
 			if duringCreate {
-				steps = append(steps, workspaceList(), step{"workspace.create", block})
+				steps = append(steps, workspaceList(), step{"worktree.open", block})
 				want = ErrWorkspaceIndeterminate
 			} else {
 				steps = append(steps, step{"workspace.list", block})
@@ -450,7 +465,7 @@ func TestEnsureWorkspaceCancellation(t *testing.T) {
 	t.Run("TTL bounds create", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		dial := workspaceDial(t, b, workspacePong(), workspaceList(), step{"workspace.create", func(conn net.Conn, request testRequest) {
+		dial := workspaceDial(t, b, workspacePong(), workspaceList(), step{"worktree.open", func(conn net.Conn, request testRequest) {
 			expectClosed(t, conn)
 		}})
 		start := time.Now()
@@ -501,9 +516,9 @@ func TestEnsureWorkspacePathChanges(t *testing.T) {
 			steps := []step{workspacePong()}
 			want := ErrWorkspacePrecondition
 			if duringCreate {
-				steps = append(steps, workspaceList(), step{"workspace.create", func(conn net.Conn, request testRequest) {
+				steps = append(steps, workspaceList(), step{"worktree.open", func(conn net.Conn, request testRequest) {
 					replace(t, b.Path)
-					reply(conn, request, map[string]any{"type": "workspace_created", "workspace": workspaceInfo("ws:1", b.Path)})
+					reply(conn, request, map[string]any{"type": "worktree_opened", "already_open": false, "workspace": workspaceInfo("ws:1", b.Path)})
 				}})
 				want = ErrWorkspaceIndeterminate
 			} else {

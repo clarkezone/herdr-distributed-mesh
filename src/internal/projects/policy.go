@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -29,7 +30,7 @@ var (
 )
 
 // Binding is a locally authorized checkout. Path is canonical for node policies
-// and empty for coordinator policies. Only Load can mint a path-valid binding.
+// and empty for coordinator policies. Load and Managed mint path-valid bindings.
 type Binding struct {
 	ProjectID      string
 	NodeID         string
@@ -53,6 +54,25 @@ type bindingKey struct{ nodeID, projectID string }
 // Policy is immutable after loading; Resolve returns copies of its bindings.
 type Policy struct {
 	bindings map[bindingKey]Binding
+}
+
+// LegacyBindings returns a deterministic snapshot for one-time migration.
+// Coordinator bindings have no local pins and cannot be adopted by Managed.
+func (p *Policy) LegacyBindings() []Binding {
+	if p == nil {
+		return nil
+	}
+	bindings := make([]Binding, 0, len(p.bindings))
+	for _, b := range p.bindings {
+		bindings = append(bindings, b)
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		if bindings[i].NodeID != bindings[j].NodeID {
+			return bindings[i].NodeID < bindings[j].NodeID
+		}
+		return bindings[i].ProjectID < bindings[j].ProjectID
+	})
+	return bindings
 }
 
 // Load rejects ambiguous JSON and unknown fields. An empty nodeID selects a

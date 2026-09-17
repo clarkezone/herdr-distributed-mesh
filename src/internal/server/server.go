@@ -12,6 +12,7 @@ import (
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/identity"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
@@ -25,20 +26,24 @@ import (
 )
 
 type Options struct {
-	WorkspacePolicy    *projects.Policy
-	BindingPath        string
-	DatabasePath       string
-	RequiredClientTag  string
-	RequiredCommandTag string
-	InstanceID         string
-	ListenAddress      string
-	RequiredNodeTag    string
-	Transport          transport.Config
+	WorkspacePolicy        *projects.Policy
+	BindingPath            string
+	DatabasePath           string
+	RequiredClientTag      string
+	RequiredCommandTag     string
+	InstanceID             string
+	ListenAddress          string
+	RequiredNodeTag        string
+	Transport              transport.Config
+	DashboardListenAddress string
+	DashboardOrigin        string
+	Output                 io.Writer
 }
 
 type service struct {
 	agentflowv1.UnimplementedNodeControlServer
 	agentflowv1.UnimplementedFleetServer
+	fleetSubscription
 
 	instanceID         string
 	identifyPeer       func(context.Context) (transport.PeerIdentity, error)
@@ -54,9 +59,25 @@ type service struct {
 }
 
 func Run(ctx context.Context, options Options) (result error) {
+	if err := validateDashboardOptions(options); err != nil {
+		return err
+	}
 	if options.WorkspacePolicy != nil && (options.RequiredCommandTag == "" || options.RequiredNodeTag == "") {
 		return errors.New("workspace operations require explicit command and node role tags")
 	}
+	guard, err := state.PrepareRoleState(ctx, options.Transport.RoleStateDir, "server")
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, guard.Close()) }()
+	instanceID, err := identity.LoadOrCreate(options.Transport.RoleStateDir)
+	if err != nil {
+		return err
+	}
+	if options.InstanceID != "" && options.InstanceID != instanceID {
+		return errors.New("server instance identity differs from persistent role state")
+	}
+	options.InstanceID = instanceID
 	store, restored, err := openCoordinatorState(ctx, options)
 	if err != nil {
 		return err
@@ -83,7 +104,10 @@ func Run(ctx context.Context, options Options) (result error) {
 	if err != nil {
 		return err
 	}
-	defer network.Close()
+	defer func() { result = errors.Join(result, network.Close()) }()
+	if err := guard.Activate(); err != nil {
+		return err
+	}
 	self := network.SelfStatus()
 	if err := self.Validate(options.Transport.Tags, time.Now()); err != nil {
 		return fmt.Errorf("validate server tsnet identity: %w", err)
@@ -125,6 +149,9 @@ func Run(ctx context.Context, options Options) (result error) {
 	agentflowv1.RegisterFleetServer(grpcServer, api)
 
 	log.Printf("mesh server ready instance_id=%s address=%s", options.InstanceID, listener.Addr())
+	if options.DashboardListenAddress != "" {
+		return serveHostedCoordinator(ctx, options, network, listener, grpcServer, api)
+	}
 	return serveCoordinator(ctx, listener, grpcServer, &api.fleet)
 }
 
@@ -210,10 +237,17 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	}()
 	service.fleet.mu.Lock()
 	entry.probes = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProbeCapability)
-	entry.workspaces = entry.probes && herdrEnabled && service.workspacePolicy != nil && slices.Contains(hello.Capabilities, protocol.WorkspaceEnsureCapability)
-	entry.worktrees = entry.workspaces && service.workspacePolicy.HasWorktrees() && slices.Contains(hello.Capabilities, protocol.WorktreeCreateCapability)
-	entry.agents = entry.probes && herdrEnabled && service.agentConfigured() && slices.Contains(hello.Capabilities, protocol.AgentControlCapability)
+	entry.projects = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProjectConfigCapability)
+	entry.sessions = service.sessionsConfigured() && slices.Contains(hello.Capabilities, protocol.SessionManageCapability)
+	entry.projectWake = make(chan struct{}, 1)
+	entry.projectSent = make(map[string]*agentflowv1.ProjectConfig)
+	entry.projectApplied = make(map[string]*agentflowv1.ProjectAck)
+	entry.workspaces = entry.probes && (herdrEnabled || entry.sessions) && (entry.projects || service.workspacePolicy != nil) && slices.Contains(hello.Capabilities, protocol.WorkspaceEnsureCapability)
+	entry.worktrees = entry.workspaces && (entry.projects || service.workspacePolicy.HasWorktrees()) && slices.Contains(hello.Capabilities, protocol.WorktreeCreateCapability)
+	entry.agents = entry.probes && (herdrEnabled || entry.sessions) && service.agentConfigured() && slices.Contains(hello.Capabilities, protocol.AgentControlCapability)
+	entry.lifecycle = entry.agents && slices.Contains(hello.Capabilities, protocol.AgentLifecycleCapability)
 	service.fleet.mu.Unlock()
+	wakeProjects(entry)
 	if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{
 		Body: &agentflowv1.NodeEnvelope_HelloAck{
 			HelloAck: &agentflowv1.HelloAck{
@@ -268,6 +302,16 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			return status.Error(codes.Aborted, "node stream superseded")
 		case <-heartbeatTimer.C:
 			return status.Error(codes.DeadlineExceeded, "heartbeat deadline exceeded")
+		case <-entry.projectWake:
+			updates, err := service.projectUpdates(entry)
+			if err != nil {
+				return err
+			}
+			for _, config := range updates {
+				if err := sendNodeEnvelope(stream, &agentflowv1.NodeEnvelope{Body: &agentflowv1.NodeEnvelope_ProjectConfig{ProjectConfig: config}}, entry); err != nil {
+					return err
+				}
+			}
 		case envelope := <-entry.queryOutbound:
 			if service.prepareAgentEnvelope(entry, envelope) {
 				if err := sendNodeEnvelope(stream, envelope, entry); err != nil {
@@ -310,6 +354,24 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 				}
 				continue
 			}
+			if inventory := envelope.GetSessionInventory(); inventory != nil {
+				if err := service.fleet.updateSessions(entry, inventory, time.Now()); err != nil {
+					return err
+				}
+				continue
+			}
+			if ack := envelope.GetProjectAck(); ack != nil {
+				if err := service.acknowledgeProject(entry, ack); err != nil {
+					return err
+				}
+				continue
+			}
+			if offer := envelope.GetLegacyProjects(); offer != nil {
+				if err := service.adoptProjects(entry, offer); err != nil {
+					return err
+				}
+				continue
+			}
 			heartbeat := envelope.GetHeartbeat()
 			if heartbeat == nil {
 				if state := envelope.GetHerdrState(); state != nil && herdrEnabled {
@@ -318,7 +380,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 					}
 					continue
 				}
-				if envelope.GetCommandAck() != nil && entry.probes {
+				if envelope.GetCommandAck() != nil && (entry.probes || entry.sessions) {
 					ack := envelope.GetCommandAck()
 					if !protocol.ValidCommandID(ack.CommandId) || ack.Status != agentflowv1.CommandStatus_COMMAND_STATUS_ACCEPTED ||
 						(ack.Detail != "" && ack.Detail != "accepted") || len(ack.ProtoReflect().GetUnknown()) != 0 {
@@ -326,7 +388,13 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 					}
 					continue
 				}
-				if envelope.GetCommandResult() != nil && entry.probes {
+				if envelope.GetCommandProgress() != nil && entry.lifecycle {
+					if err := service.commandProgress(entry, envelope.GetCommandProgress()); err != nil {
+						return err
+					}
+					continue
+				}
+				if envelope.GetCommandResult() != nil && (entry.probes || entry.sessions) {
 					ack, err := service.finishCommand(entry, envelope.GetCommandResult())
 					if err != nil {
 						return err
@@ -344,7 +412,7 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			heartbeatSequence = heartbeat.Sequence
 			heartbeatDeadline = time.Now().Add(heartbeatTimeout)
 			heartbeatTimer.Reset(heartbeatTimeout)
-			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady, heartbeat.WorktreeReady, heartbeat.AgentReady); err != nil {
+			if err := service.fleet.heartbeat(entry, time.Now(), heartbeat.CommandReady, heartbeat.WorkspaceReady, heartbeat.WorktreeReady, heartbeat.AgentReady, heartbeat.SessionsReady); err != nil {
 				return err
 			}
 			log.Printf(
@@ -443,14 +511,12 @@ func (service *service) capabilities() []string {
 	values := slices.Clone(protocol.ServerCapabilities)
 	if service.commands != nil {
 		values = append(values, protocol.ProbeCapability)
+		values = append(values, protocol.ProjectConfigCapability, protocol.WorkspaceEnsureCapability, protocol.WorktreeCreateCapability)
 		if service.agentConfigured() {
-			values = append(values, protocol.AgentControlCapability)
+			values = append(values, protocol.AgentControlCapability, protocol.AgentLifecycleCapability)
 		}
-		if service.workspacePolicy != nil {
-			values = append(values, protocol.WorkspaceEnsureCapability)
-			if service.workspacePolicy.HasWorktrees() {
-				values = append(values, protocol.WorktreeCreateCapability)
-			}
+		if service.sessionsConfigured() {
+			values = append(values, protocol.SessionManageCapability)
 		}
 	}
 	return values

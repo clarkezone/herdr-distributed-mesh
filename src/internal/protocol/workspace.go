@@ -14,17 +14,18 @@ func ValidateWorkspaceEnsure(request *pb.WorkspaceEnsure) error {
 		len(request.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("workspace ensure requires a bounded project ID and binding revision")
 	}
-	return nil
+	return ValidateSessionSelector(request.SessionName, request.SessionIncarnation, false)
 }
 
 func ValidateWorkspaceResult(result *pb.CommandResult) error {
-	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorktreeCreate != nil || result.AgentControl != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
+	if result == nil || !ValidCommandID(result.CommandId) || result.Payload != nil || result.WorktreeCreate != nil || result.AgentControl != nil || result.SessionEnsure != nil || result.AgentLifecycle != nil || len(result.ProtoReflect().GetUnknown()) != 0 {
 		return errors.New("invalid workspace result")
 	}
 	if result.Status == pb.CommandStatus_COMMAND_STATUS_SUCCEEDED {
 		value := result.WorkspaceEnsure
 		if value == nil || !commandToken.MatchString(value.ProjectId) || !commandToken.MatchString(value.BindingRevision) ||
-			!commandToken.MatchString(value.WorkspaceId) || len(value.ProtoReflect().GetUnknown()) != 0 {
+			!commandToken.MatchString(value.WorkspaceId) || len(value.ProtoReflect().GetUnknown()) != 0 ||
+			ValidateSessionSelector(value.SessionName, value.SessionIncarnation, true) != nil {
 			return errors.New("workspace success requires a bounded typed result")
 		}
 		if (value.Created && result.Detail == "workspace_created") || (!value.Created && result.Detail == "workspace_present") {
@@ -37,6 +38,9 @@ func ValidateWorkspaceResult(result *pb.CommandResult) error {
 	}
 	switch result.Status {
 	case pb.CommandStatus_COMMAND_STATUS_REJECTED:
+		if ValidSessionError(result.Detail) {
+			return nil
+		}
 		switch result.Detail {
 		case "journal_full", "project_unresolved", "project_not_authorized", "precondition_failed", "ambiguous_workspace", "herdr_unavailable", "authorization_changed":
 			return nil
@@ -54,6 +58,17 @@ func ValidateWorkspaceResult(result *pb.CommandResult) error {
 }
 
 func ValidateCommandResult(result *pb.CommandResult) error {
+	if result != nil && ValidCommandID(result.CommandId) && ValidLifecycleDetail(result.Detail) &&
+		IsTerminalCommand(result.Status) && len(result.ProtoReflect().GetUnknown()) == 0 &&
+		result.Payload == nil && result.WorkspaceEnsure == nil && result.WorktreeCreate == nil &&
+		result.AgentControl == nil && result.SessionEnsure == nil &&
+		(result.AgentLifecycle != nil || result.Detail == "lifecycle_unresolved" || result.Detail == "persistence_failed" ||
+			result.Status == pb.CommandStatus_COMMAND_STATUS_REJECTED && result.Detail == "node_restarted") {
+		return nil
+	}
+	if ValidateSessionEnsureResult(result) == nil {
+		return nil
+	}
 	if ValidateProbeResult(result) == nil {
 		return nil
 	}
@@ -70,7 +85,20 @@ func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) err
 	if result == nil || command == nil || result.CommandId != command.CommandId {
 		return errors.New("command result identity mismatch")
 	}
+	if result.AgentLifecycle != nil && !IsLifecycleCommand(command.CommandType) {
+		return errors.New("unexpected lifecycle receipt")
+	}
 	switch command.CommandType {
+	case AgentStartCommandType, AgentStopCommandType:
+		return ValidateLifecycleResult(result, command)
+	case SessionEnsureCommandType:
+		if err := ValidateSessionEnsureResult(result); err != nil {
+			return err
+		}
+		if result.SessionEnsure != nil && (command.SessionEnsure == nil || result.SessionEnsure.Name != command.SessionEnsure.Name) {
+			return errors.New("session result name mismatch")
+		}
+		return nil
 	case AgentControlCommandType:
 		if err := ValidateAgentControlResult(result); err != nil {
 			return err
@@ -90,7 +118,9 @@ func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) err
 		}
 		if result.WorkspaceEnsure != nil && (command.WorkspaceEnsure == nil ||
 			result.WorkspaceEnsure.ProjectId != command.WorkspaceEnsure.ProjectId ||
-			result.WorkspaceEnsure.BindingRevision != command.WorkspaceEnsure.BindingRevision) {
+			result.WorkspaceEnsure.BindingRevision != command.WorkspaceEnsure.BindingRevision ||
+			!matchesSession(result.WorkspaceEnsure.SessionName, result.WorkspaceEnsure.SessionIncarnation,
+				command.WorkspaceEnsure.SessionName, command.WorkspaceEnsure.SessionIncarnation)) {
 			return errors.New("workspace result binding mismatch")
 		}
 		return nil
@@ -101,7 +131,9 @@ func ValidateResultForCommand(result *pb.CommandResult, command *pb.Command) err
 		if value := result.WorktreeCreate; value != nil {
 			want := command.WorktreeCreate
 			if want == nil || value.ProjectId != want.ProjectId || value.BindingRevision != want.BindingRevision ||
-				value.Name != want.Name || value.Branch != want.Branch || value.BaseCommit != want.BaseCommit {
+				!matchesSession(value.SessionName, value.SessionIncarnation, want.SessionName, want.SessionIncarnation) ||
+				value.Name != want.Name || value.Branch != want.Branch ||
+				(value.BaseCommit != want.BaseCommit && !(command.SubmittedRequest != nil && want.BaseCommit == "")) {
 				return errors.New("worktree result does not match original request")
 			}
 		}

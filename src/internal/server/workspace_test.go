@@ -68,7 +68,7 @@ func TestWorkspaceAdmissionRequiresProjectActorRevisionAndFreshReadiness(t *test
 	deniedCtx, deniedCancel := context.WithTimeout(commandPeer(context.Background(), "client"), 3*time.Second)
 	_, deniedErr := client.SubmitCommand(deniedCtx, workspaceRequest("policy-disabled"))
 	deniedCancel()
-	if status.Code(deniedErr) != codes.PermissionDenied {
+	if status.Code(deniedErr) != codes.FailedPrecondition {
 		t.Fatalf("missing policy admitted workspace: %v", deniedErr)
 	}
 	h.api.workspacePolicy = policy

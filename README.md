@@ -4,15 +4,27 @@ Distributed mesh support for Herdr.
 
 ## Production foundation
 
-The production application is one binary with explicit process roles:
+The product has one public executable and command: **`herdr-mesh`**
+(`herdr-mesh.exe` on Windows). Install it on `PATH` and use its subcommands;
+server, node, controller, dashboard, MCP, and maintenance are not separate binaries.
+See the [operator guide](docs/operator-guide.md) for installed-CLI workflows.
 
 ```powershell
-go run ./src/cmd/herdr-mesh server
-go run ./src/cmd/herdr-mesh node -server '<server-magic-dns-name>:50052'
-go run ./src/cmd/herdr-mesh ctl server-info -server '<server-magic-dns-name>:50052'
-go run ./src/cmd/herdr-mesh doctor -server '<server-magic-dns-name>:50052'
-go run ./src/cmd/herdr-mesh dashboard -server '<server-magic-dns-name>:50052'
+herdr-mesh server
+herdr-mesh node -server '<server-magic-dns-name>:50052' -herdr-executable herdr
+herdr-mesh ctl server-info -server '<server-magic-dns-name>:50052'
+herdr-mesh doctor -server '<server-magic-dns-name>:50052'
+herdr-mesh dashboard -server '<server-magic-dns-name>:50052'
 ```
+
+Tailnet setup (`herdr-mesh setup tailnet`) and prepared-endpoint Windows bootstrap
+(`herdr-mesh bootstrap`) are embedded in that same executable. The operator guide
+uses installed CLI commands; source build/test examples below are developer
+instructions, not additional product entrypoints. Durable agent launch/stop is
+available through `ctl agent start` and `ctl agent stop`; real operator/provider
+and platform acceptance remain separate gates. Herdr, Git,
+PowerShell, OpenSSH, and provider runtimes remain explicit dependencies where
+needed; their existence does not create another mesh CLI product.
 
 `server`, `node`, and `dashboard` are long-running processes. `ctl` and `doctor` are
 short-lived clients. Each role uses a separate persistent local state directory
@@ -29,10 +41,11 @@ boundary; the added ACL grants alone do not provide network isolation. The
 production listener defaults to port `50052`, keeping it separate from the
 disposable spike on `50051`.
 
-Use `docs\windows-live-validation.md` for the two-host production transport
-gate, including automated tailnet setup, role rejection, restart, network
-change, direct-address, MagicDNS re-enrollment, and a short hackathon disruption
-loop.
+Use [Windows operational acceptance](docs/windows-live-validation.md) for the
+two-host testing sequence: default role startup, central projects, named headless
+sessions, worktrees, agent tasks/control/stop, and explicit retry/recovery checks.
+It also covers tailnet setup, role rejection, network changes and restart loops.
+Examples use named values and returned IDs without shell-variable scaffolding.
 
 The versioned protocol source is
 `api\proto\agentflow\v1\control.proto`. Regenerate Go bindings with:
@@ -50,30 +63,28 @@ The read-only dashboard uses the existing fleet inventory. It is embedded in
 the Go binary; no frontend server, npm install, system Tailscale client, or
 server/node upgrade is needed for the dashboard itself.
 
-Keep your read-only mesh server and Herdr-enabled node running. Start the
-dashboard with an **unused enrolled client state directory**, then open
-**http://127.0.0.1:8787**. For the setup used by the validation runbook, the
-short-lived doctor's identity can be reused:
+Keep the mesh server and Herdr-enabled nodes running. Start the dashboard with
+its own default client state, then open **http://127.0.0.1:8787**:
 
 ```powershell
-.\herdr-mesh.exe dashboard `
-  -hostname herdr-mesh-doctor `
-  -state-dir "$env:LOCALAPPDATA\herdr-mesh-validation\doctor" `
-  -server '<server-magic-dns-name>:50052'
+herdr-mesh dashboard -server herdr-mesh-server:50052
 ```
 
-Keep that process running. Do not run `doctor` or `ctl` with the same state
-directory while the dashboard owns it. A separately enrolled dashboard identity
-can use the default `dashboard` state directory instead; initial enrollment
-uses `TS_AUTHKEY_CLIENT` and `tag:herdr-mesh-client`.
+Use the coordinator's actual assigned MagicDNS name if different. Keep that
+process running; initial enrollment uses its own `TS_AUTHKEY_CLIENT` key and
+`tag:herdr-mesh-client`. Do not run another process with the dashboard's state
+directory while it owns that identity.
 
-The page shows fleet connectivity, Herdr readiness/freshness, agent statuses,
-and workspace/tab/pane inventory. It refreshes automatically and supports
-filtering. Loading, an empty fleet, unavailable nodes, and failed server queries
+The page shows fleet connectivity, per-session Herdr readiness/freshness, agent
+statuses, provider/readiness metadata, and workspace/tab/pane inventory. It
+refreshes automatically and supports project/provider/readiness filtering.
+Loading, an empty fleet, unavailable nodes, and failed server queries
 are distinct states; previously displayed data is marked not-live on failure.
 Names, paths, custom metadata, and terminal contents remain excluded.
 In the current projection, an agent's identifier is its pane ID; the dashboard
-links it to the matching pane within the same node, workspace, and tab.
+links it to the matching pane within the same node, Herdr session/incarnation,
+workspace, and tab. Optional metadata requires a node that reports it; unknown
+readiness is not treated as false.
 
 The local web gateway connects to the coordinator using embedded tsnet and the
 same authenticated `Fleet.ListNodes` RPC as `ctl nodes`. It binds only to a
@@ -97,7 +108,8 @@ node --test src\internal\dashboard\web\model.test.mjs
 ## Herdr connection and observation
 
 The node uses `ping`, `events.subscribe`, and `session.snapshot` against
-a local Herdr instance. Without `-herdr-socket`, it remains transport-only.
+a local Herdr instance. Without either `-herdr-socket` or `-herdr-executable`,
+it remains transport-only.
 **Supplying `-herdr-socket` also enables authenticated existing-agent control**
 and its durable journal, described below. There is no additional agent
 allowlist or project policy to configure.
@@ -121,9 +133,10 @@ filename and use that executable for the restarted roles.
 Use your existing node hostname if it was explicitly configured. Do not run
 two processes sharing a state directory. On Windows the socket argument is
 Herdr's marker path, mapped to a **local named pipe**, not a TCP endpoint.
-Custom sessions require their own socket path. The node does not
-launch Herdr processes; workspace creation requires the separate
-explicit project policies described below.
+The socket remains the explicit legacy/default target. To discover and ensure
+named headless sessions, configure `-herdr-executable` as described below;
+that mode can start with no default socket at all. Workspace creation uses
+the centrally registered project checkouts described below.
 
 Query from a client-tagged identity (reuse your enrolled controller state):
 
@@ -142,8 +155,10 @@ time, and a `stale` flag. Status is `disabled`, `waiting`, `ready`, or
 `stale` is true unless a connected node has a ready snapshot received within
 30 seconds. Herdr traffic never extends the heartbeat deadline.
 
-Only entity IDs, workspace/tab relationships, focus flags, and agent status are
-forwarded. Titles, labels, paths, terminal output, agent names/session metadata,
+Only validated entity IDs, workspace/tab relationships, focus flags, agent status,
+named-session names/incarnations, project/provider IDs, optional readiness,
+terminal IDs, and opaque provider-session IDs are forwarded. Titles, labels,
+paths, terminal output, agent names, provider session-file references,
 and custom tokens are excluded on the node. The server also validates the
 projection and rejects unknown protobuf fields. This is not a complete layout
 or terminal mirror. Explicit agent queries and typed input commands use separate
@@ -228,7 +243,7 @@ durable event history, the fuller standalone CLI, and MCP remain later phases.
 
 ## Journaled command-safety probe
 
-Without workspace policies, the only admitted command is **`node.ping.v1`**, which returns `pong`. It never
+The read-only probe command is **`node.ping.v1`**, which returns `pong`. It never
 calls Herdr or executes shell commands. This exercises the command delivery and
 recovery path before introducing actual workspace/worktree mutations.
 
@@ -278,7 +293,10 @@ or the CLI wait times out, repeat `ctl ping` with the **same client identity,
 node, idempotency key, and TTL**. A matching retry returns the existing command,
 even if the node is now offline; changing the request under that key fails.
 Omitting the key generates a new one. Keys are request identifiers, never
-Tailscale enrollment secrets. Command lookup is scoped to the submitting actor.
+Tailscale enrollment secrets. Same-key submission retries remain scoped to the
+original submitting actor. Any client authorized for command access can inspect
+a known command ID with `ctl command`, including commands submitted by another
+client; lookup does not transfer the original actor's retry-key scope.
 
 `-ttl` defaults to 10 seconds and cannot exceed 30 seconds. It is an execution
 deadline, distinct from the CLI's `-timeout` (default 60 seconds). Dispatch intent
@@ -301,16 +319,112 @@ delete or replace journals to recover capacity: that discards retry protection.
 Back up the whole node state offline, just as for the coordinator.
 
 The durable audit covers **admitted command transitions**, not all denied
-requests. Denials are not a durable security audit. This is a probe-only safety
-foundation when no workspace policy is configured, not arbitrary mutation
-authorization, automated reconciliation, the fuller CLI, or MCP.
+requests. Denials are not a durable security audit. Probe-only nodes cannot
+perform Herdr mutations. This is not arbitrary mutation authorization,
+automatic reconciliation, the fuller CLI, or MCP.
+
+## Named headless sessions
+
+Upgrade the coordinator and node together. Enable the named-session manager
+with an **explicit** executable; no installed-default or focused session is
+selected implicitly, and no default Herdr process needs to be running:
+
+```powershell
+.\herdr-mesh.exe node -server '<server>:50052' `
+  -state-dir '<existing-node-state-dir>' -herdr-executable 'C:\Herdr\herdr.exe'
+.\herdr-mesh.exe ctl sessions -server '<server>:50052' -node '<node-id>' -json
+.\herdr-mesh.exe ctl session ensure -server '<server>:50052' -node '<node-id>' `
+  -name worker -key worker-start-1 -ttl 30s -json
+.\herdr-mesh.exe ctl sessions -server '<server>:50052' -node '<node-id>' -json
+```
+
+Use the node's existing hostname/identity and an unused enrolled client state
+directory as in the examples above. `-herdr-executable` enables the private node
+command journal, authenticated coordinator-tag checks, managed project
+configuration, and agent controls even without `-herdr-socket`.
+Keeping `-herdr-socket` preserves its configured/default route. With no socket,
+an empty session selector has **no default fallback**: it never means the
+focused session or an installed default. Select the name explicitly.
+Ensuring `default` when a custom unmanaged default socket is configured is
+rejected as `session_default_unmanaged`; it is not silently redirected.
+
+`ctl sessions` returns a typed `sessions` array plus `error_code`, not native
+paths, socket markers, or raw process diagnostics. Inventory entries expose
+`name`, `incarnation`, `status`, `error_code`, sanitized `herdr` topology,
+coordinator-assigned `herdr_received_at`, and computed `stale`. Each session's
+freshness is independent of the configured default: absent or unready default
+Herdr does not make a fresh named session stale. Repeating an aggregate
+inventory does not refresh unchanged sessions' observation receipt times.
+The node also replaces expired cached ready snapshots with entity-free
+`unavailable` / `observation_stale` states, even while other sessions refresh.
+`ctl nodes -json` also exposes `sessions`, `sessions_ready`,
+`sessions_received_at`, and `sessions_error_code`. Manager readiness
+(`sessions.manage.v1`) permits bootstrap; it does not imply any particular
+session or Herdr snapshot is ready. After ensure, wait for fresh ready selected
+session topology before workspace/worktree or agent operations. Offline,
+unsupported, unavailable, and replaced targets fail explicitly.
+
+Ensure is the durable command `sessions.ensure.v1`, not an unjournaled launch.
+Names must be portable lowercase names; platform-reserved names such as `con`,
+`nul`, and `lpt1` are rejected. A successful ensure returns the **actual
+64-lowercase-hex incarnation**. Re-ensure with a new key is a new operation:
+it can observe the same running session or start a stopped one with a new
+incarnation. Repeating the original key returns its historical receipt, not a
+fresh liveness check. Preserve the same authenticated client identity, node,
+name, key, and TTL after a disconnect or wait timeout; use `ctl command -id`
+to inspect uncertainty. Do not change the key to escape an `INDETERMINATE`
+startup outcome: startup may have happened. List and inspect before deciding
+whether a genuinely new ensure is appropriate.
+
+Workspace ensure, worktree create, and every agent operation (including
+`agent read -follow`) accept `-session worker` and
+`-session-incarnation <64hex>`. Preserve those values in exact retries along
+with project/binding/worktree inputs and the original key. Workspace/worktree
+results include `session_name` and `session_incarnation`; omitted pins are
+resolved for admission without rewriting the original durable retry request.
+
+```powershell
+.\herdr-mesh.exe ctl ensure-workspace -server '<server>:50052' -node '<node-id>' `
+  -project AgentFlow -session worker -session-incarnation '<incarnation>' -idempotency-key workspace-1
+.\herdr-mesh.exe ctl agent get -server '<server>:50052' -node '<node-id>' `
+  -session worker -agent w1:p1 -json
+.\herdr-mesh.exe ctl agent read -server '<server>:50052' -node '<node-id>' `
+  -session worker -session-incarnation '<incarnation>' -agent w1:p1 -follow -timeout 2m
+```
+
+Agent GET may discover by name without an incarnation and returns a fully
+pinned named target. A terminal ID alone is insufficient for named effects:
+the CLI still discovers if the session incarnation is missing. Supplying the
+original terminal **and** session incarnation skips client discovery for
+durable input retries, including when the original target is no longer live.
+`read -follow` uses the same discovery rule and retains the resolved session
+and terminal pins across polls.
+Pins prevent intentional rebinding, not all races: Herdr offers no atomic
+compare-and-swap (CAS) for expected session/terminal identity at input time.
+The node refreshes the selected session before each mutation IPC and checks it
+again before accepting success. Trusted local replacement between validation
+and an effect remains possible. Legacy empty selectors retain their configured
+default behavior; use an explicit session and its incarnation for restart
+fencing.
+
+Session discovery is bounded to 64 sessions per node, eight concurrent agent
+queries, and 256 KiB of aggregate session inventory. An over-budget topology is
+omitted with `session_capacity`, not returned as a complete tree. Session ensure
+and interrupt have independent bounded command lanes, so pending startup or
+read/wait queries do not globally serialize an interrupt. Reconnect cancels and
+joins the old stream's observers and queries before starting replacements.
+
+This integration is **headless-only**: it does not launch, attach, or automate
+native terminal/GUI frontends. Ensuring a session is not dedicated-agent
+launch/stop, and an input receipt is not proof of task completion.
 
 ## Headless existing-agent control
 
 The standalone CLI can **get, read, wait, prompt, send explicit input, and
 interrupt** an existing agent. It does not depend on MCP or an attached Herdr
 terminal/window. Upgrade the coordinator and node together, then configure the
-node's `-herdr-socket`. Existing Tailscale client/node/server role checks remain;
+node's `-herdr-socket` or `-herdr-executable` for named sessions.
+Existing Tailscale client/node/server role checks remain;
 agent operations need no project allowlist. `ctl nodes -json` exposes
 `agent_ready`, and the capability is `herdr.agent-control.v1`.
 
@@ -363,22 +477,105 @@ connection time. Canceling a wait cancels only the query, never the agent task.
 Input uses the existing durable command path and default ten-second TTL
 (maximum thirty seconds). The client prints the idempotency key and pinned
 target, and returns the command ID. For retries preserve the original
-`-idempotency-key`, `-terminal`, optional `-agent-session`, input, and TTL;
-an explicit terminal bypasses discovery, allowing the coordinator to return
+`-idempotency-key`, `-terminal`, optional `-agent-session`, input, TTL, and
+any `-session` / `-session-incarnation` selection;
+an explicit terminal (plus incarnation for a named session) bypasses discovery,
+allowing the coordinator to return
 the original receipt even when that agent is no longer available. Alternatively
-use `ctl command -id <command-id>`. **Do not generate a fresh key after an
-indeterminate outcome without inspecting the agent.** The mesh never
-automatically retries uncertain input as a new operation. Agent input does not
-add the project-wide quarantine used by workspace/worktree mutations.
+use `ctl command -id <command-id>`. **Never generate a fresh key or change a
+target to bypass an indeterminate outcome.** Inspect the original receipt and
+the preserved target. The mesh never automatically retries uncertain input as
+a new operation. Unknown input fences new prompt/input delivery to that terminal
+across keys; it does not add the project-wide quarantine used by workspace/worktree
+mutations. Read/query and explicitly pinned recovery controls remain separate.
 
-This slice addresses existing agents on the node's **one configured socket**.
-Named Herdr session ensure/start and multi-session routing, project registration,
-dedicated-pane agent launch/stop, output following, and MCP remain planned.
-Legacy workspace/worktree policy configuration below is unchanged; its
-single-user simplification is not yet implemented.
+These operations address existing agents on the configured default socket or
+an explicitly selected named headless session. Dedicated-pane launch/stop is
+available through `ctl agent start` and `ctl agent stop`, independently of
+session ensure; see the [operator guide](docs/operator-guide.md) for complete
+launch/task/stop examples and partial-outcome handling.
+Project registration below uses the same authenticated client role, without
+additional per-project actor allowlists.
 
 Headless compatibility evidence and the opt-in live fixture are documented in
 `docs\windows-live-validation.md`.
+
+## Central project configuration
+
+The coordinator is the durable authority for project configuration. Start the
+server normally and the node with its existing identity/state and
+`-herdr-socket` or `-herdr-executable`; either enables the node command journal
+automatically, and the executable-only mode accepts project registration
+before any session is running.
+No workspace-policy files, actor IDs, or extra project grants are needed.
+The existing Tailscale client/node/server role checks still apply.
+
+Discover the mesh node instance ID with `ctl nodes`, then register an existing
+Git checkout **on that node** from an unused enrolled client identity:
+
+```powershell
+.\herdr-mesh.exe ctl project register -server '<server>:50052' `
+  -node '<mesh-node-instance-id>' -project AgentFlow `
+  -path 'C:\dev\AgentFlow' -worktree-root 'C:\dev\AgentFlow-worktrees'
+.\herdr-mesh.exe ctl projects -server '<server>:50052' -node '<mesh-node-instance-id>' -json
+.\herdr-mesh.exe ctl project get -server '<server>:50052' `
+  -node '<mesh-node-instance-id>' -project AgentFlow -json
+```
+
+Add your usual `-state-dir` and `-hostname` flags when reusing an enrolled client.
+`ctl projects` without `-node` lists all registered bindings, following bounded
+RPC pages automatically. Project IDs are 1-128 ASCII letters, digits, colons,
+underscores, or hyphens. `-worktree-root` is optional: omission selects the
+checkout's sibling `<checkout-basename>-worktrees`. An explicit root overrides
+that default; include it again on updates to retain the override.
+Paths are interpreted and validated by the target node, not opened by the client
+or coordinator. Registration never clones or changes a checkout. The node may
+create the one output-root directory after validating its existing parent;
+unowned existing roots must be empty and disjoint from registered checkouts
+and other roots. Successful ownership is retained in the implementation-private
+node journal, not in operator-maintained JSON.
+
+Registration persists desired configuration; it does **not** mean that the node
+has applied it. Explicit project inspection shows desired and applied generations,
+paths, `readiness`, `adoption_status`, and bounded validation error categories:
+
+| Readiness | Meaning |
+| --- | --- |
+| `pending` | Waiting for the current node stream to validate and acknowledge the desired generation. |
+| `offline` | No live node stream; registration remains durable for reconnect. |
+| `applied` | The current stream has acknowledged the desired configuration. |
+| `invalid` | Node-local validation rejected it; inspect the error category and correct registration. |
+| `unsupported` | The connected node lacks managed-project support; upgrade/restart it with Herdr enabled. |
+
+Desired and last-applied configurations can differ while pending or offline.
+Do not treat a stored acknowledgement as live readiness after restart/reconnect.
+Identical registration is idempotent; changed paths advance an internal
+generation. New mutations require the current generation; already admitted
+operations keep their original binding or are rejected before effects.
+Workspace/worktree admission also requires a fresh ready Herdr baseline.
+Only explicit project registration/get/list output exposes configuration paths.
+Ordinary fleet observations, dashboard output, command results, and audit details
+remain path-free. Keep these inspection outputs and node-local paths out of shared
+AI Core memory, logs intended for sharing, and committed files.
+
+### Legacy policy migration
+
+Upgrade the coordinator first, preserving its state directory, and **remove**
+its old `-workspace-policy` flag. The server rejects that deprecated flag with
+an actionable error instead of loading a competing authority. On an upgraded
+node, the flag remains accepted only as deprecated one-time migration input:
+start with the existing node policy and `-herdr-socket`, inspect central
+`adoption_status` and readiness, then remove the flag on subsequent starts.
+Existing central configuration takes precedence; editing the old file is not
+an ongoing configuration mechanism. Resolve conflicts with `ctl project register`,
+not coordinated edits to two policy files. The project ID remains the stable
+logical key, never an inferred checkout path or workspace label.
+
+Preserve both coordinator and node journals during migration. Historical
+commands keep their original actor/key scopes and exact binding revisions;
+old exact same-key retries still return their recorded operation. A new client
+may inspect the known command ID but cannot reuse another actor's key to claim
+its retry. Never reset journals or issue a fresh key to bypass uncertainty.
 
 ## Project-scoped workspace ensure
 
@@ -389,50 +586,11 @@ send prompts, inject commands/environment variables, rename or close workspaces.
 Creating a Herdr workspace may start its normal local terminal; only bind
 checkouts whose local startup behavior you trust.
 
-Enable it by supplying **both** a coordinator and node `-workspace-policy` file.
-No policy means no workspace mutations. Policies are immutable for a process
-lifetime; edit them locally and restart the corresponding role to apply changes.
-They contain explicit actor allowlists, never wildcard grants.
-Keep policies outside the repository; `*.workspace-policy.json` is also ignored
-to help prevent accidental commits of machine-local bindings.
-
-Coordinator policy (no checkout paths):
-
-```json
-{
-  "projects": [
-    {
-      "project_id": "AgentFlow",
-      "node_id": "replace-with-mesh-node-instance-id",
-      "binding_revision": "r1",
-      "actor_ids": ["replace-with-client-tailscale-stable-id"]
-    }
-  ]
-}
-```
-
-Node policy repeats those exact fields and adds `"path": "C:\\dev\\AgentFlow"`
-to the project entry. Use a real existing Git checkout on that node, not this
-example path. `node_id` comes from `ctl nodes`; the actor is the client's
-**Tailscale stable ID**, not its hostname, account name, or mesh instance ID.
-The doctor reports that identity with its local diagnostics. Do not run it using
-state currently owned by the dashboard or another process.
-
-The project ID is a stable logical key, such as the established AI Core project
-key; it is not inferred from a checkout path or workspace label. These policies
-are explicit local bindings, not automatic vault synchronization. Local paths,
-enrollment credentials, and machine runtime state must not enter shared AI Core
-memory. Each policy is limited to 64 KiB and 128 bindings; duplicate bindings,
-checkout aliases, unknown JSON fields, mismatched node IDs, and invalid paths
-fail startup. Node bindings pin directory identity and recheck it before use.
-Change `binding_revision` on **both** policies whenever changing a binding.
-
-Upgrade/restart the server first with its existing identity flags plus
-`-workspace-policy '<server.workspace-policy.json>'`. Restart the node with its
-existing identity/socket flags plus `-workspace-policy '<node.workspace-policy.json>'`.
-A node policy requires `-herdr-socket`, enables the durable journal automatically,
-and also retains ping support; `-enable-probes` is not additionally required.
-The existing dashboard can remain running with its own enrolled state.
+Register the project centrally and wait for `applied` readiness as above.
+Node bindings pin directory identity and recheck it before use. The coordinator
+derives the effective binding revision; callers normally provide only node and
+project. `-binding-revision` remains available as an exact override for advanced
+use and historical retries.
 
 From an unused enrolled client identity:
 
@@ -442,7 +600,6 @@ From an unused enrolled client identity:
   -state-dir '<unused-enrolled-client-state-dir>' `
   -node '<mesh-node-instance-id>' `
   -project AgentFlow `
-  -binding-revision r1 `
   -idempotency-key ensure-AgentFlow-1 `
   -ttl 30s `
   -json
@@ -452,15 +609,15 @@ Preserve any explicitly configured client hostname. Success returns
 `workspace_ensure` with `project_id`, `binding_revision`, `workspace_id`, and
 `created`. Neither paths nor Herdr labels, terminal data, or raw errors are
 returned. Human output includes the same identifiers. `ctl command` retrieves
-the durable outcome; retries must retain the same actor, key, target, binding,
-and TTL. Reusing that key returns the original operation, not a new check after
+the durable outcome; retries must retain the same actor, key, target, request
+options, and TTL. Reusing that key returns the original operation, not a new check after
 someone closes its workspace.
 
 `ctl nodes -json` exposes `workspace_ready` separately from probe `command_ready`.
 Admission requires negotiated workspace support and a fresh ready Herdr baseline.
 The coordinator rechecks the client's and node's WhoIs roles before dispatch;
 the production node checks the actual coordinator peer again before its effect.
-Both sides enforce the project's actor/revision binding. Workspace execution is
+Both sides enforce the centrally configured project revision. Workspace execution is
 serialized on the node without blocking heartbeats or observer traffic.
 
 **Uncertainty is not retried.** A timeout, malformed response, or connection loss
@@ -486,17 +643,19 @@ two-host disruption validation.
 
 `ctl create-worktree` creates one new linked Git worktree and its Herdr
 workspace with `focus:false`. It requires a new branch, a new destination
-name, and an **exact full lowercase commit ID** already present in the bound
-repository. It does not fetch, clone, adopt existing destinations, overwrite
+name, and an exact commit already present in the bound repository. By default,
+the branch is the destination name and the node resolves its checkout's exact
+`HEAD` commit. `-branch` and `-base-commit <full-lowercase-sha>` preserve explicit
+overrides; symbolic refs (including a literal `-base-commit HEAD`) are rejected.
+It does not fetch, clone, adopt existing destinations, overwrite
 branches, inject commands, or change the source checkout's branch.
 
-This is a separate opt-in: add `"allow_worktrees": true` to the project entry
-in **both** coordinator and node policies. Existing policies leave worktrees
-disabled. The node entry additionally requires a pre-existing absolute
-`"worktree_root": "C:\\dev\\AgentFlow-worktrees"`; the coordinator forbids paths.
-Keep the existing checkout `path` unchanged, advance `binding_revision` on both
-sides, and restart the server before the node using their existing state and
-identity flags. Worktree support requires the negotiated
+Optionally configure `-worktree-root` through `ctl project register`.
+Omitting it selects a sibling named `<checkout-basename>-worktrees`; the node
+creates that directory if absent. Existing unowned roots must be empty.
+Wait for the updated configuration
+to be applied; policy edits, manually advanced revisions, and restarts are not
+needed for registration changes. Worktree support requires the negotiated
 `commands.worktree-create.v1` capability.
 
 The output root is directory-identity pinned, cannot be a filesystem root, and
@@ -515,10 +674,7 @@ From an unused enrolled client identity:
   -state-dir '<unused-enrolled-client-state-dir>' `
   -node '<mesh-node-instance-id>' `
   -project AgentFlow `
-  -binding-revision r2 `
   -name task-one `
-  -branch task-one `
-  -base-commit '<full-lowercase-commit-id>' `
   -idempotency-key create-task-one-1 `
   -json
 ```
@@ -530,12 +686,16 @@ actual Git HEAD, branch, and common repository identity. Success includes
 `worktree_create` with project, binding revision, workspace ID, name, branch,
 and base commit. Paths, labels, and raw local diagnostics remain private.
 `ctl nodes -json` exposes `worktree_ready`, requiring fresh Herdr observation
-as well as negotiated support. The same actor/revision checks, peer
+as well as negotiated support. The same client-role/revision checks, peer
 reauthorization, serialized node worker, and durable receipts apply.
 
 Repeat an interrupted CLI invocation only with the **same identity, key, target,
 arguments, and TTL**, or inspect it with `ctl command`. Every argument is bound
-to that key. A timeout does not undo or necessarily stop an already-started
+to that key. When defaults were omitted, keep them omitted on retry; the existing
+command retains its derived binding, and its success receipt reports the exact
+resolved base. A recorded attempt is never reexecuted against a later checkout
+HEAD. Explicit historical revision/branch/base overrides must
+remain exactly the same. A timeout does not undo or necessarily stop an already-started
 Herdr operation. Missing or inconsistent creation metadata, failed postchecks,
 lost replies, and interrupted execution produce `INDETERMINATE`, with no
 automatic retry, rollback, branch deletion, or directory cleanup. Uncertainty
@@ -556,65 +716,8 @@ worktree mutation on the live mesh and the deferred two-host disruption gate
 remain unvalidated. Fuller independent CLI functionality comes next; MCP follows
 the CLI rather than being its dependency.
 
-## Windows tsnet feasibility spike
+## Archived developer experiment
 
-The first milestone is intentionally disposable. It tests whether two Windows
-processes can embed Tailscale with `tsnet` and exchange bidirectional gRPC
-messages without a separately installed Tailscale daemon. It does not contain
-Herdr integration or production mesh architecture.
-
-Use a development Tailscale auth key that may enroll both nodes, or separate
-keys. Keep keys in environment variables and never commit them.
-
-On the server machine:
-
-```powershell
-$env:TS_AUTHKEY_SERVER = '<development-auth-key>'
-go run ./src/cmd/spike server `
-  -hostname herdr-mesh-spike-server `
-  -state-dir "$env:LOCALAPPDATA\herdr-mesh-spike\server"
-```
-
-After the server is enrolled, use its full MagicDNS name on the client machine:
-
-```powershell
-$env:TS_AUTHKEY_CLIENT = '<development-auth-key>'
-go run ./src/cmd/spike client `
-  -hostname herdr-mesh-spike-client `
-  -state-dir "$env:LOCALAPPDATA\herdr-mesh-spike\client" `
-  -server 'herdr-mesh-spike-server.example.ts.net:50051'
-```
-
-Each line entered by the client is sent through a bidirectional gRPC stream and
-returned as a pong. If the stream fails, the client retries the same message
-until the server becomes reachable or Ctrl+C is pressed.
-
-The state directories contain persistent tsnet node identities. Keep the server
-and client directories separate, do not share them between machines, and retain
-them when testing restart behavior. If the state is already enrolled, the auth
-key environment variable may be omitted.
-
-Optional flags:
-
-```text
--auth-key-env <name>  Environment variable containing the auth key
--debug                Enable verbose tsnet logs
--listen <address>     Server listener, default :50051
--retry-delay <value>  Client reconnect delay, default 2s
--tags <tag:a,tag:b>   Tailscale tags requested during enrollment
-```
-
-Run the local protocol test:
-
-```powershell
-go test ./src/cmd/spike
-```
-
-The actual feasibility decision requires the server and client to run on two
-Windows machines on the same tailnet, followed by restart and temporary network
-loss tests.
-
-That feasibility test has passed. The spike remains isolated from production
-packages. Removing it is a post-gate remaining action after the production
-transport validation is complete; it is intentionally retained during this
-gate.
+The disposable transport spike is retained under
+[`experiments/tsnet-spike`](experiments/tsnet-spike/README.md), outside production
+entrypoints. It is not shipped and is not an alternative operator command.

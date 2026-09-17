@@ -130,13 +130,22 @@ func interruptedNodeResult(id string) *pb.CommandResult {
 	return &pb.CommandResult{CommandId: id, Status: statusIndeterminate, Detail: "node_restarted"}
 }
 
+func interruptedCommandResult(command *pb.Command) *pb.CommandResult {
+	result := interruptedNodeResult(command.CommandId)
+	if command.CommandType == protocol.SessionEnsureCommandType {
+		result.Detail = "startup_uncertain"
+	}
+	return result
+}
+
 // Claim returns nil,true only after committing the execution intent. An existing
 // RUNNING intent is durably marked indeterminate, never granted to an executor.
 // Remaining wire TTL is not identity; the fixed absolute expiry is.
 // New project mutations are rejected while any retained mutation for their
 // project is running or indeterminate, including acknowledged uncertainty.
-// Agent controls have no project binding: only exact command-ID deduplication
-// applies, not cross-key agent quarantine or automatic retries after uncertainty.
+// Lifecycle and prompt/input uncertainty also fence canonical native resources
+// across actors and request keys. Explicit stop/interrupt remain independently
+// dispatchable and must freshly verify their pinned target before every effect.
 func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.CommandResult, bool, error) {
 	if err := j.store.enter(ctx); err != nil {
 		return nil, false, err
@@ -157,7 +166,10 @@ func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.Comma
 				result = entry.result
 				return nil
 			}
-			result = interruptedNodeResult(command.CommandId)
+			result, err = recoveredLifecycleResult(ctx, tx, command)
+			if err != nil {
+				return err
+			}
 			return writeNodeResult(ctx, tx, entry.command, result)
 		}
 		if !errors.Is(err, ErrCommandNotFound) {
@@ -174,12 +186,28 @@ func (j *NodeJournal) Claim(ctx context.Context, command *pb.Command) (*pb.Comma
 		if err != nil {
 			return err
 		}
-		if projectID, _ := protocol.CommandProject(command); projectID != "" {
+		if err := checkNodeLifecycleFence(ctx, tx, j.nodeID, command, ""); err != nil {
+			if !errors.Is(err, ErrLifecycleUnresolved) {
+				return err
+			}
+			result = &pb.CommandResult{CommandId: command.CommandId, Status: statusRejected, Detail: "lifecycle_unresolved"}
+			resultBytes, err := marshalCommandMessage(result)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, "INSERT INTO node_commands(command_id, status, delivered, command, result) VALUES (?, ?, 0, ?, ?)",
+				command.CommandId, result.Status, payload, resultBytes)
+			return err
+		}
+		if projectID, _ := protocol.CommandProject(command); projectID != "" && !protocol.IsLifecycleCommand(command.CommandType) {
 			entries, err := readNodeEntries(ctx, tx, j.nodeID, "WHERE status IN (?, ?)", []any{statusRunning, statusIndeterminate})
 			if err != nil {
 				return err
 			}
 			for _, prior := range entries {
+				if protocol.IsLifecycleCommand(prior.command.CommandType) {
+					continue
+				}
 				priorProjectID, _ := protocol.CommandProject(prior.command)
 				if priorProjectID != projectID {
 					continue
@@ -222,6 +250,15 @@ func (j *NodeJournal) Complete(ctx context.Context, result *pb.CommandResult) er
 		}
 		if err := protocol.ValidateResultForCommand(result, entry.command); err != nil {
 			return fmt.Errorf("%w: %v", ErrCommandConflict, err)
+		}
+		if protocol.IsLifecycleCommand(entry.command.CommandType) {
+			old, err := readLifecycle(ctx, tx, entry.command)
+			if err != nil {
+				return err
+			}
+			if !proto.Equal(old, result.AgentLifecycle) {
+				return ErrCommandConflict
+			}
 		}
 		if entry.result != nil {
 			if !proto.Equal(entry.result, result) {
@@ -290,7 +327,11 @@ func (j *NodeJournal) Recover(ctx context.Context) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := writeNodeResult(ctx, tx, entry.command, interruptedNodeResult(entry.command.CommandId)); err != nil {
+			result, err := recoveredLifecycleResult(ctx, tx, entry.command)
+			if err != nil {
+				return err
+			}
+			if err := writeNodeResult(ctx, tx, entry.command, result); err != nil {
 				return err
 			}
 		}

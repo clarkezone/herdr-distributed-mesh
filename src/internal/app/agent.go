@@ -5,8 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"os"
 	"time"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
@@ -27,9 +25,12 @@ func (v *agentKeys) Set(value string) error {
 
 func runAgent(ctx context.Context, args []string, streams IO) error {
 	if len(args) == 0 {
-		return errors.New("agent requires get, read, wait, prompt, input, or interrupt")
+		return errors.New("agent requires get, read, wait, prompt, input, interrupt, start, or stop")
 	}
 	verb := args[0]
+	if verb == "start" || verb == "stop" {
+		return runAgentLifecycle(ctx, verb, args[1:], streams)
+	}
 	kind := pb.AgentQueryKind_AGENT_QUERY_KIND_GET
 	action := pb.AgentControlAction_AGENT_CONTROL_ACTION_UNSPECIFIED
 	switch verb {
@@ -56,15 +57,21 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 	paneID := flags.String("agent", "", "agent pane ID, for example w1:p1")
 	terminalID := flags.String("terminal", "", "expected terminal ID; optional for discovery, preserve for exact retries")
 	sessionID := flags.String("agent-session", "", "optional expected provider session ID; not a named Herdr session")
+	sessionName := flags.String("session", "", "named Herdr session; omission selects only the configured default")
+	sessionIncarnation := flags.String("session-incarnation", "", "expected 64-hex Herdr session incarnation; preserve for exact retries")
 	jsonOutput := flags.Bool("json", false, "write one typed JSON result")
 	timeout := flags.Duration("timeout", time.Minute, "overall connection and operation timeout")
 	var lines uint
+	var follow bool
+	pollInterval := time.Second
 	var until, prompt, promptFile, key string
 	var keys agentKeys
 	waitTimeout := 30 * time.Second
 	ttl := protocol.DefaultCommandTTL
 	if verb == "read" {
 		flags.UintVar(&lines, "lines", 100, "recent output lines, at most 1000")
+		flags.BoolVar(&follow, "follow", false, "poll bounded snapshots until timeout; JSON output is JSONL with explicit gaps")
+		flags.DurationVar(&pollInterval, "poll-interval", time.Second, "follow polling interval, 250ms..30s")
 	}
 	if verb == "wait" {
 		flags.StringVar(&until, "until", "", "comma-separated observed states; default idle,done,blocked")
@@ -102,32 +109,18 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 	if verb == "read" && (lines == 0 || lines > 1000) {
 		return errors.New("-lines must be 1..1000")
 	}
-	target := &pb.AgentTarget{PaneId: *paneID, TerminalId: *terminalID, AgentSessionId: *sessionID}
+	if verb == "read" && (pollInterval < 250*time.Millisecond || pollInterval > 30*time.Second) {
+		return errors.New("-poll-interval must be 250ms..30s")
+	}
+	target := &pb.AgentTarget{PaneId: *paneID, TerminalId: *terminalID, AgentSessionId: *sessionID, SessionName: *sessionName, SessionIncarnation: *sessionIncarnation}
 	if err := protocol.ValidateAgentTarget(target, false); err != nil {
 		return err
 	}
 	if verb == "prompt" {
-		if promptFile != "" && prompt != "" {
-			return errors.New("use -prompt or -prompt-file, not both")
-		}
-		if promptFile != "" {
-			input := streams.In
-			if input == nil {
-				input = os.Stdin
-			}
-			if promptFile != "-" {
-				file, err := os.Open(promptFile)
-				if err != nil {
-					return fmt.Errorf("open prompt file: %w", err)
-				}
-				defer file.Close()
-				input = file
-			}
-			data, err := io.ReadAll(io.LimitReader(input, protocol.MaxAgentPromptBytes+1))
-			if err != nil {
-				return fmt.Errorf("read prompt: %w", err)
-			}
-			prompt = string(data)
+		var err error
+		prompt, err = readAgentPrompt(prompt, promptFile, streams)
+		if err != nil {
+			return err
 		}
 	}
 	var command *pb.AgentControl
@@ -144,5 +137,9 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 	}
 	op, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	return control.Agent(op, control.Options{Output: streams.Out, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config()}, query, command, key, ttl)
+	options := control.Options{Output: streams.Out, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config()}
+	if follow {
+		return control.FollowAgent(op, options, query, pollInterval)
+	}
+	return control.Agent(op, options, query, command, key, ttl)
 }

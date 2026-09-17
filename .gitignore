@@ -42,6 +42,8 @@ journal.db-journal
 journal.db.lock
 workspace-policy.json
 *.workspace-policy.json
+dist/
+.playwright-mcp/
 
 # Editor/IDE
 # .idea/

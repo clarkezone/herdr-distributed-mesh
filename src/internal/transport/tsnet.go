@@ -20,11 +20,12 @@ import (
 )
 
 type Config struct {
-	AuthKeyEnv string
-	Debug      bool
-	Hostname   string
-	StateDir   string
-	Tags       []string
+	AuthKeyEnv   string
+	Debug        bool
+	Hostname     string
+	RoleStateDir string
+	StateDir     string
+	Tags         []string
 }
 
 type PeerIdentity struct {
@@ -107,6 +108,15 @@ func (network *Network) Listen(address string) (net.Listener, error) {
 	listener, err := network.server.Listen("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen on tsnet address %q: %w", address, err)
+	}
+
+	return listener, nil
+}
+
+func (network *Network) ListenTLS(address string) (net.Listener, error) {
+	listener, err := network.server.ListenTLS("tcp", address)
+	if err != nil {
+		return nil, fmt.Errorf("listen with TLS on tsnet address %q: %w", address, err)
 	}
 	return listener, nil
 }

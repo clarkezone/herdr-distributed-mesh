@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   STALE_AFTER_MS, ERROR_MESSAGES, DashboardError, agentStatus, parseSnapshot,
   initialState, acceptSnapshot, rejectSnapshot, freshness, nodeFreshness, summary,
-  projectAgents, projectWorkspaces, projectNodes, topology, countLabel, ageLabel, fetchSnapshot, createPoller,
+  projectAgents, projectWorkspaces, projectNodes, sessionContexts, topology, countLabel, ageLabel, fetchSnapshot, createPoller,
 } from "./model.mjs";
 
 const now = Date.parse("2026-09-15T17:00:00Z");
@@ -186,6 +186,131 @@ function paneAgentNode(id = "node-1") {
   })];
   return value;
 }
+
+function multiSessionNode() {
+  const value = paneAgentNode();
+  value.herdr = { ...value.herdr, status: "waiting", workspaces: [], tabs: [], panes: [], agents: [] };
+  value.stale = true;
+  value.herdr_received_at = null;
+  value.sessions_ready = true;
+  value.sessions_received_at = iso();
+  value.sessions = ["dev-a", "dev-b"].map((name) => ({ name, incarnation: `${name}-incarnation`,
+    status: "ready", error_code: "", herdr: paneAgentNode().herdr }));
+  return value;
+}
+
+test("named sessions isolate reused pane IDs without requiring a ready default socket", () => {
+  const value = multiSessionNode();
+  value.sessions[0].herdr.panes = [];
+  const state = success([value]);
+  const rows = projectAgents(state.snapshot.nodes);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].node.session_name, "dev-a");
+  assert.equal(rows[0].pane, null);
+  assert.equal(rows[1].node.session_name, "dev-b");
+  assert.equal(rows[1].pane.id, "w1:p1");
+  assert.equal(nodeFreshness(rows[0].node, state, now).live, true);
+  assert.equal(nodeFreshness(state.snapshot.nodes[0], state, now).live, true);
+  assert.equal(summary(state, now).live.connected, 1);
+  assert.equal(summary(state, now).live.fresh, 1);
+  assert.equal(summary(state, now).live.workspaces, 2);
+  assert.equal(projectWorkspaces(state.snapshot.nodes).length, 2);
+  assert.equal(projectNodes(state.snapshot.nodes, "dev-b").length, 1);
+});
+
+test("literal default never replaces an unidentified configured endpoint", () => {
+  const value = paneAgentNode();
+  value.sessions_ready = true;
+  value.sessions_received_at = iso();
+  value.sessions = [{ name: "default", incarnation: "default-incarnation", status: "ready", error_code: "", herdr: value.herdr }];
+  const state = success([value]);
+  const contexts = sessionContexts(state.snapshot.nodes[0]);
+  assert.equal(contexts.length, 2);
+  assert.equal(contexts[0].session_name, "");
+  assert.equal(contexts[0].session_label, "Configured default");
+  assert.equal(contexts[1].session_name, "default");
+  assert.equal(nodeFreshness(contexts[0], state, now).live, true);
+  assert.equal(projectAgents(state.snapshot.nodes).length, 2);
+  assert.equal(projectAgents(state.snapshot.nodes, "", "all", { session: "default" }).length, 1);
+  assert.equal(summary(state, now).known.workspaces, 2);
+});
+
+test("session freshness uses its own observation stream and never revives stopped retained data", () => {
+  const value = multiSessionNode();
+  value.sessions[0].herdr_received_at = iso(-30_000);
+  value.sessions[1].status = "stopped";
+  const state = success([value]);
+  assert.equal(summary(state, now).live.workspaces, 0);
+  assert.equal(summary(state, now).known.workspaces, 2);
+  assert.equal(projectAgents(state.snapshot.nodes).length, 2, "retained inventory remains visible");
+  for (const row of projectAgents(state.snapshot.nodes)) assert.equal(nodeFreshness(row.node, state, now).live, false);
+});
+
+test("an explicitly missing child timestamp cannot borrow aggregate freshness", () => {
+  const value = multiSessionNode();
+  value.sessions[0].herdr_received_at = null;
+  value.sessions[0].stale = false;
+  const state = success([value]);
+  const child = sessionContexts(state.snapshot.nodes[0]).find((item) => item.session_name === "dev-a");
+  assert.equal(child.herdr_received_at, null);
+  assert.equal(nodeFreshness(child, state, now).live, false);
+  assert.equal(summary(state, now).live.workspaces, 1);
+  assert.equal(summary(state, now).known.workspaces, 2);
+});
+
+test("project provider readiness and session filters compose on the same agent", () => {
+  const value = multiSessionNode();
+  for (const session of value.sessions) {
+    session.herdr.workspaces[0].project_id = "example-app";
+    session.herdr.agents[0].provider = session.name === "dev-a" ? "copilot" : "claude";
+    session.herdr.agents[0].interactive_ready = session.name === "dev-a";
+  }
+  const nodes = snapshot([value]).nodes;
+  const filters = { project: "example-app", provider: "COPILOT", readiness: "ready", session: "dev-a" };
+  assert.equal(projectAgents(nodes, "", "working", filters).length, 1);
+  assert.equal(projectWorkspaces(nodes, "", "working", filters).length, 1);
+  assert.equal(projectNodes(nodes, "", "working", filters).length, 1);
+  assert.equal(projectAgents(nodes, "", "working", { ...filters, session: "dev-b" }).length, 0);
+  assert.equal(projectAgents(nodes, "", "working", { ...filters, readiness: "not-ready" }).length, 0);
+  assert.equal(projectAgents(nodes, "claude").length, 1);
+  assert.equal(projectAgents(nodes, "example-app").length, 2);
+  assert.equal(projectWorkspaces(nodes, "example-app").length, 2);
+});
+
+test("legacy provider/readiness remain unknown instead of fabricating readiness or a project", () => {
+  const nodes = snapshot([paneAgentNode()]).nodes;
+  assert.equal(projectAgents(nodes, "", "all", { readiness: "unknown", provider: "unknown" }).length, 1);
+  assert.equal(projectAgents(nodes, "", "all", { readiness: "ready" }).length, 0);
+  assert.equal(projectAgents(nodes, "", "all", { project: "example-app" }).length, 0);
+});
+
+test("session parsing rejects duplicate identities, malformed metadata and excessive sessions", () => {
+  for (const change of [
+    (n) => { n.sessions[1].name = n.sessions[0].name; },
+    (n) => { n.sessions[0].status = "invented"; },
+    (n) => { n.sessions[0].incarnation = {}; },
+    (n) => { n.sessions_received_at = "yesterday"; },
+    (n) => { n.sessions[0].herdr.agents[0].provider = "<script>"; },
+    (n) => { n.sessions[0].herdr.agents[0].interactive_ready = "yes"; },
+    (n) => { n.sessions = Array.from({ length: 65 }, (_, i) => ({ ...n.sessions[0], name: `dev-${i}` })); },
+  ]) {
+    const value = multiSessionNode();
+    change(value);
+    assert.throws(() => snapshot([value]), { code: "invalid_response" });
+  }
+});
+
+test("not-yet-observed sessions preserve lifecycle status without inventing inventory", () => {
+  const value = multiSessionNode();
+  value.sessions[0].status = "starting";
+  value.sessions[0].herdr = null;
+  const state = success([value]);
+  const pending = sessionContexts(state.snapshot.nodes[0]).find((item) => item.session_name === "dev-a");
+  assert.equal(pending.session_status, "starting");
+  assert.equal(pending.herdr.status, "waiting");
+  assert.equal(nodeFreshness(pending, state, now).live, false);
+  assert.equal(projectAgents(state.snapshot.nodes).length, 1);
+});
 
 test("real-shaped agent IDs resolve to panes in the table projection and nested topology", () => {
   const nodes = snapshot([paneAgentNode()]).nodes;

@@ -27,22 +27,29 @@ const (
 )
 
 type fleetEntry struct {
-	view          *agentflowv1.NodeView
-	done          chan struct{}
-	outbound      chan queuedCommand
-	probes        bool
-	workspaces    bool
-	worktrees     bool
-	agents        bool
-	queries       map[string]*pendingAgentQuery
-	queryCanceled map[string]time.Time
-	queryOutbound chan *agentflowv1.NodeEnvelope
-	peerContext   context.Context
-	streamDone    <-chan struct{}
-	supersedeOnce sync.Once
-	sendMu        sync.Mutex
-	sends         sync.WaitGroup
-	drained       chan struct{}
+	view            *agentflowv1.NodeView
+	done            chan struct{}
+	outbound        chan queuedCommand
+	probes          bool
+	workspaces      bool
+	worktrees       bool
+	agents          bool
+	lifecycle       bool
+	projects        bool
+	sessions        bool
+	sessionSequence uint64
+	projectWake     chan struct{}
+	projectSent     map[string]*agentflowv1.ProjectConfig
+	projectApplied  map[string]*agentflowv1.ProjectAck
+	queries         map[string]*pendingAgentQuery
+	queryCanceled   map[string]time.Time
+	queryOutbound   chan *agentflowv1.NodeEnvelope
+	peerContext     context.Context
+	streamDone      <-chan struct{}
+	supersedeOnce   sync.Once
+	sendMu          sync.Mutex
+	sends           sync.WaitGroup
+	drained         chan struct{}
 }
 
 func (e *fleetEntry) supersede() {
@@ -216,7 +223,7 @@ func (f *fleetStore) restore(views []*agentflowv1.NodeView, now time.Time) error
 			return errors.New("stored fleet contains duplicate Tailscale identities")
 		}
 		stableIDs[view.TailscaleStableId] = true
-		total += proto.Size(view.Herdr)
+		total += nodeStateSize(view)
 		if total > maxFleetBytes {
 			return errors.New("stored fleet exceeds payload limit")
 		}
@@ -227,6 +234,8 @@ func (f *fleetStore) restore(views []*agentflowv1.NodeView, now time.Time) error
 		copy.WorkspaceReady = false
 		copy.WorktreeReady = false
 		copy.AgentReady = false
+		copy.SessionsReady = false
+		projectSessionFreshness(copy, now)
 		nodes[copy.InstanceId] = &fleetEntry{view: copy, done: make(chan struct{})}
 	}
 	f.nodes = nodes
@@ -242,6 +251,9 @@ func validateStoredNode(view *agentflowv1.NodeView) error {
 		return bad
 	}
 	state := view.Herdr
+	if err := validateStoredSessions(view); err != nil {
+		return bad
+	}
 	switch state.Status {
 	case "disabled", "waiting":
 		if !proto.Equal(state, &agentflowv1.HerdrState{Status: state.Status}) || view.HerdrReceivedAt != nil {
@@ -359,6 +371,8 @@ func (f *fleetStore) end(entry *fleetEntry) error {
 		copy.WorkspaceReady = false
 		copy.WorktreeReady = false
 		copy.AgentReady = false
+		copy.SessionsReady = false
+		projectSessionFreshness(copy, time.Now())
 		if err := f.save(copy); err != nil {
 			return err
 		}
@@ -385,6 +399,7 @@ func (f *fleetStore) heartbeat(entry *fleetEntry, now time.Time, ready ...bool) 
 	copy.WorkspaceReady = copy.CommandReady && len(ready) > 1 && ready[1] && entry.workspaces && freshHerdr(copy, now)
 	copy.WorktreeReady = copy.WorkspaceReady && len(ready) > 2 && ready[2] && entry.worktrees
 	copy.AgentReady = copy.CommandReady && len(ready) > 3 && ready[3] && entry.agents && freshHerdr(copy, now)
+	copy.SessionsReady = len(ready) > 4 && ready[4] && entry.sessions
 	if err := f.save(copy); err != nil {
 		return err
 	}
@@ -426,6 +441,10 @@ func validateHerdrState(state *agentflowv1.HerdrState) error {
 			if entity == nil || !safeIdentifier.MatchString(entity.Id) || seen[entity.Id] ||
 				(entity.WorkspaceId != "" && !safeIdentifier.MatchString(entity.WorkspaceId)) ||
 				(entity.TabId != "" && !safeIdentifier.MatchString(entity.TabId)) ||
+				(entity.Provider != "" && !safeIdentifier.MatchString(entity.Provider)) ||
+				(entity.TerminalId != "" && !safeIdentifier.MatchString(entity.TerminalId)) ||
+				(entity.ProviderSessionId != "" && !safeIdentifier.MatchString(entity.ProviderSessionId)) ||
+				(entity.ProjectId != "" && !safeIdentifier.MatchString(entity.ProjectId)) ||
 				len(entity.ProtoReflect().GetUnknown()) != 0 {
 				return bad
 			}
@@ -452,10 +471,10 @@ func (f *fleetStore) update(entry *fleetEntry, state *agentflowv1.HerdrState, no
 	if state.Sequence <= entry.view.Herdr.Sequence {
 		return status.Error(codes.InvalidArgument, "Herdr sequence must increase within a stream")
 	}
-	size := proto.Size(state)
+	size := nodeStateSize(entry.view) - proto.Size(entry.view.Herdr) + proto.Size(state)
 	for _, other := range f.nodes {
 		if other != entry {
-			size += proto.Size(other.view.Herdr)
+			size += nodeStateSize(other.view)
 		}
 	}
 	if size > maxFleetBytes {
@@ -490,6 +509,9 @@ func (f *fleetStore) list(now time.Time) (*agentflowv1.NodeList, error) {
 		view.WorkspaceReady = view.WorkspaceReady && freshHerdr(view, now) && f.current(entry)
 		view.WorktreeReady = view.WorktreeReady && view.WorkspaceReady
 		view.AgentReady = view.AgentReady && freshHerdr(view, now) && f.current(entry)
+		view.SessionsReady = view.SessionsReady && view.Connected && f.current(entry) &&
+			now.Sub(view.LastSeen.AsTime()) < herdrStaleAfter
+		projectSessionFreshness(view, now)
 		list.Nodes = append(list.Nodes, view)
 	}
 

@@ -33,7 +33,7 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 	if s.commands == nil {
 		return nil, status.Error(codes.Unimplemented, "command journals are not configured")
 	}
-	if request != nil && request.CommandType != protocol.ProbeCommandType && request.CommandType != protocol.WorkspaceEnsureCommandType && request.CommandType != protocol.WorktreeCreateCommandType && request.CommandType != protocol.AgentControlCommandType {
+	if request != nil && request.CommandType != protocol.ProbeCommandType && request.CommandType != protocol.WorkspaceEnsureCommandType && request.CommandType != protocol.WorktreeCreateCommandType && request.CommandType != protocol.AgentControlCommandType && request.CommandType != protocol.SessionEnsureCommandType && !protocol.IsLifecycleCommand(request.CommandType) {
 		log.Printf("command admission denied actor=%s reason=unsupported_command", identity.StableID)
 		return nil, status.Error(codes.PermissionDenied, "unsupported command type")
 	}
@@ -50,9 +50,16 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 	defer cancel()
 	existing, err := s.commands.FindCommand(op, identity.StableID, request.IdempotencyKey)
 	if err == nil {
+		if original := existing.Command.SubmittedRequest; original != nil {
+			if !proto.Equal(original, request) {
+				return nil, status.Error(codes.AlreadyExists, "idempotency key was used for a different request")
+			}
+			return existing, nil
+		}
 		if existing.Command.TargetId != request.NodeInstanceId || existing.Command.CommandType != request.CommandType ||
 			!proto.Equal(existing.Command.Ttl, request.Ttl) || !proto.Equal(existing.Command.WorkspaceEnsure, request.WorkspaceEnsure) ||
-			!proto.Equal(existing.Command.WorktreeCreate, request.WorktreeCreate) || !proto.Equal(existing.Command.AgentControl, request.AgentControl) {
+			!proto.Equal(existing.Command.WorktreeCreate, request.WorktreeCreate) || !proto.Equal(existing.Command.AgentControl, request.AgentControl) ||
+			!proto.Equal(existing.Command.SessionEnsure, request.SessionEnsure) {
 			return nil, status.Error(codes.AlreadyExists, "idempotency key was used for a different request")
 		}
 		return existing, nil
@@ -61,21 +68,75 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 		return nil, s.commandErrorLocked(err)
 	}
 	entry := s.fleet.nodes[request.NodeInstanceId]
-	if entry == nil || !s.fleet.current(entry) || !entry.view.Connected || !entry.probes || !entry.view.CommandReady {
+	name, incarnation := requestSession(request)
+	if entry == nil || !s.fleet.current(entry) || !entry.view.Connected {
 		log.Printf("command admission denied actor=%s reason=node_not_ready", identity.StableID)
 		return nil, status.Error(codes.FailedPrecondition, "target node has no ready probe session")
 	}
+	if request.CommandType == protocol.SessionEnsureCommandType {
+		if !s.sessionsConfigured() || !sessionManagerReady(entry, time.Now()) {
+			return nil, status.Error(codes.FailedPrecondition, "target node has no ready session manager")
+		}
+	} else if name != "" {
+		if !mutationReady(entry, request.CommandType, time.Now(), name, incarnation) {
+			return nil, status.Error(codes.FailedPrecondition, "selected session is not ready")
+		}
+	} else if !entry.probes || !entry.view.CommandReady {
+		return nil, status.Error(codes.FailedPrecondition, "target node has no ready probe session")
+	}
+	var submitted *agentflowv1.SubmitCommandRequest
+	if name != "" || incarnation != "" || request.CommandType == protocol.AgentControlCommandType || protocol.IsLifecycleCommand(request.CommandType) {
+		submitted = proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
+	}
 	if projectID, revision := protocol.RequestProject(request); projectID != "" {
-		binding, err := s.workspacePolicy.Resolve(request.NodeInstanceId, projectID, revision, identity.StableID)
-		if err != nil || (request.CommandType == protocol.WorktreeCreateCommandType && !binding.AllowWorktrees) {
-			log.Printf("command admission denied actor=%s reason=project_not_authorized", identity.StableID)
-			return nil, status.Error(codes.PermissionDenied, "project operation is not authorized")
+		if entry.projects || s.workspacePolicy == nil || request.AgentStart != nil {
+			record, err := s.managedProjectReadyLocked(op, entry, projectID, revision)
+			if err != nil {
+				return nil, err
+			}
+			submitted = proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
+			revision = protocol.ProjectRevision(record.Desired.Generation)
+			if request.AgentStart != nil {
+				request.AgentStart.BindingRevision = revision
+			}
+			if request.WorkspaceEnsure != nil {
+				request.WorkspaceEnsure.BindingRevision = revision
+			}
+			if w := request.WorktreeCreate; w != nil {
+				w.BindingRevision = revision
+				if w.Branch == "" {
+					w.Branch = w.Name
+				}
+			}
+		} else {
+			binding, err := s.workspacePolicy.Resolve(request.NodeInstanceId, projectID, revision, identity.StableID)
+			if err != nil || (request.CommandType == protocol.WorktreeCreateCommandType && !binding.AllowWorktrees) {
+				return nil, status.Error(codes.PermissionDenied, "project operation is not authorized")
+			}
 		}
-		if request.CommandType == protocol.AgentControlCommandType && (!s.agentConfigured() || !mutationReady(entry, request.CommandType, time.Now())) {
-			return nil, status.Error(codes.FailedPrecondition, "target node has no ready agent session")
-		}
-		if !mutationReady(entry, request.CommandType, time.Now()) {
+		if !mutationReady(entry, request.CommandType, time.Now(), name, incarnation) {
 			return nil, status.Error(codes.FailedPrecondition, "target node has no fresh session for this operation")
+		}
+	}
+	if (request.CommandType == protocol.AgentControlCommandType || protocol.IsLifecycleCommand(request.CommandType)) &&
+		(!s.agentConfigured() || !mutationReady(entry, request.CommandType, time.Now(), name, incarnation)) {
+		return nil, status.Error(codes.FailedPrecondition, "target node has no ready agent session")
+	}
+	if name != "" && incarnation == "" && request.CommandType != protocol.SessionEnsureCommandType {
+		// Resolve against the same locked inventory used for admission, but
+		// retain the operator's unpinned request as the exact retry identity.
+		selected := findSession(entry.view, name)
+		if selected == nil || !protocol.ValidSessionIncarnation(selected.Incarnation) {
+			return nil, status.Error(codes.FailedPrecondition, "selected session has no current incarnation")
+		}
+		if request.WorkspaceEnsure != nil {
+			request.WorkspaceEnsure.SessionIncarnation = selected.Incarnation
+		}
+		if request.WorktreeCreate != nil {
+			request.WorktreeCreate.SessionIncarnation = selected.Incarnation
+		}
+		if request.AgentStart != nil {
+			request.AgentStart.SessionIncarnation = selected.Incarnation
 		}
 	}
 	if len(entry.outbound) >= cap(entry.outbound) {
@@ -85,10 +146,25 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 	command := &agentflowv1.Command{
 		CommandId: protocol.NewCommandID(), IdempotencyKey: request.IdempotencyKey, CommandType: request.CommandType,
 		TargetId: request.NodeInstanceId, Ttl: request.Ttl, ExpiresAt: timestamppb.New(now.Add(request.Ttl.AsDuration())),
-		Actor:           &agentflowv1.Actor{ActorId: identity.StableID, Role: agentflowv1.Role_ROLE_CONTROLLER},
-		WorkspaceEnsure: request.WorkspaceEnsure,
-		WorktreeCreate:  request.WorktreeCreate,
-		AgentControl:    request.AgentControl,
+		Actor:            &agentflowv1.Actor{ActorId: identity.StableID, Role: agentflowv1.Role_ROLE_CONTROLLER},
+		WorkspaceEnsure:  request.WorkspaceEnsure,
+		WorktreeCreate:   request.WorktreeCreate,
+		AgentControl:     request.AgentControl,
+		SessionEnsure:    request.SessionEnsure,
+		AgentStart:       request.AgentStart,
+		AgentStop:        request.AgentStop,
+		SubmittedRequest: submitted,
+	}
+	if command.AgentStart != nil {
+		command.AgentStart.InitialPrompt = ""
+		deadline, err := protocol.LifecycleExecutionDeadline(command.ExpiresAt.AsTime(), command.AgentStart.StartupTimeoutMs)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		command.ExecutionExpiresAt = timestamppb.New(deadline)
+	}
+	if err := protocol.ValidateCommand(command, command.TargetId); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	record, created, err := s.commands.CreateCommand(op, command, now)
 	if err != nil {
@@ -108,7 +184,7 @@ func (s *service) GetCommand(ctx context.Context, request *agentflowv1.GetComman
 	if s.requiredCommandTag == "" {
 		return nil, status.Error(codes.PermissionDenied, "command authorization is not configured")
 	}
-	identity, err := s.authorizePeer(ctx, s.requiredCommandTag)
+	_, err := s.authorizePeer(ctx, s.requiredCommandTag)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +201,7 @@ func (s *service) GetCommand(ctx context.Context, request *agentflowv1.GetComman
 	}
 	op, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	record, err := s.commands.GetCommand(op, identity.StableID, request.CommandId)
+	record, err := s.commands.GetOperatorCommand(op, request.CommandId)
 	if err != nil {
 		return nil, s.commandErrorLocked(err)
 	}
@@ -140,6 +216,8 @@ func (s *service) commandErrorLocked(err error) error {
 		return status.Error(codes.NotFound, "command not found")
 	case errors.Is(err, state.ErrCommandConflict), errors.Is(err, state.ErrIdentityConflict):
 		return status.Error(codes.FailedPrecondition, "command identity or outcome conflict")
+	case errors.Is(err, state.ErrLifecycleUnresolved):
+		return status.Error(codes.FailedPrecondition, "native target has unresolved effects; use its original receipt or explicitly pinned stop/interrupt")
 	case errors.Is(err, state.ErrCommandCapacity):
 		return status.Error(codes.ResourceExhausted, "command journal capacity reached; records were not discarded")
 	default:
@@ -151,7 +229,7 @@ func (s *service) prepareCommand(entry *fleetEntry, queued queuedCommand) (*agen
 	pending := queued.command
 	authorized := true
 	projectID, _ := protocol.CommandProject(pending)
-	mutation := projectID != "" || pending.GetCommandType() == protocol.AgentControlCommandType
+	mutation := projectID != "" || pending.GetCommandType() == protocol.AgentControlCommandType || pending.GetCommandType() == protocol.SessionEnsureCommandType || protocol.IsLifecycleCommand(pending.GetCommandType())
 	if mutation {
 		authorized = s.refreshMutationAuthorization(entry, queued)
 	}
@@ -163,12 +241,22 @@ func (s *service) prepareCommand(entry *fleetEntry, queued queuedCommand) (*agen
 	if s.fleet.storageErr != nil {
 		return nil, storageUnavailable()
 	}
-	if pending == nil || s.commands == nil || !entry.probes {
+	if pending == nil || s.commands == nil || (!entry.probes && !(pending.CommandType == protocol.SessionEnsureCommandType && entry.sessions)) {
 		return nil, status.Error(codes.FailedPrecondition, "probe dispatch is not available")
 	}
 	op, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if mutation && (!authorized || !mutationReady(entry, pending.CommandType, time.Now())) {
+	if projectID != "" && pending.SubmittedRequest != nil && (entry.projects || s.workspacePolicy == nil) {
+		project, revision := protocol.CommandProject(pending)
+		if _, err := s.managedProjectReadyLocked(op, entry, project, revision); err != nil {
+			if s.fleet.storageErr != nil {
+				return nil, err
+			}
+			authorized = false
+		}
+	}
+	name, incarnation := protocol.CommandSession(pending)
+	if mutation && (!authorized || !mutationReady(entry, pending.CommandType, time.Now(), name, incarnation)) {
 		if _, err := s.commands.RejectCommand(op, entry.view.InstanceId, pending.CommandId, "authorization_changed", time.Now()); err != nil {
 			return nil, s.commandErrorLocked(err)
 		}

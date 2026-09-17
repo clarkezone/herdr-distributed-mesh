@@ -116,11 +116,16 @@ var NodeControl_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Fleet_GetServerInfo_FullMethodName = "/agentflow.v1.Fleet/GetServerInfo"
-	Fleet_ListNodes_FullMethodName     = "/agentflow.v1.Fleet/ListNodes"
-	Fleet_SubmitCommand_FullMethodName = "/agentflow.v1.Fleet/SubmitCommand"
-	Fleet_GetCommand_FullMethodName    = "/agentflow.v1.Fleet/GetCommand"
-	Fleet_QueryAgent_FullMethodName    = "/agentflow.v1.Fleet/QueryAgent"
+	Fleet_GetServerInfo_FullMethodName   = "/agentflow.v1.Fleet/GetServerInfo"
+	Fleet_ListNodes_FullMethodName       = "/agentflow.v1.Fleet/ListNodes"
+	Fleet_WatchNodes_FullMethodName      = "/agentflow.v1.Fleet/WatchNodes"
+	Fleet_SubmitCommand_FullMethodName   = "/agentflow.v1.Fleet/SubmitCommand"
+	Fleet_GetCommand_FullMethodName      = "/agentflow.v1.Fleet/GetCommand"
+	Fleet_QueryAgent_FullMethodName      = "/agentflow.v1.Fleet/QueryAgent"
+	Fleet_RegisterProject_FullMethodName = "/agentflow.v1.Fleet/RegisterProject"
+	Fleet_ListProjects_FullMethodName    = "/agentflow.v1.Fleet/ListProjects"
+	Fleet_GetProject_FullMethodName      = "/agentflow.v1.Fleet/GetProject"
+	Fleet_ListSessions_FullMethodName    = "/agentflow.v1.Fleet/ListSessions"
 )
 
 // FleetClient is the client API for Fleet service.
@@ -129,9 +134,15 @@ const (
 type FleetClient interface {
 	GetServerInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ServerInfo, error)
 	ListNodes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*NodeList, error)
+	// Complete replacement snapshots; reconnect starts with a full snapshot.
+	WatchNodes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NodeList], error)
 	SubmitCommand(ctx context.Context, in *SubmitCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error)
 	GetCommand(ctx context.Context, in *GetCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error)
 	QueryAgent(ctx context.Context, in *AgentQueryRequest, opts ...grpc.CallOption) (*AgentQueryResult, error)
+	RegisterProject(ctx context.Context, in *RegisterProjectRequest, opts ...grpc.CallOption) (*ProjectRecord, error)
+	ListProjects(ctx context.Context, in *ListProjectsRequest, opts ...grpc.CallOption) (*ProjectList, error)
+	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*ProjectRecord, error)
+	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*SessionList, error)
 }
 
 type fleetClient struct {
@@ -161,6 +172,25 @@ func (c *fleetClient) ListNodes(ctx context.Context, in *emptypb.Empty, opts ...
 	}
 	return out, nil
 }
+
+func (c *fleetClient) WatchNodes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NodeList], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Fleet_ServiceDesc.Streams[0], Fleet_WatchNodes_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[emptypb.Empty, NodeList]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Fleet_WatchNodesClient = grpc.ServerStreamingClient[NodeList]
 
 func (c *fleetClient) SubmitCommand(ctx context.Context, in *SubmitCommandRequest, opts ...grpc.CallOption) (*CommandRecord, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -192,15 +222,61 @@ func (c *fleetClient) QueryAgent(ctx context.Context, in *AgentQueryRequest, opt
 	return out, nil
 }
 
+func (c *fleetClient) RegisterProject(ctx context.Context, in *RegisterProjectRequest, opts ...grpc.CallOption) (*ProjectRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectRecord)
+	err := c.cc.Invoke(ctx, Fleet_RegisterProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fleetClient) ListProjects(ctx context.Context, in *ListProjectsRequest, opts ...grpc.CallOption) (*ProjectList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectList)
+	err := c.cc.Invoke(ctx, Fleet_ListProjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fleetClient) GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*ProjectRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectRecord)
+	err := c.cc.Invoke(ctx, Fleet_GetProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fleetClient) ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*SessionList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SessionList)
+	err := c.cc.Invoke(ctx, Fleet_ListSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FleetServer is the server API for Fleet service.
 // All implementations must embed UnimplementedFleetServer
 // for forward compatibility.
 type FleetServer interface {
 	GetServerInfo(context.Context, *emptypb.Empty) (*ServerInfo, error)
 	ListNodes(context.Context, *emptypb.Empty) (*NodeList, error)
+	// Complete replacement snapshots; reconnect starts with a full snapshot.
+	WatchNodes(*emptypb.Empty, grpc.ServerStreamingServer[NodeList]) error
 	SubmitCommand(context.Context, *SubmitCommandRequest) (*CommandRecord, error)
 	GetCommand(context.Context, *GetCommandRequest) (*CommandRecord, error)
 	QueryAgent(context.Context, *AgentQueryRequest) (*AgentQueryResult, error)
+	RegisterProject(context.Context, *RegisterProjectRequest) (*ProjectRecord, error)
+	ListProjects(context.Context, *ListProjectsRequest) (*ProjectList, error)
+	GetProject(context.Context, *GetProjectRequest) (*ProjectRecord, error)
+	ListSessions(context.Context, *ListSessionsRequest) (*SessionList, error)
 	mustEmbedUnimplementedFleetServer()
 }
 
@@ -217,6 +293,9 @@ func (UnimplementedFleetServer) GetServerInfo(context.Context, *emptypb.Empty) (
 func (UnimplementedFleetServer) ListNodes(context.Context, *emptypb.Empty) (*NodeList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
 }
+func (UnimplementedFleetServer) WatchNodes(*emptypb.Empty, grpc.ServerStreamingServer[NodeList]) error {
+	return status.Error(codes.Unimplemented, "method WatchNodes not implemented")
+}
 func (UnimplementedFleetServer) SubmitCommand(context.Context, *SubmitCommandRequest) (*CommandRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitCommand not implemented")
 }
@@ -225,6 +304,18 @@ func (UnimplementedFleetServer) GetCommand(context.Context, *GetCommandRequest) 
 }
 func (UnimplementedFleetServer) QueryAgent(context.Context, *AgentQueryRequest) (*AgentQueryResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryAgent not implemented")
+}
+func (UnimplementedFleetServer) RegisterProject(context.Context, *RegisterProjectRequest) (*ProjectRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterProject not implemented")
+}
+func (UnimplementedFleetServer) ListProjects(context.Context, *ListProjectsRequest) (*ProjectList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListProjects not implemented")
+}
+func (UnimplementedFleetServer) GetProject(context.Context, *GetProjectRequest) (*ProjectRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProject not implemented")
+}
+func (UnimplementedFleetServer) ListSessions(context.Context, *ListSessionsRequest) (*SessionList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
 }
 func (UnimplementedFleetServer) mustEmbedUnimplementedFleetServer() {}
 func (UnimplementedFleetServer) testEmbeddedByValue()               {}
@@ -283,6 +374,17 @@ func _Fleet_ListNodes_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fleet_WatchNodes_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(emptypb.Empty)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FleetServer).WatchNodes(m, &grpc.GenericServerStream[emptypb.Empty, NodeList]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Fleet_WatchNodesServer = grpc.ServerStreamingServer[NodeList]
+
 func _Fleet_SubmitCommand_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SubmitCommandRequest)
 	if err := dec(in); err != nil {
@@ -337,6 +439,78 @@ func _Fleet_QueryAgent_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fleet_RegisterProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).RegisterProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_RegisterProject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).RegisterProject(ctx, req.(*RegisterProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fleet_ListProjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).ListProjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_ListProjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).ListProjects(ctx, req.(*ListProjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fleet_GetProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).GetProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_GetProject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).GetProject(ctx, req.(*GetProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fleet_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).ListSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_ListSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).ListSessions(ctx, req.(*ListSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fleet_ServiceDesc is the grpc.ServiceDesc for Fleet service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -364,7 +538,29 @@ var Fleet_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "QueryAgent",
 			Handler:    _Fleet_QueryAgent_Handler,
 		},
+		{
+			MethodName: "RegisterProject",
+			Handler:    _Fleet_RegisterProject_Handler,
+		},
+		{
+			MethodName: "ListProjects",
+			Handler:    _Fleet_ListProjects_Handler,
+		},
+		{
+			MethodName: "GetProject",
+			Handler:    _Fleet_GetProject_Handler,
+		},
+		{
+			MethodName: "ListSessions",
+			Handler:    _Fleet_ListSessions_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WatchNodes",
+			Handler:       _Fleet_WatchNodes_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "agentflow/v1/control.proto",
 }

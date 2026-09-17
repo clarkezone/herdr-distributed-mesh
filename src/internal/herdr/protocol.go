@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"regexp"
 	"strings"
@@ -273,6 +274,10 @@ func versionProtocol(value object) (string, uint32, error) {
 }
 
 func sanitizeSnapshot(raw json.RawMessage) (*agentflowv1.HerdrState, error) {
+	return sanitizeSnapshotWithProjects(raw, nil)
+}
+
+func sanitizeSnapshotWithProjects(raw json.RawMessage, resolver ProjectResolver) (*agentflowv1.HerdrState, error) {
 	var snapshot object
 	if err := decodeRequired(raw, &snapshot); err != nil {
 		return nil, err
@@ -294,6 +299,8 @@ func sanitizeSnapshot(raw json.RawMessage) (*agentflowv1.HerdrState, error) {
 		}
 	}
 	total := 0
+	projectCache := make(map[string]projectObservation)
+	projectFailed := false
 	for _, collection := range []struct {
 		name string
 		id   string
@@ -330,8 +337,20 @@ func sanitizeSnapshot(raw json.RawMessage) (*agentflowv1.HerdrState, error) {
 				return nil, apiError("invalid_snapshot")
 			}
 			seen[entity.Id] = struct{}{}
+			if collection.name == "workspaces" && resolver != nil {
+				projectID, err := workspaceProject(entry, resolver, projectCache)
+				if err != nil {
+					projectFailed = true
+				} else {
+					entity.ProjectId = projectID
+				}
+			}
 			*collection.out = append(*collection.out, entity)
 		}
+	}
+	inheritWorkspaceProjects(state)
+	if projectFailed {
+		log.Printf("herdr project projection unavailable")
 	}
 	return state, nil
 }
@@ -359,6 +378,14 @@ func sanitizeEntity(entry object, idField string) (*agentflowv1.HerdrEntity, err
 		if required(entry, "tab_id", &entity.TabId) != nil || !idPattern.MatchString(entity.TabId) {
 			return nil, apiError("invalid_snapshot")
 		}
+		observation, err := readEntityObservation(entry)
+		if err != nil {
+			return nil, err
+		}
+		entity.Provider = observation.provider
+		entity.InteractiveReady = observation.interactiveReady
+		entity.TerminalId = observation.terminalID
+		entity.ProviderSessionId = observation.agentSessionID
 	}
 	switch entity.AgentStatus {
 	case "idle", "working", "blocked", "done", "unknown":

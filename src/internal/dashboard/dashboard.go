@@ -18,6 +18,7 @@ import (
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -61,7 +62,7 @@ func ValidateListenAddress(address string) error {
 	return nil
 }
 
-func Run(ctx context.Context, options Options) error {
+func Run(ctx context.Context, options Options) (result error) {
 	if strings.TrimSpace(options.ServerAddress) == "" {
 		return errors.New("-server is required")
 	}
@@ -74,13 +75,21 @@ func Run(ctx context.Context, options Options) error {
 	}
 	defer listener.Close()
 
+	guard, err := state.PrepareRoleState(ctx, options.Transport.RoleStateDir, "client")
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, guard.Close()) }()
 	startup, cancel := context.WithTimeout(ctx, time.Minute)
 	network, err := transport.Start(startup, options.Transport)
 	cancel()
 	if err != nil {
 		return err
 	}
-	defer network.Close()
+	defer func() { result = errors.Join(result, network.Close()) }()
+	if err := guard.Activate(); err != nil {
+		return err
+	}
 	if err := network.SelfStatus().Validate(options.Transport.Tags, time.Now()); err != nil {
 		return fmt.Errorf("validate dashboard tsnet identity: %w", err)
 	}
@@ -98,8 +107,12 @@ func serve(ctx context.Context, listener net.Listener, client fleetClient, outpu
 		return fmt.Errorf("open dashboard assets: %w", err)
 	}
 	host := listener.Addr().String()
+	return serveHandler(ctx, listener, newHandler(client, host, files), output, "http://"+host)
+}
+
+func serveHandler(ctx context.Context, listener net.Listener, handler http.Handler, output io.Writer, origin string) error {
 	server := &http.Server{
-		Handler:           newHandler(client, host, files),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -107,7 +120,7 @@ func serve(ctx context.Context, listener net.Listener, client fleetClient, outpu
 		MaxHeaderBytes:    16 * 1024,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
-	if _, err := fmt.Fprintf(output, "dashboard ready: http://%s (read-only; keep this process running)\n", host); err != nil {
+	if _, err := fmt.Fprintf(output, "dashboard ready: %s (read-only; keep this process running)\n", origin); err != nil {
 		return fmt.Errorf("write dashboard address: %w", err)
 	}
 	done := make(chan error, 1)
@@ -131,15 +144,18 @@ func serve(ctx context.Context, listener net.Listener, client fleetClient, outpu
 }
 
 type handler struct {
-	client  fleetClient
-	host    string
-	files   fs.FS
-	slots   chan struct{}
-	timeout time.Duration
+	client    fleetClient
+	host      string
+	origin    string
+	files     fs.FS
+	slots     chan struct{}
+	timeout   time.Duration
+	authorize PeerAuthorizer
+	authSlots chan struct{}
 }
 
 func newHandler(client fleetClient, host string, files fs.FS) *handler {
-	return &handler{client: client, host: host, files: files, slots: make(chan struct{}, 4), timeout: requestTimeout}
+	return &handler{client: client, host: host, origin: "http://" + host, files: files, slots: make(chan struct{}, 4), timeout: requestTimeout}
 }
 
 var assetName = regexp.MustCompile(`^[A-Za-z0-9_-]+\.(css|js|mjs)$`)
@@ -155,9 +171,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Exact Host + Origin checks prevent an unrelated website from using this
 	// trusted-local gateway through DNS rebinding or cross-origin requests.
-	if r.Host != h.host || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != "http://"+h.host) ||
+	if r.Host != h.host || (r.Header.Get("Origin") != "" && r.Header.Get("Origin") != h.origin) ||
 		r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-		writeError(w, http.StatusForbidden, "authorization_denied", "This dashboard accepts same-origin loopback requests only.")
+		writeError(w, http.StatusForbidden, "authorization_denied", "This dashboard accepts requests from its configured origin only.")
+		return
+	}
+	if !h.authorizeRequest(w, r) {
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

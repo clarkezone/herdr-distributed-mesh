@@ -212,6 +212,10 @@ func TestAgentControlNoProjectPolicyRefreshAndImmutableRequest(t *testing.T) {
 	if _, err := h.api.finishCommand(entry, bad); err == nil || h.api.fleet.storageErr != nil {
 		t.Fatalf("invalid result poisoned storage: %v", err)
 	}
+	bad.AgentControl.Target = proto.Clone(command.AgentControl.Target).(*pb.AgentTarget)
+	if _, err := h.api.finishCommand(entry, bad); err != nil {
+		t.Fatalf("valid completion before admitting another prompt: %v", err)
+	}
 	for _, who := range []string{"client", "node"} {
 		request.IdempotencyKey = protocol.NewCommandID()
 		if _, err := h.api.SubmitCommand(agentPeer("client"), request); err != nil {

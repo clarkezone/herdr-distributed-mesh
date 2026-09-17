@@ -378,8 +378,8 @@ func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
 		"focused_workspace_id":"ws:1","focused_tab_id":"tab:1","focused_pane_id":"pane:1",
 		"workspaces":[{"workspace_id":"ws:1","focused":true,"agent_status":"working","active_tab_id":"tab:1","label":"PRIVATE","number":1,"pane_count":1,"tab_count":1}],
 		"tabs":[{"tab_id":"tab:1","workspace_id":"ws:1","focused":true,"agent_status":"working","label":"PRIVATE","number":1,"pane_count":1}],
-		"panes":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"PRIVATE","agent_session":{"token":"PRIVATE"},"cwd":"PRIVATE","revision":1,"scroll":{},"terminal_id":"PRIVATE","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
-		"agents":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"PRIVATE","agent_session":{"token":"PRIVATE"},"cwd":"PRIVATE","revision":1,"state_change_seq":1,"terminal_id":"PRIVATE","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
+		"panes":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"copilot","agent_session":{"kind":"path","value":"PRIVATE","agent":"copilot","source":"fixture"},"cwd":"PRIVATE","revision":1,"scroll":{},"terminal_id":"terminal:1","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
+		"agents":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"copilot","agent_session":{"kind":"path","value":"PRIVATE","agent":"copilot","source":"fixture"},"cwd":"PRIVATE","revision":1,"state_change_seq":1,"terminal_id":"terminal:1","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
 		"layouts":[{"workspace_id":"ws:1","tab_id":"tab:1","focused_pane_id":"pane:1","area":{},"panes":[],"splits":[],"zoomed":false}]
 	}`
 	steps := []step{

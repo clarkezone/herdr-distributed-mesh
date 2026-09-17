@@ -105,10 +105,11 @@ func (f *fakeWorkspaceHerdr) serve(t *testing.T, conn net.Conn) {
 			"tabs": []any{}, "panes": []any{}, "agents": []any{}, "layouts": []any{}, "focused_workspace_id": nil}}
 	case "workspace.list":
 		result = map[string]any{"type": "workspace_list", "workspaces": workspaces}
-	case "workspace.create":
-		var cwd string
+	case "worktree.open":
+		var cwd, path string
 		var focus bool
-		if len(request.Params) != 2 || json.Unmarshal(request.Params["cwd"], &cwd) != nil ||
+		if len(request.Params) != 3 || json.Unmarshal(request.Params["cwd"], &cwd) != nil ||
+			json.Unmarshal(request.Params["path"], &path) != nil || path != f.checkout ||
 			json.Unmarshal(request.Params["focus"], &focus) != nil || cwd != f.checkout || focus {
 			t.Error("workspace creation escaped bound cwd/focus:false contract")
 			return
@@ -122,7 +123,7 @@ func (f *fakeWorkspaceHerdr) serve(t *testing.T, conn net.Conn) {
 		if f.omitMetadata {
 			delete(workspace, "worktree")
 		}
-		result = map[string]any{"type": "workspace_created", "workspace": workspace,
+		result = map[string]any{"type": "worktree_opened", "already_open": false, "workspace": workspace,
 			"tab": map[string]any{"tab_id": "w1:t1"}, "root_pane": map[string]any{"pane_id": "w1:p1"}}
 	default:
 		t.Errorf("unexpected Herdr method %q", request.Method)

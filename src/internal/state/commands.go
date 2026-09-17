@@ -27,6 +27,7 @@ const (
 	statusAccepted      = pb.CommandStatus_COMMAND_STATUS_ACCEPTED
 	statusRunning       = pb.CommandStatus_COMMAND_STATUS_RUNNING
 	statusSucceeded     = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED
+	statusFailed        = pb.CommandStatus_COMMAND_STATUS_FAILED
 	statusTimedOut      = pb.CommandStatus_COMMAND_STATUS_TIMED_OUT
 	statusRejected      = pb.CommandStatus_COMMAND_STATUS_REJECTED
 	statusIndeterminate = pb.CommandStatus_COMMAND_STATUS_INDETERMINATE
@@ -72,6 +73,10 @@ func validateCommand(command *pb.Command, target string) error {
 	if command == nil || proto.Size(command) > maxCommandBytes {
 		return errors.New("command is nil or oversized")
 	}
+	if protocol.IsLifecycleCommand(command.CommandType) &&
+		proto.Size(command)+protocol.MaxLifecycleReceiptBytes+1024 > maxCommandBytes {
+		return errors.New("lifecycle request leaves insufficient bounded receipt/audit space")
+	}
 	return protocol.ValidateCommand(command, target)
 }
 
@@ -80,16 +85,22 @@ func projectMutation(commandType string) bool {
 }
 
 func authorizationSensitiveCommand(commandType string) bool {
-	return projectMutation(commandType) || commandType == protocol.AgentControlCommandType
+	return projectMutation(commandType) || commandType == protocol.AgentControlCommandType || commandType == protocol.SessionEnsureCommandType || protocol.IsLifecycleCommand(commandType)
 }
 
 func validCommandOutcome(commandType string, status pb.CommandStatus, detail string) bool {
+	if protocol.IsLifecycleCommand(commandType) && protocol.IsTerminalCommand(status) {
+		return protocol.ValidLifecycleDetail(detail)
+	}
 	switch status {
 	case statusAccepted:
 		return detail == "accepted"
 	case statusRunning:
 		return detail == "dispatched"
 	case statusSucceeded:
+		if commandType == protocol.SessionEnsureCommandType {
+			return detail == "session_ready"
+		}
 		if commandType == protocol.AgentControlCommandType {
 			return detail == "agent_prompt_sent" || detail == "agent_input_sent" || detail == "agent_interrupt_sent"
 		}
@@ -103,10 +114,16 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusTimedOut:
 		return detail == "deadline_expired"
 	case statusRejected:
+		if authorizationSensitiveCommand(commandType) && protocol.ValidSessionError(detail) {
+			return true
+		}
+		if commandType == protocol.SessionEnsureCommandType {
+			return detail == "journal_full" || detail == "authorization_changed"
+		}
 		if commandType == protocol.AgentControlCommandType {
 			switch detail {
 			case "journal_full", "precondition_failed", "agent_busy", "agent_blocked", "target_changed",
-				"herdr_unavailable", "unsupported", "authorization_changed":
+				"herdr_unavailable", "unsupported", "authorization_changed", "lifecycle_unresolved":
 				return true
 			}
 			return false
@@ -123,7 +140,8 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 	case statusIndeterminate:
 		return detail == "node_restarted" || detail == "server_restarted" ||
 			detail == "node_disconnected" || detail == "deadline_expired" ||
-			(authorizationSensitiveCommand(commandType) && detail == "herdr_outcome_unknown")
+			((projectMutation(commandType) || commandType == protocol.AgentControlCommandType) && detail == "herdr_outcome_unknown") ||
+			(commandType == protocol.SessionEnsureCommandType && detail == "startup_uncertain")
 	case statusUnavailable:
 		return detail == "node_disconnected" || detail == "server_restarted"
 	}
@@ -131,6 +149,10 @@ func validCommandOutcome(commandType string, status pb.CommandStatus, detail str
 }
 
 func validCommandTransition(commandType string, from, to pb.CommandStatus, detail string) bool {
+	if protocol.IsLifecycleCommand(commandType) && (from == statusRunning || from == statusIndeterminate) &&
+		(to == statusFailed || to == statusIndeterminate) {
+		return true
+	}
 	switch from {
 	case statusAccepted:
 		return to == statusRunning || to == statusTimedOut || to == statusUnavailable ||
@@ -138,7 +160,8 @@ func validCommandTransition(commandType string, from, to pb.CommandStatus, detai
 	case statusRunning:
 		return to == statusSucceeded || to == statusTimedOut || to == statusRejected || to == statusIndeterminate
 	case statusIndeterminate:
-		return to == statusSucceeded || to == statusTimedOut || to == statusRejected
+		return to == statusSucceeded || to == statusTimedOut || to == statusRejected ||
+			(commandType == protocol.SessionEnsureCommandType && to == statusIndeterminate && detail == "startup_uncertain")
 	}
 	return false
 }
@@ -150,11 +173,24 @@ func validateCommandRecord(record *pb.CommandRecord) error {
 	if err := validateCommand(record.Command, record.Command.TargetId); err != nil {
 		return err
 	}
-	if record.Status == statusSucceeded {
+	if protocol.IsLifecycleCommand(record.Command.CommandType) {
+		if record.AgentLifecycle != nil {
+			if err := protocol.ValidateLifecycleReceipt(record.AgentLifecycle, record.Command); err != nil {
+				return err
+			}
+		}
+		if protocol.IsTerminalCommand(record.Status) && record.Status != statusUnavailable {
+			if err := protocol.ValidateResultForCommand(recordResult(record), record.Command); err != nil {
+				return err
+			}
+		}
+	} else if record.AgentLifecycle != nil {
+		return errors.New("unexpected stored lifecycle receipt")
+	} else if record.Status == statusSucceeded {
 		if err := protocol.ValidateResultForCommand(recordResult(record), record.Command); err != nil {
 			return err
 		}
-	} else if record.WorkspaceEnsure != nil || record.WorktreeCreate != nil || record.AgentControl != nil {
+	} else if record.WorkspaceEnsure != nil || record.WorktreeCreate != nil || record.AgentControl != nil || record.SessionEnsure != nil {
 		return errors.New("stored unsuccessful command contains mutation success data")
 	}
 	if record.CreatedAt == nil || record.CreatedAt.CheckValid() != nil ||
@@ -196,6 +232,8 @@ func recordResult(record *pb.CommandRecord) *pb.CommandResult {
 		WorkspaceEnsure: record.WorkspaceEnsure,
 		WorktreeCreate:  record.WorktreeCreate,
 		AgentControl:    record.AgentControl,
+		SessionEnsure:   record.SessionEnsure,
+		AgentLifecycle:  record.AgentLifecycle,
 	}
 }
 
@@ -292,11 +330,43 @@ func (s *Store) GetCommand(ctx context.Context, actorID, commandID string) (*pb.
 	return s.findCommand(ctx, actorID, commandID, "WHERE c.actor_id = ? AND c.command_id = ?")
 }
 
+// GetOperatorCommand permits an already-authorized operator to inspect a
+// command across trusted actors. Admission and retry namespaces remain actor-scoped.
+func (s *Store) GetOperatorCommand(ctx context.Context, commandID string) (*pb.CommandRecord, error) {
+	if err := s.enter(ctx); err != nil {
+		return nil, err
+	}
+	defer s.leave()
+	if emptyID(commandID) {
+		return nil, errors.New("command lookup ID must not be empty")
+	}
+	var record *pb.CommandRecord
+	err := s.transaction(ctx, func(tx *sql.Tx) (err error) {
+		record, err = readCommand(ctx, tx, "WHERE c.command_id = ?", commandID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
 func matchingRequest(original, proposed *pb.Command) bool {
 	a := proto.Clone(original).(*pb.Command)
 	b := proto.Clone(proposed).(*pb.Command)
 	a.CommandId, b.CommandId = "", ""
 	a.ExpiresAt, b.ExpiresAt = nil, nil
+	a.ExecutionExpiresAt, b.ExecutionExpiresAt = nil, nil
+	// Resolution is execution evidence, not the client's idempotency identity.
+	// Leave historical commands untouched when there is no submitted request.
+	if a.SubmittedRequest != nil && b.SubmittedRequest != nil {
+		a.WorkspaceEnsure, b.WorkspaceEnsure = nil, nil
+		a.WorktreeCreate, b.WorktreeCreate = nil, nil
+		a.AgentControl, b.AgentControl = nil, nil
+		a.SessionEnsure, b.SessionEnsure = nil, nil
+		a.AgentStart, b.AgentStart = nil, nil
+		a.AgentStop, b.AgentStop = nil, nil
+	}
 	return proto.Equal(a, b)
 }
 
@@ -344,6 +414,9 @@ func (s *Store) CreateCommand(ctx context.Context, command *pb.Command, now time
 		}
 		if count >= maxCommands {
 			return ErrCommandCapacity
+		}
+		if err := checkCoordinatorLifecycleFence(ctx, tx, command); err != nil {
+			return err
 		}
 		record = &pb.CommandRecord{
 			Command: proto.Clone(command).(*pb.Command), Status: statusAccepted, Detail: "accepted",
@@ -504,8 +577,17 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		if err := protocol.ValidateResultForCommand(result, record.Command); err != nil {
 			return fmt.Errorf("%w: %v", ErrCommandConflict, err)
 		}
+		if protocol.IsLifecycleCommand(record.Command.CommandType) {
+			return finishLifecycleRecord(ctx, tx, record, result, now)
+		}
 		if result.Status == statusIndeterminate && protocol.IsTerminalCommand(record.Status) {
-			return nil
+			// An ensure interrupted by stream loss can later replay the more
+			// precise native-start uncertainty. Preserve conclusive receipts,
+			// but retain this evidence instead of only the transport symptom.
+			if record.Command.SessionEnsure == nil || record.Status != statusIndeterminate ||
+				record.Detail != "node_disconnected" || result.Detail != "startup_uncertain" {
+				return nil
+			}
 		}
 		if proto.Equal(recordResult(record), result) {
 			return nil
@@ -521,6 +603,9 @@ func (s *Store) FinishCommand(ctx context.Context, nodeID, stableID string, resu
 		}
 		if result.AgentControl != nil {
 			record.AgentControl = proto.Clone(result.AgentControl).(*pb.AgentControlResult)
+		}
+		if result.SessionEnsure != nil {
+			record.SessionEnsure = proto.Clone(result.SessionEnsure).(*pb.SessionView)
 		}
 		return transitionCommand(ctx, tx, record, result.Status, result.Detail, now)
 	})
@@ -544,6 +629,10 @@ func (s *Store) changeActiveCommands(ctx context.Context, now time.Time, filter 
 			return err
 		}
 		for _, record := range records {
+			if detail == "deadline_expired" && record.Status == statusRunning &&
+				now.Before(protocol.CommandExecutionDeadline(record.Command)) {
+				continue
+			}
 			status := acceptedStatus
 			if record.Status == statusRunning {
 				status = statusIndeterminate

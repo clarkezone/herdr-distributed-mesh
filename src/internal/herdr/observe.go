@@ -26,6 +26,10 @@ type Config struct {
 	RefreshInterval time.Duration
 	RetryDelay      time.Duration
 	RequestTimeout  time.Duration
+	ProjectResolver ProjectResolver
+	// CheckSession refreshes a caller-pinned native incarnation immediately
+	// before mutation IPC. Herdr still offers no atomic expected-identity CAS.
+	CheckSession func(context.Context) error
 }
 
 type dialFunc func(context.Context, string) (net.Conn, error)
@@ -182,15 +186,11 @@ func (o *observer) session(ctx context.Context, publish func(*agentflowv1.HerdrS
 	defer periodic.Stop()
 	for {
 		started := time.Now()
-		result, err := o.rpc(sessionCtx, "session.snapshot", "session_snapshot")
+		state, err := o.snapshot(sessionCtx)
 		// A failed subscription invalidates even a successful in-flight RPC.
 		if subErr := getFailure(); subErr != nil {
 			return subErr
 		}
-		if err != nil {
-			return err
-		}
-		state, err := sanitizeSnapshot(result["snapshot"])
 		if err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdr"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -20,9 +21,17 @@ func (h *commandHandler) agentReady() bool {
 	return h.agentNegotiated && h.journal != nil && h.verifyCoordinator != nil && workspaceBaselineReady(h.agentBaseline.Load(), time.Now())
 }
 
+func (h *commandHandler) selectedAgentReady(name string) bool {
+	if name == "" {
+		return h.agentReady()
+	}
+	return h.agentNegotiated && h.sessionsReady()
+}
+
 func (h *commandHandler) agentMutation(ctx context.Context, command *pb.Command, receivedAt time.Time) *pb.CommandResult {
 	result := &pb.CommandResult{CommandId: command.CommandId, Status: pb.CommandStatus_COMMAND_STATUS_REJECTED, Detail: "precondition_failed"}
-	if !h.agentReady() {
+	name, expected := protocol.CommandSession(command)
+	if !h.selectedAgentReady(name) {
 		return result
 	}
 	deadline := command.ExpiresAt.AsTime()
@@ -43,22 +52,64 @@ func (h *commandHandler) agentMutation(ctx context.Context, command *pb.Command,
 		result.Detail = "authorization_changed"
 		return result
 	}
-	if !h.agentReady() {
+	if !h.selectedAgentReady(name) {
 		return result
+	}
+	config, incarnation, err := h.resolveSession(effect, name, expected)
+	if h.lifecycleScopeAvailable(name) && err == nil {
+		config, incarnation, err = h.resolveLifecycleSession(effect, name, expected)
+	}
+	if err != nil {
+		result.Detail = sessionError(err)
+		return result
+	}
+	if h.lifecycleScopeAvailable(name) {
+		journal, ok := h.journal.(lifecycleJournal)
+		if !ok {
+			result.Detail = "precondition_failed"
+			return result
+		}
+		check := config.CheckSession
+		config.CheckSession = func(ctx context.Context) error {
+			if err := check(ctx); err != nil {
+				return err
+			}
+			return journal.PinAgentCommand(ctx, command.CommandId, incarnation)
+		}
+		if err := config.CheckSession(effect); err != nil {
+			result.Detail = lifecycleErrorDetail(err)
+			return result
+		}
 	}
 	execute := h.controlAgent
 	if execute == nil {
 		execute = herdr.ControlAgent
 	}
-	value, err := execute(effect, h.herdrConfig, proto.Clone(command.AgentControl).(*pb.AgentControl))
+	value, err := execute(effect, config, proto.Clone(command.AgentControl).(*pb.AgentControl))
 	if err == nil {
+		if incarnation != "" {
+			if _, _, refreshErr := h.resolveSession(effect, name, incarnation); refreshErr != nil {
+				result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_INDETERMINATE, "herdr_outcome_unknown"
+				return result
+			}
+		}
+		if value == nil || value.Target == nil {
+			result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_INDETERMINATE, "herdr_outcome_unknown"
+			return result
+		}
+		value.Target.SessionName, value.Target.SessionIncarnation = name, incarnation
 		result.Status, result.AgentControl = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED, value
 		result.Detail = protocol.AgentControlSuccessDetail(command.AgentControl.Action)
 		return result
 	}
+	var sessionErr sessionFailure
 	switch {
 	case errors.Is(err, herdr.ErrAgentIndeterminate):
 		result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_INDETERMINATE, "herdr_outcome_unknown"
+	case errors.Is(err, state.ErrLifecycleUnresolved):
+		result.Detail = "lifecycle_unresolved"
+	case errors.As(err, &sessionErr):
+		result.Detail = sessionError(err)
 	case errors.Is(err, context.DeadlineExceeded):
 		result.Status, result.Detail = pb.CommandStatus_COMMAND_STATUS_TIMED_OUT, "deadline_expired"
 	case errors.Is(err, herdr.ErrAgentPrecondition):
@@ -144,7 +195,7 @@ func (q *agentQueries) start(query *pb.AgentQuery) error {
 		defer cancel()
 		defer func() { q.mu.Lock(); delete(q.active, query.QueryId); q.mu.Unlock() }()
 		result := &pb.AgentQueryResult{QueryId: query.QueryId}
-		if !q.handler.agentReady() {
+		if !q.handler.selectedAgentReady(query.Request.Target.SessionName) {
 			result.ErrorCode = "herdr_unavailable"
 		} else if ctx.Err() != nil {
 			result.ErrorCode = agentQueryError(ctx.Err())
@@ -153,14 +204,31 @@ func (q *agentQueries) start(query *pb.AgentQuery) error {
 			if execute == nil {
 				execute = herdr.QueryAgent
 			}
-			value, err := execute(ctx, q.handler.herdrConfig, proto.Clone(query.Request).(*pb.AgentQueryRequest))
-			if err != nil {
+			target := query.Request.Target
+			config, incarnation, sessionErr := q.handler.resolveSession(ctx, target.SessionName, target.SessionIncarnation)
+			if q.handler.lifecycleScopeAvailable(target.SessionName) && sessionErr == nil {
+				config, incarnation, sessionErr = q.handler.resolveLifecycleSession(ctx, target.SessionName, target.SessionIncarnation)
+			}
+			var value *pb.AgentQueryResult
+			var err error
+			if sessionErr == nil {
+				value, err = execute(ctx, config, proto.Clone(query.Request).(*pb.AgentQueryRequest))
+				if err == nil && incarnation != "" {
+					_, _, sessionErr = q.handler.resolveSession(ctx, target.SessionName, incarnation)
+				}
+			}
+			if sessionErr != nil {
+				result.ErrorCode = sessionError(sessionErr)
+			} else if err != nil {
 				result.ErrorCode = agentQueryError(err)
 			} else if value == nil {
 				result.ErrorCode = "invalid_request"
 			} else {
 				result = proto.Clone(value).(*pb.AgentQueryResult)
 				result.QueryId = query.QueryId
+				if result.Agent != nil && result.Agent.Target != nil {
+					result.Agent.Target.SessionName, result.Agent.Target.SessionIncarnation = target.SessionName, incarnation
+				}
 				if err := protocol.ValidateAgentQueryResult(result, query.Request); err != nil {
 					result = &pb.AgentQueryResult{QueryId: query.QueryId, ErrorCode: "invalid_request"}
 				}

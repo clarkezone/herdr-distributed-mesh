@@ -17,7 +17,13 @@ func (s *service) refreshMutationAuthorization(entry *fleetEntry, queued queuedC
 	}
 	projectID, revision := protocol.CommandProject(queued.command)
 	if projectID == "" {
-		return queued.command.CommandType == protocol.AgentControlCommandType && s.agentConfigured()
+		if queued.command.CommandType == protocol.SessionEnsureCommandType {
+			return s.sessionsConfigured()
+		}
+		return (queued.command.CommandType == protocol.AgentControlCommandType || queued.command.CommandType == protocol.AgentStopCommandType) && s.agentConfigured()
+	}
+	if queued.command.SubmittedRequest != nil && (entry.projects || s.workspacePolicy == nil) {
+		return true // Current desired/applied generation is checked under the dispatch lock.
 	}
 	binding, err := s.workspacePolicy.Resolve(nodeID, projectID, revision, queued.command.Actor.ActorId)
 	return err == nil && (queued.command.CommandType != protocol.WorktreeCreateCommandType || binding.AllowWorktrees)
@@ -46,7 +52,33 @@ func (s *service) refreshCommandPeers(entry *fleetEntry, queued queuedCommand) (
 	return nodeID, true
 }
 
-func mutationReady(entry *fleetEntry, commandType string, now time.Time) bool {
+func mutationReady(entry *fleetEntry, commandType string, now time.Time, selector ...string) bool {
+	if protocol.IsLifecycleCommand(commandType) {
+		return entry.lifecycle && (commandType != protocol.AgentStartCommandType || entry.projects) &&
+			mutationReady(entry, protocol.AgentControlCommandType, now, selector...)
+	}
+	if commandType == protocol.SessionEnsureCommandType {
+		return sessionManagerReady(entry, now)
+	}
+	if len(selector) > 0 && selector[0] != "" {
+		incarnation := ""
+		if len(selector) > 1 {
+			incarnation = selector[1]
+		}
+		if !selectedSessionReady(entry, selector[0], incarnation, now) {
+			return false
+		}
+		switch commandType {
+		case protocol.AgentControlCommandType:
+			return entry.agents
+		case protocol.WorkspaceEnsureCommandType:
+			return entry.workspaces
+		case protocol.WorktreeCreateCommandType:
+			return entry.workspaces && entry.worktrees
+		default:
+			return false
+		}
+	}
 	if commandType == protocol.AgentControlCommandType {
 		return entry.agents && entry.view.AgentReady && entry.view.CommandReady && freshHerdr(entry.view, now)
 	}

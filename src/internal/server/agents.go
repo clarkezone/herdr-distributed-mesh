@@ -48,9 +48,13 @@ func (s *service) QueryAgent(ctx context.Context, request *pb.AgentQueryRequest)
 		return nil, storageUnavailable()
 	}
 	entry := s.fleet.nodes[request.NodeInstanceId]
-	if entry == nil || !s.fleet.current(entry) || !mutationReady(entry, protocol.AgentControlCommandType, time.Now()) {
+	if entry == nil || !s.fleet.current(entry) || !mutationReady(entry, protocol.AgentControlCommandType, time.Now(),
+		request.Target.GetSessionName(), request.Target.GetSessionIncarnation()) {
 		s.fleet.mu.Unlock()
 		return nil, status.Error(codes.FailedPrecondition, "target node has no ready agent session")
+	}
+	if request.Target.SessionName != "" && request.Target.SessionIncarnation == "" {
+		request.Target.SessionIncarnation = findSession(entry.view, request.Target.SessionName).Incarnation
 	}
 	if len(entry.queries) >= maxPendingAgentQueries || len(entry.queryOutbound) == cap(entry.queryOutbound) {
 		s.fleet.mu.Unlock()
@@ -70,12 +74,17 @@ func (s *service) QueryAgent(ctx context.Context, request *pb.AgentQueryRequest)
 	case result := <-pending.result:
 		s.fleet.mu.Lock()
 		current := s.fleet.current(entry)
+		selectedReady := request.Target.SessionName == "" || mutationReady(entry, protocol.AgentControlCommandType, time.Now(),
+			request.Target.SessionName, request.Target.SessionIncarnation)
 		s.fleet.mu.Unlock()
 		if !current {
 			return nil, status.Error(codes.Unavailable, "node session ended")
 		}
 		if ctx.Err() != nil {
 			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+		if !selectedReady {
+			return &pb.AgentQueryResult{QueryId: id, ErrorCode: "session_replaced"}, nil
 		}
 		return result, nil
 	}
@@ -118,6 +127,11 @@ func (s *service) prepareAgentEnvelope(entry *fleetEntry, envelope *pb.NodeEnvel
 		return false
 	}
 	if query := envelope.GetAgentQuery(); query != nil {
+		if pending := entry.queries[query.QueryId]; pending != nil &&
+			!mutationReady(entry, protocol.AgentControlCommandType, time.Now(), pending.request.Target.SessionName, pending.request.Target.SessionIncarnation) {
+			s.fleet.cancelSessionQueryLocked(entry, query.QueryId, pending)
+			return false
+		}
 		return entry.queries[query.QueryId] != nil && time.Now().Before(query.ExpiresAt.AsTime())
 	}
 	return envelope.GetAgentQueryCancel() != nil
@@ -141,6 +155,11 @@ func (s *service) finishAgentQuery(entry *fleetEntry, result *pb.AgentQueryResul
 	}
 	if err := protocol.ValidateAgentQueryResult(result, pending.request); err != nil {
 		return status.Error(codes.InvalidArgument, "invalid agent query response")
+	}
+	if pending.request.Target.SessionName != "" &&
+		!mutationReady(entry, protocol.AgentControlCommandType, time.Now(), pending.request.Target.SessionName, pending.request.Target.SessionIncarnation) {
+		s.fleet.cancelSessionQueryLocked(entry, result.QueryId, pending)
+		return nil
 	}
 	delete(entry.queries, result.QueryId)
 	pending.result <- proto.Clone(result).(*pb.AgentQueryResult)

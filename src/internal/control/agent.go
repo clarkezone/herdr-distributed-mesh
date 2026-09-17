@@ -56,7 +56,7 @@ func Agent(ctx context.Context, options Options, query *pb.AgentQueryRequest, ac
 }
 
 func agentWithClient(ctx context.Context, options Options, client pb.FleetClient, selection, lookup *pb.AgentQueryRequest, control *pb.AgentControl, key string, ttl time.Duration) error {
-	if selection.Target.TerminalId == "" {
+	if selection.Target.TerminalId == "" || (selection.Target.SessionName != "" && selection.Target.SessionIncarnation == "") {
 		result, err := queryAgent(ctx, client, lookup)
 		if err != nil {
 			return err
@@ -83,7 +83,7 @@ func agentWithClient(ctx context.Context, options Options, client pb.FleetClient
 	if err != nil {
 		return err
 	}
-	log.Printf("agent target pane=%s terminal=%s agent_session=%s", control.Target.PaneId, control.Target.TerminalId, control.Target.AgentSessionId)
+	log.Printf("agent target pane=%s terminal=%s agent_session=%s session=%s session_incarnation=%s", control.Target.PaneId, control.Target.TerminalId, control.Target.AgentSessionId, control.Target.SessionName, control.Target.SessionIncarnation)
 	return submitAndWaitWithClient(ctx, options, client, request)
 }
 
@@ -118,7 +118,7 @@ func writeAgent(options Options, kind pb.AgentQueryKind, result *pb.AgentQueryRe
 		return err
 	}
 	value := result.Agent
-	_, err := fmt.Fprintf(options.Output, "agent=%s terminal=%s provider=%s status=%s ready=%t workspace=%s tab=%s state_change_seq=%d\n",
-		value.Target.PaneId, value.Target.TerminalId, value.Provider, value.Status, value.InteractiveReady, value.WorkspaceId, value.TabId, value.StateChangeSeq)
+	_, err := fmt.Fprintf(options.Output, "agent=%s terminal=%s provider=%s status=%s ready=%t workspace=%s tab=%s state_change_seq=%d session=%s session_incarnation=%s agent_session=%s\n",
+		value.Target.PaneId, value.Target.TerminalId, value.Provider, value.Status, value.InteractiveReady, value.WorkspaceId, value.TabId, value.StateChangeSeq, value.Target.SessionName, value.Target.SessionIncarnation, value.Target.AgentSessionId)
 	return err
 }

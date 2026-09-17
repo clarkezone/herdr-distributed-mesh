@@ -220,9 +220,9 @@ func TestRealNodeProbeIsAuthorizedJournaledAndIdempotent(t *testing.T) {
 	if status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting retry accepted: %v", err)
 	}
-	_, err = agentflowv1.NewFleetClient(h.connection).GetCommand(commandPeer(context.Background(), "client2"), &agentflowv1.GetCommandRequest{CommandId: id})
-	if status.Code(err) != codes.NotFound {
-		t.Fatal("different actor read private command history")
+	receipt, err := agentflowv1.NewFleetClient(h.connection).GetCommand(commandPeer(context.Background(), "client2"), &agentflowv1.GetCommandRequest{CommandId: id})
+	if err != nil || receipt.GetCommand().GetCommandId() != id {
+		t.Fatal("trusted operator client could not inspect receipt", err)
 	}
 	_, err = agentflowv1.NewFleetClient(h.connection).SubmitCommand(commandPeer(context.Background(), "node"), request)
 	if status.Code(err) != codes.PermissionDenied {

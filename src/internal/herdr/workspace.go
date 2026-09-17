@@ -101,18 +101,28 @@ func ensureWorkspace(ctx context.Context, config Config, binding projects.Bindin
 		result.WorkspaceId = matches[0]
 		return result, nil
 	}
-	_, _, cleanup, created, err := o.request(ctx, "workspace.create", "workspace_created", struct {
+	if config.CheckSession != nil {
+		if err := config.CheckSession(ctx); err != nil {
+			return nil, err
+		}
+	}
+	// workspace.create(cwd) opens a plain shell without checkout metadata.
+	// worktree.open opens the existing checkout without creating a Git worktree
+	// and gives subsequent ensure/observation calls a stable checkout identity.
+	_, _, cleanup, created, err := o.request(ctx, "worktree.open", "worktree_opened", struct {
 		Cwd   string `json:"cwd"`
+		Path  string `json:"path"`
 		Focus bool   `json:"focus"`
-	}{Cwd: binding.Path, Focus: false})
+	}{Cwd: binding.Path, Path: binding.Path, Focus: false})
 	if err != nil {
 		return nil, ErrWorkspaceIndeterminate
 	}
 	cleanup()
 	id, checkout, err := workspaceIdentity(created["workspace"])
+	var alreadyOpen bool
 	// Without confirmed checkout identity, later lists cannot recognize this
 	// create and a new command could duplicate it instead of being quarantined.
-	if err != nil || checkout == "" {
+	if err != nil || checkout == "" || required(created, "already_open", &alreadyOpen) != nil {
 		return nil, ErrWorkspaceIndeterminate
 	}
 	if _, duplicate := seen[id]; duplicate {
@@ -126,7 +136,7 @@ func ensureWorkspace(ctx context.Context, config Config, binding projects.Bindin
 		return nil, ErrWorkspaceIndeterminate
 	}
 	result.WorkspaceId = id
-	result.Created = true
+	result.Created = !alreadyOpen
 	return result, nil
 }
 

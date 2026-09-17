@@ -13,6 +13,7 @@ import (
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"google.golang.org/protobuf/proto"
 )
 
 // CreateWorktree creates only an explicitly authorized new linked worktree via
@@ -25,6 +26,18 @@ func CreateWorktree(ctx context.Context, config Config, binding projects.Binding
 }
 
 func createWorktree(ctx context.Context, config Config, binding projects.Binding, request *pb.WorktreeCreate, dial dialFunc) (*pb.WorktreeCreateResult, error) {
+	if request != nil && request.BaseCommit == "" {
+		request = proto.Clone(request).(*pb.WorktreeCreate)
+		git, err := newWorktreeGit(3 * time.Second)
+		if err != nil || binding.ValidatePath() != nil {
+			return nil, ErrWorkspacePrecondition
+		}
+		head, err := git.read(ctx, binding.Path, "rev-parse", "--verify", "--end-of-options", "HEAD^{commit}")
+		if err != nil {
+			return nil, err
+		}
+		request.BaseCommit = head
+	}
 	if protocol.ValidateWorktreeCreate(request) != nil ||
 		request.ProjectId != binding.ProjectID || request.BindingRevision != binding.Revision {
 		return nil, ErrWorkspacePrecondition
@@ -85,6 +98,11 @@ func createWorktree(ctx context.Context, config Config, binding projects.Binding
 	}
 	// Checkout can be much slower than a read. Use the remaining command TTL,
 	// not the default three-second read timeout, and never extend its deadline.
+	if config.CheckSession != nil {
+		if err := config.CheckSession(ctx); err != nil {
+			return nil, err
+		}
+	}
 	deadline, _ := ctx.Deadline()
 	o.config.RequestTimeout = time.Until(deadline)
 	_, _, cleanup, created, err := o.request(ctx, "worktree.create", "worktree_created", struct {
