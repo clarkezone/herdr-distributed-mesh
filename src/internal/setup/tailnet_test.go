@@ -18,7 +18,13 @@ func testOptions(t *testing.T) Options {
 	t.Helper()
 	o := DefaultOptions()
 	o.Tailnet = "example.com"
-	o.OutputDirectory = filepath.Join(t.TempDir(), "output")
+	// macOS temp roots can traverse /var -> /private/var. Production deliberately
+	// rejects linked output ancestors, so success fixtures must use physical paths.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.OutputDirectory = filepath.Join(root, "output")
 	o.ApiTokenEnvironmentVariable = "HERDR_SETUP_TEST_TOKEN"
 	t.Setenv(o.ApiTokenEnvironmentVariable, " tskey-api-test-secret ")
 	return o
@@ -134,11 +140,19 @@ func TestSetupTokenValidationBeforeHost(t *testing.T) {
 }
 
 func TestSetupEmbeddedWorkflowWithMockedPowerShellAPI(t *testing.T) {
+	testEmbeddedWorkflow(t, func(path string) string { return path })
+}
+
+func requirePowerShell(t *testing.T) {
+	t.Helper()
 	if _, err := exec.LookPath("pwsh"); err != nil {
 		if _, err := exec.LookPath("powershell.exe"); err != nil {
 			t.Skip("PowerShell prerequisite absent")
 		}
 	}
+}
+
+func mockedSetupHost(ctx context.Context, request scripthost.Request) (scripthost.Result, error) {
 	const mockedEntry = `param([string]$OptionsPath)
 		$ErrorActionPreference='Stop'
 		$global:sequence=0
@@ -162,15 +176,20 @@ func TestSetupEmbeddedWorkflowWithMockedPowerShellAPI(t *testing.T) {
 		}
 		& (Join-Path $PSScriptRoot 'actual-entry.ps1') -OptionsPath $OptionsPath
 		`
+	request.Assets["actual-entry.ps1"] = request.Script
+	request.Script = []byte(mockedEntry)
+	return scripthost.Run(ctx, request)
+}
+
+func testEmbeddedWorkflow(t *testing.T, outputPath func(string) string) {
+	t.Helper()
+	requirePowerShell(t)
 	for _, apply := range []bool{false, true} {
 		o := testOptions(t)
+		o.OutputDirectory = outputPath(o.OutputDirectory)
 		o.Apply = apply
 		o.Timeout = 20 * time.Second
-		report, err := run(context.Background(), o, func(ctx context.Context, request scripthost.Request) (scripthost.Result, error) {
-			request.Assets["actual-entry.ps1"] = request.Script
-			request.Script = []byte(mockedEntry)
-			return scripthost.Run(ctx, request)
-		})
+		report, err := run(context.Background(), o, mockedSetupHost)
 		if err != nil {
 			t.Fatal(err)
 		}

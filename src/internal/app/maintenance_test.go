@@ -13,9 +13,19 @@ import (
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 )
 
+func maintenanceAppTempDir(t *testing.T) string {
+	t.Helper()
+	// Production deliberately rejects aliases, including macOS's /var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func maintenanceAppFixture(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
+	root := maintenanceAppTempDir(t)
 	if err := os.WriteFile(filepath.Join(root, "instance-id"), []byte("node\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +72,7 @@ func TestMaintenanceRouterInspectionIsAggregateAndLocal(t *testing.T) {
 
 func TestMaintenanceRouterBackupProtocolAndVerification(t *testing.T) {
 	root := maintenanceAppFixture(t)
-	destination := filepath.Join(t.TempDir(), "backup")
+	destination := filepath.Join(maintenanceAppTempDir(t), "backup")
 	var out, stderr bytes.Buffer
 	io := IO{Out: &out, Err: &stderr}
 	args := []string{"backup", "-role", "node", "-state-dir", root, "-destination", destination, "-json"}

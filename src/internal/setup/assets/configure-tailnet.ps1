@@ -241,7 +241,13 @@ $headers = @{
     Accept = 'application/json'
 }
 
-$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+# Preserve Windows short-name spelling in the structured report, matching the
+# caller's absolute path rather than expanding it as .NET GetFullPath does.
+$provider = $null
+$drive = $null
+$OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
+    $OutputDirectory, [ref]$provider, [ref]$drive)
+if ($provider.Name -ne 'FileSystem') { Stop-Setup 'output_unavailable' }
 Assert-SafeOutputPath $OutputDirectory
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {
     New-Item -ItemType Directory -Path $OutputDirectory -WhatIf:$false | Out-Null

@@ -172,11 +172,13 @@ func TestHostPowerShellStructuredSmoke(t *testing.T) {
 				t.Skip("PowerShell variant absent")
 			}
 			value := `quote '; $env:HERDR_MESH_MUST_NOT_CHANGE = 'wrong` + "\u03bb"
+			// This verifies real-runtime interoperability, not cold-start latency.
+			// Deadline enforcement is exercised separately with the controlled child.
 			result, err := run(context.Background(), Request{
 				Script: []byte(`param([string]$OptionsPath)
 $value = [IO.File]::ReadAllText($OptionsPath) | ConvertFrom-Json
 @{value=$value.value} | ConvertTo-Json -Compress
-`), Options: map[string]string{"value": value}, Timeout: 10 * time.Second,
+`), Options: map[string]string{"value": value}, Timeout: DefaultTimeout,
 			}, func() (string, error) { return path, nil }, execute)
 			if err != nil {
 				t.Fatal(err)

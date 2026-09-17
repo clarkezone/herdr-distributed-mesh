@@ -24,7 +24,7 @@ func TestRuntimeRolesLockBeforeIdentityAndTransport(t *testing.T) {
 		{"dashboard", "client", []string{"dashboard", "-server", "unused:50052", "-listen", "127.0.0.1:0"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := maintenanceAppTempDir(t)
 			guard, err := state.PrepareRoleState(context.Background(), root, test.role)
 			if err != nil {
 				t.Fatal(err)
@@ -46,7 +46,7 @@ func TestRuntimeRolesLockBeforeIdentityAndTransport(t *testing.T) {
 }
 
 func TestMaintenanceTopLevelRouteUsesOfflineLock(t *testing.T) {
-	root := t.TempDir()
+	root := maintenanceAppTempDir(t)
 	guard, err := state.PrepareRoleState(context.Background(), root, "node")
 	if err != nil {
 		t.Fatal(err)

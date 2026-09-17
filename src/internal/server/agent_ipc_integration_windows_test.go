@@ -27,6 +27,17 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+func integrationAgentRequest(kind pb.AgentQueryKind) *pb.AgentQueryRequest {
+	request := agentRequest(kind)
+	request.TimeoutMs = 10000
+	if kind == pb.AgentQueryKind_AGENT_QUERY_KIND_WAIT {
+		// WAIT must remain active throughout the concurrent queries, durable
+		// mutation, and heartbeat check, rather than expire during CI scheduling.
+		request.TimeoutMs = 30000
+	}
+	return request
+}
+
 type fakeAgentIPC struct {
 	path, output              string
 	mu                        sync.Mutex
@@ -158,7 +169,7 @@ func (f *fakeAgentIPC) serve(t *testing.T, conn net.Conn) {
 		var until []string
 		var timeout uint32
 		if json.Unmarshal(request.Params["until"], &until) != nil ||
-			json.Unmarshal(request.Params["timeout_ms"], &timeout) != nil || timeout == 0 || timeout > 10000 {
+			json.Unmarshal(request.Params["timeout_ms"], &timeout) != nil || timeout == 0 || timeout > 30000 {
 			t.Error("unbounded or malformed wait")
 			return
 		}
@@ -166,6 +177,10 @@ func (f *fakeAgentIPC) serve(t *testing.T, conn net.Conn) {
 		if slices.Contains(until, view["agent_status"].(string)) {
 			result = map[string]any{"type": "agent_info", "agent": view}
 		} else {
+			if err := conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Millisecond)); err != nil {
+				t.Errorf("set synthetic wait deadline: %v", err)
+				return
+			}
 			f.waitStarted <- struct{}{}
 			_, _ = io.Copy(io.Discard, conn)
 			f.waitCanceled <- struct{}{}
@@ -224,7 +239,7 @@ func waitAgentNodeReady(t *testing.T, ctx context.Context, fleet pb.FleetClient)
 	for {
 		list, err := fleet.ListNodes(ctx, &emptypb.Empty{})
 		if err != nil {
-			t.Fatal("cannot read isolated fleet readiness")
+			t.Fatalf("cannot read isolated fleet readiness: %v", err)
 		}
 		if len(list.Nodes) == 1 && list.Nodes[0].AgentReady {
 			return list.Nodes[0]
@@ -233,6 +248,20 @@ func waitAgentNodeReady(t *testing.T, ctx context.Context, fleet pb.FleetClient)
 		case <-ctx.Done():
 			t.Fatal("agent node did not become ready")
 		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func waitAgentHeartbeatAfter(t *testing.T, ctx context.Context, fleet pb.FleetClient, before time.Time) {
+	t.Helper()
+	for {
+		if waitAgentNodeReady(t, ctx, fleet).LastSeen.AsTime().After(before) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("heartbeat did not advance while WAIT was active: %v", ctx.Err())
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }
@@ -288,11 +317,11 @@ func TestAgentNamedPipeRealJournalsCancelInterruptReconnectAndFence(t *testing.T
 	h := newCommandHarness(t, root)
 	fleet := pb.NewFleetClient(h.connection)
 	path := filepath.Join(root, "node", "commands.db")
-	running := startRealAdapterNode(t, h, fake.path, path, 20*time.Millisecond)
-	ctx, cancel := context.WithTimeout(commandPeer(context.Background(), "client"), 20*time.Second)
+	running := startRealAdapterNode(t, h, fake.path, path, journaledTestHeartbeatInterval)
+	ctx, cancel := context.WithTimeout(commandPeer(context.Background(), "client"), 60*time.Second)
 	defer cancel()
 	waitAgentNodeReady(t, ctx, fleet)
-	get, err := fleet.QueryAgent(ctx, agentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_GET))
+	get, err := fleet.QueryAgent(ctx, integrationAgentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_GET))
 	if err != nil || get.GetAgent() == nil || get.Agent.Target.AgentSessionId != "a1" {
 		t.Fatal("real adapter GET failed")
 	}
@@ -307,9 +336,10 @@ func TestAgentNamedPipeRealJournalsCancelInterruptReconnectAndFence(t *testing.T
 	if err != nil || prompt.GetDetail() != "agent_prompt_sent" || !proto.Equal(prompt.GetAgentControl().GetTarget(), promptTarget) {
 		t.Fatal("prompt receipt did not preserve the original target")
 	}
-	waitRequest := agentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_WAIT)
+	waitRequest := integrationAgentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_WAIT)
 	waitRequest.Until = []string{"unknown"}
 	waitCtx, cancelWait := context.WithCancel(ctx)
+	defer cancelWait()
 	waitDone := make(chan error, 1)
 	go func() { _, err := fleet.QueryAgent(waitCtx, waitRequest); waitDone <- err }()
 	select {
@@ -319,26 +349,28 @@ func TestAgentNamedPipeRealJournalsCancelInterruptReconnectAndFence(t *testing.T
 	}
 	before := waitAgentNodeReady(t, ctx, fleet).LastSeen.AsTime()
 	readCtx := commandPeer(context.Background(), "client2")
-	readCtx, cancelRead := context.WithTimeout(readCtx, 3*time.Second)
+	readCtx, cancelRead := context.WithTimeout(readCtx, 10*time.Second)
 	defer cancelRead()
-	read, err := fleet.QueryAgent(readCtx, agentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_READ))
+	read, err := fleet.QueryAgent(readCtx, integrationAgentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_READ))
 	if err != nil || read.GetText() != fake.output {
-		t.Fatal("concurrent real adapter READ failed")
+		t.Fatalf("concurrent real adapter READ: err=%v code=%q text_bytes=%d", err, read.GetErrorCode(), len(read.GetText()))
 	}
-	for !waitAgentNodeReady(t, ctx, fleet).LastSeen.AsTime().After(before) {
-		time.Sleep(10 * time.Millisecond)
+	waitAgentHeartbeatAfter(t, ctx, fleet, before)
+	interrupt, err := fleet.SubmitCommand(ctx, controlRequest(target, pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT))
+	if err != nil {
+		t.Fatal(err)
 	}
-	interruptDone := make(chan error, 1)
-	go func() {
-		record, err := fleet.SubmitCommand(ctx, controlRequest(target, pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT))
-		if err == nil {
-			record, err = waitAgentReceipt(ctx, fleet, record.Command.CommandId)
-			if err == nil && (record.GetDetail() != "agent_interrupt_sent" || record.GetStatus() != pb.CommandStatus_COMMAND_STATUS_SUCCEEDED) {
-				err = fmt.Errorf("interrupt delivery receipt missing")
-			}
-		}
-		interruptDone <- err
-	}()
+	interrupt, err = waitAgentReceipt(ctx, fleet, interrupt.Command.CommandId)
+	if err != nil || interrupt.GetDetail() != "agent_interrupt_sent" || interrupt.GetStatus() != pb.CommandStatus_COMMAND_STATUS_SUCCEEDED {
+		t.Fatalf("interrupt delivery while WAIT active: err=%v status=%s detail=%q", err, interrupt.GetStatus(), interrupt.GetDetail())
+	}
+	select {
+	case err := <-waitDone:
+		t.Fatalf("WAIT ended before explicit cancellation: %v", err)
+	case <-fake.waitCanceled:
+		t.Fatal("local WAIT ended before explicit cancellation")
+	default:
+	}
 	cancelWait()
 	if err := <-waitDone; status.Code(err) != codes.Canceled {
 		t.Fatalf("WAIT cancellation status: %v", status.Code(err))
@@ -348,16 +380,14 @@ func TestAgentNamedPipeRealJournalsCancelInterruptReconnectAndFence(t *testing.T
 	case <-ctx.Done():
 		t.Fatal("cancel did not close the matching local wait")
 	}
-	if err := <-interruptDone; err != nil {
-		t.Fatal(err)
-	}
 	if fake.interrupts.Load() != 1 || fake.prompts.Load() != 1 {
 		t.Fatal("mutation was retried or interrupt was split into multiple requests")
 	}
 	fake.replaceOnRead.Store(true)
-	changed, err := fleet.QueryAgent(ctx, agentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_READ))
-	if err != nil || changed.GetErrorCode() != "target_changed" || changed.Agent != nil || changed.Text != "" {
-		t.Fatal("replaced terminal returned output")
+	changed, err := fleet.QueryAgent(ctx, integrationAgentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_READ))
+	if err != nil || changed.GetErrorCode() != "target_changed" || changed.GetAgent() != nil || changed.GetText() != "" || fake.replaceOnRead.Load() {
+		t.Fatalf("replacement fence: err=%v code=%q agent_present=%t text_bytes=%d replacement_pending=%t",
+			err, changed.GetErrorCode(), changed.GetAgent() != nil, len(changed.GetText()), fake.replaceOnRead.Load())
 	}
 	mismatch, err := fleet.SubmitCommand(ctx, controlRequest(target, pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT))
 	if err != nil {
@@ -398,7 +428,7 @@ func TestAgentNamedPipeRealJournalsCancelInterruptReconnectAndFence(t *testing.T
 	}
 	h.stop()
 	reopened := newCommandHarness(t, root)
-	reconnected := startRealAdapterNode(t, reopened, fake.path, path, 20*time.Millisecond)
+	reconnected := startRealAdapterNode(t, reopened, fake.path, path, journaledTestHeartbeatInterval)
 	fleet = pb.NewFleetClient(reopened.connection)
 	waitAgentNodeReady(t, ctx, fleet)
 	replayed := awaitCommand(t, reopened, lost.Command.CommandId, pb.CommandStatus_COMMAND_STATUS_SUCCEEDED)

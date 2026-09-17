@@ -15,7 +15,11 @@ import (
 )
 
 func maintenanceLocalPath(path string) bool {
-	if !filepath.IsAbs(path) || len(path) > 4096 || !utf8.ValidString(path) ||
+	return filepath.IsAbs(path) && maintenancePathSyntaxSafe(path)
+}
+
+func maintenancePathSyntaxSafe(path string) bool {
+	if len(path) > 4096 || !utf8.ValidString(path) ||
 		strings.ContainsFunc(path, unicode.IsControl) || strings.HasPrefix(path, `\\`) ||
 		strings.HasPrefix(path, "//") || strings.Contains(strings.TrimPrefix(path, filepath.VolumeName(path)), ":") {
 		return false

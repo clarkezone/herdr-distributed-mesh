@@ -15,9 +15,17 @@ import (
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 )
 
+func maintenanceTempDir(t *testing.T) string {
+	t.Helper()
+	// macOS temp roots can contain /var, which aliases /private/var.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	requireOK(t, err)
+	return root
+}
+
 func maintenanceFixture(t *testing.T, role string, guarded bool) (string, string) {
 	t.Helper()
-	root := t.TempDir()
+	root := maintenanceTempDir(t)
 	requireOK(t, os.WriteFile(filepath.Join(root, "instance-id"), []byte(role+"\n"), 0600))
 	requireOK(t, os.Mkdir(filepath.Join(root, "tsnet"), 0700))
 	requireOK(t, os.WriteFile(filepath.Join(root, "tsnet", "tailscaled.state"), []byte("PRIVATE-ENROLLMENT-MATERIAL"), 0600))
@@ -34,6 +42,35 @@ func maintenanceFixture(t *testing.T, role string, guarded bool) (string, string
 		requireOK(t, guard.Close())
 	}
 	return root, path
+}
+
+func TestMaintenanceFixturesCanonicalizeTemporaryRoot(t *testing.T) {
+	parent := maintenanceTempDir(t)
+	target := maintenanceTempDir(t)
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, alias)
+	}
+	// A fresh subtest allocates its temp root under the aliased temp directory.
+	t.Run("canonical-fixture", func(t *testing.T) {
+		root, _ := maintenanceFixture(t, "node", true)
+		canonical, err := filepath.EvalSymlinks(root)
+		requireOK(t, err)
+		if root != canonical {
+			t.Fatalf("fixture retained a directory alias: %q", root)
+		}
+		_, err = InspectMaintenance(context.Background(), root, "node")
+		requireOK(t, err)
+		destination := filepath.Join(maintenanceTempDir(t), "backup")
+		_, err = BackupMaintenance(context.Background(), root, "node", destination)
+		requireOK(t, err)
+	})
+	if _, err := maintenanceDirectory(alias); !errors.Is(err, ErrMaintenancePath) {
+		t.Fatalf("production accepted a directory alias: %v", err)
+	}
 }
 
 func TestMaintenanceInspectPreservesRunningClaimsAndRedacts(t *testing.T) {
@@ -88,7 +125,7 @@ func TestMaintenanceLocksAndRuntimeProtocolFailClosed(t *testing.T) {
 	for _, run := range []func() error{
 		func() error { _, err := InspectMaintenance(ctx, root, "node"); return err },
 		func() error {
-			_, err := BackupMaintenance(ctx, root, "node", filepath.Join(t.TempDir(), "backup"))
+			_, err := BackupMaintenance(ctx, root, "node", filepath.Join(maintenanceTempDir(t), "backup"))
 			return err
 		},
 	} {
@@ -104,7 +141,7 @@ func TestMaintenanceLocksAndRuntimeProtocolFailClosed(t *testing.T) {
 	}
 	requireOK(t, j.Close())
 	legacy, _ := maintenanceFixture(t, "node", false)
-	if _, err := BackupMaintenance(ctx, legacy, "node", filepath.Join(t.TempDir(), "backup")); !errors.Is(err, ErrMaintenanceLockProtocol) {
+	if _, err := BackupMaintenance(ctx, legacy, "node", filepath.Join(maintenanceTempDir(t), "backup")); !errors.Is(err, ErrMaintenanceLockProtocol) {
 		t.Fatalf("journal lock alone authorized whole-role copy: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(legacy, maintenanceRoleLock)); !errors.Is(err, os.ErrNotExist) {
@@ -134,7 +171,7 @@ func TestMaintenanceBackupPreservesCompleteRoleAndVerifies(t *testing.T) {
 			// Unknown state files are retained rather than an allowlist silently
 			// omitting credentials or future retry/session evidence.
 			requireOK(t, os.WriteFile(filepath.Join(root, "future-private-state"), []byte("PRIVATE-FUTURE-EVIDENCE"), 0600))
-			destination := filepath.Join(t.TempDir(), "backup")
+			destination := filepath.Join(maintenanceTempDir(t), "backup")
 			report, err := BackupMaintenance(ctx, root, role, destination)
 			requireOK(t, err)
 			if !report.Verified || report.Destination != destination || report.Source.Commands.Used == 0 {
@@ -236,7 +273,7 @@ func TestMaintenanceRejectsCorruptionIdentityMismatchAndUnsafePaths(t *testing.T
 			t.Fatalf("unsafe destination accepted: %v", err)
 		}
 	}
-	link := filepath.Join(t.TempDir(), "alias")
+	link := filepath.Join(maintenanceTempDir(t), "alias")
 	if err := os.Symlink(root, link); err == nil {
 		if _, err := InspectMaintenance(ctx, link, "node"); !errors.Is(err, ErrMaintenancePath) {
 			t.Fatal("linked source accepted")
@@ -246,11 +283,11 @@ func TestMaintenanceRejectsCorruptionIdentityMismatchAndUnsafePaths(t *testing.T
 		}
 	}
 	original := filepath.Join(root, "tsnet", "tailscaled.state")
-	hardlink := filepath.Join(t.TempDir(), "alias")
+	hardlink := filepath.Join(maintenanceTempDir(t), "alias")
 	if err := os.Link(original, hardlink); err != nil {
 		t.Skipf("hard links unavailable: %v", err)
 	}
-	destination := filepath.Join(t.TempDir(), "backup")
+	destination := filepath.Join(maintenanceTempDir(t), "backup")
 	if _, err := BackupMaintenance(ctx, root, "node", destination); err == nil {
 		t.Fatal("hardlinked sensitive state copied")
 	}
@@ -266,10 +303,10 @@ func TestMaintenanceBackupBoundsAndIncompleteArtifacts(t *testing.T) {
 		deep = filepath.Join(deep, "deep")
 		requireOK(t, os.Mkdir(deep, 0700))
 	}
-	if _, err := BackupMaintenance(context.Background(), root, "node", filepath.Join(t.TempDir(), "backup")); !errors.Is(err, ErrMaintenanceBounds) {
+	if _, err := BackupMaintenance(context.Background(), root, "node", filepath.Join(maintenanceTempDir(t), "backup")); !errors.Is(err, ErrMaintenanceBounds) {
 		t.Fatalf("depth bound not enforced: %v", err)
 	}
-	incomplete := t.TempDir()
+	incomplete := maintenanceTempDir(t)
 	requireOK(t, os.WriteFile(filepath.Join(incomplete, "manifest.json"), []byte("{}"), 0600))
 	if _, err := VerifyMaintenanceBackup(context.Background(), incomplete, "node"); !errors.Is(err, ErrMaintenanceBackup) {
 		t.Fatal("incomplete artifact passed")
@@ -283,7 +320,7 @@ func TestMaintenanceBackupRequiresTransportIdentityAndMatchingRole(t *testing.T)
 		t.Fatalf("role-state lock silently switched role: %v", err)
 	}
 	requireOK(t, os.Remove(filepath.Join(root, "tsnet", "tailscaled.state")))
-	destination := filepath.Join(t.TempDir(), "backup")
+	destination := filepath.Join(maintenanceTempDir(t), "backup")
 	if _, err := BackupMaintenance(ctx, root, "node", destination); !errors.Is(err, ErrMaintenancePath) {
 		t.Fatalf("missing transport identity admitted full-role backup: %v", err)
 	}
@@ -293,7 +330,7 @@ func TestMaintenanceBackupRequiresTransportIdentityAndMatchingRole(t *testing.T)
 }
 
 func TestMaintenanceEntryDetectsChangedSourceAndCancellation(t *testing.T) {
-	root := t.TempDir()
+	root := maintenanceTempDir(t)
 	path := filepath.Join(root, "state")
 	requireOK(t, os.WriteFile(path, []byte("original"), 0600))
 	entries, _, err := maintenanceTree(context.Background(), root)

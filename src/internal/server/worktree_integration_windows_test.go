@@ -185,7 +185,9 @@ func TestWorktreeCreationThroughRealNodeGitAndJournals(t *testing.T) {
 			if mode != "known-result" {
 				want = pb.CommandStatus_COMMAND_STATUS_INDETERMINATE
 			}
-			record := awaitCommand(t, h, first.Command.CommandId, want)
+			// Git validation and both durable journals share the command's existing
+			// 30-second budget, not awaitCommand's five-second probe budget.
+			record := awaitCommandContext(t, ctx, h, first.Command.CommandId, want)
 			if fake.creates.Load() != 1 {
 				t.Fatal("create was not attempted exactly once")
 			}
@@ -223,7 +225,7 @@ func TestWorktreeCreationThroughRealNodeGitAndJournals(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			blocked := awaitCommand(t, h, submitted.Command.CommandId, pb.CommandStatus_COMMAND_STATUS_REJECTED)
+			blocked := awaitCommandContext(t, ctx, h, submitted.Command.CommandId, pb.CommandStatus_COMMAND_STATUS_REJECTED)
 			detail := "precondition_failed"
 			if mode != "known-result" {
 				detail = "project_unresolved"
@@ -236,7 +238,7 @@ func TestWorktreeCreationThroughRealNodeGitAndJournals(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if record := awaitCommand(t, h, workspace.Command.CommandId, pb.CommandStatus_COMMAND_STATUS_REJECTED); record.Detail != "project_unresolved" {
+				if record := awaitCommandContext(t, ctx, h, workspace.Command.CommandId, pb.CommandStatus_COMMAND_STATUS_REJECTED); record.Detail != "project_unresolved" {
 					t.Fatal("workspace bypassed worktree quarantine")
 				}
 			}

@@ -32,6 +32,10 @@ type commandHarness struct {
 	stop       func()
 }
 
+// Every heartbeat is durably persisted. These integration tests exercise
+// concurrency, not disk throughput at 20-100 fsyncs/second on a shared CI runner.
+const journaledTestHeartbeatInterval = 250 * time.Millisecond
+
 func commandPeer(ctx context.Context, peer string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "test-peer", peer)
 }
@@ -181,11 +185,18 @@ func awaitCommand(t *testing.T, h *commandHarness, id string, want agentflowv1.C
 	t.Helper()
 	ctx, cancel := context.WithTimeout(commandPeer(context.Background(), "client"), 5*time.Second)
 	defer cancel()
+	return awaitCommandContext(t, ctx, h, id, want)
+}
+
+func awaitCommandContext(t *testing.T, ctx context.Context, h *commandHarness, id string, want agentflowv1.CommandStatus) *agentflowv1.CommandRecord {
+	t.Helper()
+	var last *agentflowv1.CommandRecord
 	for {
 		record, err := agentflowv1.NewFleetClient(h.connection).GetCommand(ctx, &agentflowv1.GetCommandRequest{CommandId: id})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("await command: %v; last status=%s detail=%q, want %s", err, last.GetStatus(), last.GetDetail(), want)
 		}
+		last = record
 		if record.Status == want {
 			return record
 		}

@@ -162,6 +162,12 @@ func TestSessionWorkspaceWorkerKeepsHeartbeatReplayAckAndSnapshotFlowing(t *test
 	}
 	first, second, expired := workspaceCommand(), workspaceCommand(), probe()
 	expired.Ttl = durationpb.New(20 * time.Millisecond)
+	acknowledged := make(chan struct{}, 1)
+	observed := observedJournal{commandJournal: journal, afterAcknowledge: func(id string) {
+		if id == seed.CommandId {
+			acknowledged <- struct{}{}
+		}
+	}}
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var active, calls atomic.Int32
@@ -226,7 +232,14 @@ func TestSessionWorkspaceWorkerKeepsHeartbeatReplayAckAndSnapshotFlowing(t *test
 				}
 			}
 		}
-		pending, err := journal.PendingResults(context.Background())
+		// Send and unrelated heartbeats do not establish that the ack was committed.
+		// Keep the mutation blocked until the journal itself confirms progress.
+		select {
+		case <-acknowledged:
+		case <-stream.Context().Done():
+			return fmt.Errorf("ack starved by mutation: %w", stream.Context().Err())
+		}
+		pending, err := journal.PendingResults(stream.Context())
 		if err != nil || len(pending) != 0 {
 			return fmt.Errorf("ack starved by mutation: pending=%d err=%v", len(pending), err)
 		}
@@ -250,7 +263,7 @@ func TestSessionWorkspaceWorkerKeepsHeartbeatReplayAckAndSnapshotFlowing(t *test
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := runSessionWithExecutor(ctx, sessionClient(t, api), workspaceOptions(t), journal,
+	_, err := runSessionWithExecutor(ctx, sessionClient(t, api), workspaceOptions(t), observed,
 		func() { t.Error("expired queued probe executed") }, execute)
 	select {
 	case scriptErr := <-verified:

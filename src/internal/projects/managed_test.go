@@ -23,6 +23,15 @@ func managedCheckout(t *testing.T) string {
 	return path
 }
 
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Clean(canonical)
+}
+
 func TestManagedApplyRootsAndResolve(t *testing.T) {
 	for _, override := range []bool{false, true} {
 		t.Run(fmt.Sprint(override), func(t *testing.T) {
@@ -38,7 +47,7 @@ func TestManagedApplyRootsAndResolve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if b.WorktreeRoot != want || !b.AllowWorktrees || b.ValidateWorktreeRoot() != nil || !m.HasWorktrees() {
+			if b.WorktreeRoot != canonicalTestPath(t, want) || !b.AllowWorktrees || b.ValidateWorktreeRoot() != nil || !m.HasWorktrees() {
 				t.Fatalf("invalid binding: %+v", b)
 			}
 			for _, actor := range []string{"", "ungranted", "not/an/id"} {
@@ -137,7 +146,7 @@ func TestManagedLinkedGitWorktree(t *testing.T) {
 		t.Fatal("exported fields bypassed pins")
 	}
 	current, err := m.Resolve("node", "project", "r1", "")
-	if err != nil || current.Path != linked || current.ValidateWorktreeRoot() != nil {
+	if err != nil || current.Path != canonicalTestPath(t, linked) || current.ValidateWorktreeRoot() != nil {
 		t.Fatal("returned binding mutation affected cache")
 	}
 }
@@ -161,8 +170,8 @@ func TestManagedReconfigurationFreezesCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if old.Revision != "r1" || old.Path != path || old.ValidateWorktreeRoot() != nil ||
-		newBinding.Path != newPath || newBinding.ValidateWorktreeRoot() != nil {
+	if old.Revision != "r1" || old.Path != canonicalTestPath(t, path) || old.ValidateWorktreeRoot() != nil ||
+		newBinding.Path != canonicalTestPath(t, newPath) || newBinding.ValidateWorktreeRoot() != nil {
 		t.Fatal("reconfiguration invalidated frozen binding")
 	}
 	if _, err := m.Resolve("node", "project", "r1", ""); err != ErrDenied {
@@ -174,7 +183,7 @@ func TestManagedReconfigurationFreezesCopies(t *testing.T) {
 	if _, err := m.Apply(context.Background(), "project", "r3", t.TempDir(), ""); err == nil {
 		t.Fatal("invalid update succeeded")
 	}
-	if b, err := m.Resolve("node", "project", "r2", ""); err != nil || b.Path != newPath {
+	if b, err := m.Resolve("node", "project", "r2", ""); err != nil || b.Path != canonicalTestPath(t, newPath) {
 		t.Fatal("failed update changed current binding")
 	}
 }

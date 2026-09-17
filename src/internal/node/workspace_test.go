@@ -62,8 +62,9 @@ func allowCoordinator(context.Context) error { return nil }
 
 type observedJournal struct {
 	commandJournal
-	afterClaim func()
-	onComplete func(context.Context, *pb.CommandResult)
+	afterClaim       func()
+	onComplete       func(context.Context, *pb.CommandResult)
+	afterAcknowledge func(string)
 }
 
 func (j observedJournal) Claim(ctx context.Context, command *pb.Command) (*pb.CommandResult, bool, error) {
@@ -79,6 +80,16 @@ func (j observedJournal) Complete(ctx context.Context, result *pb.CommandResult)
 		j.onComplete(ctx, result)
 	}
 	return j.commandJournal.Complete(ctx, result)
+}
+
+func (j observedJournal) Acknowledge(ctx context.Context, id string, status pb.CommandStatus) error {
+	if err := j.commandJournal.Acknowledge(ctx, id, status); err != nil {
+		return err
+	}
+	if j.afterAcknowledge != nil {
+		j.afterAcknowledge(id)
+	}
+	return nil
 }
 
 func TestWorkspaceRequiresOptInAndNegotiation(t *testing.T) {

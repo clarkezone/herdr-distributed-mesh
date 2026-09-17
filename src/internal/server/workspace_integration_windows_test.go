@@ -162,7 +162,7 @@ func startWorkspaceNode(t *testing.T, h *commandHarness, journal string, policy 
 	go func() {
 		_, err := node.RunSession(ctx, pb.NewNodeControlClient(h.connection), node.Options{
 			InstanceID: "node-1", RequiredServerTag: node.DefaultRequiredServerTag, CommandJournalPath: journal,
-			WorkspacePolicy: policy, HerdrSocket: socket, HeartbeatInterval: 50 * time.Millisecond,
+			WorkspacePolicy: policy, HerdrSocket: socket, HeartbeatInterval: journaledTestHeartbeatInterval,
 			VerifyServerPeer: func(ctx context.Context, address string) error {
 				if address != "bufconn" {
 					return errors.New("unexpected integration coordinator peer")

@@ -12,7 +12,7 @@ import (
 func TestMaintenanceAbortedStartupDoesNotActivateBackupContract(t *testing.T) {
 	ctx := context.Background()
 	root, _ := maintenanceFixture(t, "node", false)
-	destination := filepath.Join(t.TempDir(), "backup")
+	destination := filepath.Join(maintenanceTempDir(t), "backup")
 	first, err := AcquireRoleState(ctx, root, "node")
 	requireOK(t, err)
 	if _, err := BackupMaintenance(ctx, root, "node", destination); !errors.Is(err, ErrLocked) {
@@ -65,14 +65,14 @@ func TestMaintenancePendingMarkersRecoverWithoutImplicitActivation(t *testing.T)
 			if string(actual) != pending {
 				t.Fatal("interrupted marker was not normalized to pending")
 			}
-			if _, err := BackupMaintenance(ctx, root, "node", filepath.Join(t.TempDir(), "backup")); !errors.Is(err, ErrMaintenanceLockProtocol) {
+			if _, err := BackupMaintenance(ctx, root, "node", filepath.Join(maintenanceTempDir(t), "backup")); !errors.Is(err, ErrMaintenanceLockProtocol) {
 				t.Fatalf("recovered pending marker admitted backup: %v", err)
 			}
 			guard, err = AcquireRoleState(ctx, root, "node")
 			requireOK(t, err)
 			requireOK(t, guard.Activate())
 			requireOK(t, guard.Close())
-			if _, err := BackupMaintenance(ctx, root, "node", filepath.Join(t.TempDir(), "backup")); err != nil {
+			if _, err := BackupMaintenance(ctx, root, "node", filepath.Join(maintenanceTempDir(t), "backup")); err != nil {
 				t.Fatalf("recovered marker could not subsequently activate: %v", err)
 			}
 		})
@@ -97,7 +97,7 @@ func TestMaintenanceEstablishedMarkerCompatibility(t *testing.T) {
 		if !bytes.Equal(actual, []byte(active)) {
 			t.Fatal("established marker was rewritten")
 		}
-		if _, err := BackupMaintenance(ctx, root, "node", filepath.Join(t.TempDir(), "backup")); err != nil {
+		if _, err := BackupMaintenance(ctx, root, "node", filepath.Join(maintenanceTempDir(t), "backup")); err != nil {
 			t.Fatalf("established participation stopped being compatible: %v", err)
 		}
 	}

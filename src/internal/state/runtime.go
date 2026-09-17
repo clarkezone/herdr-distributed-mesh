@@ -16,6 +16,10 @@ func PrepareRoleState(ctx context.Context, stateDir, role string) (*RoleStateLoc
 	if strings.TrimSpace(stateDir) == "" || (role != "server" && role != "node" && role != "client") {
 		return nil, ErrMaintenancePath
 	}
+	// Abs cleans traversal and can turn foreign UNC syntax into a local path.
+	if !maintenancePathSyntaxSafe(stateDir) {
+		return nil, ErrMaintenancePath
+	}
 	root, err := filepath.Abs(stateDir)
 	if err != nil || !maintenanceLocalPath(root) || filepath.Dir(root) == root {
 		return nil, ErrMaintenancePath

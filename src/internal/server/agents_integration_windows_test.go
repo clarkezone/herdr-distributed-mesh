@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
@@ -30,7 +29,7 @@ func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
 	h := newCommandHarness(t, root)
 	fake := newFakeWorkspaceHerdr(t, "", false, false)
 	fleet := pb.NewFleetClient(h.connection)
-	clientCtx, stopClient := context.WithTimeout(commandPeer(context.Background(), "client"), 10*time.Second)
+	clientCtx, stopClient := context.WithTimeout(commandPeer(context.Background(), "client"), 30*time.Second)
 	defer stopClient()
 	nodeCtx, stopNode := context.WithCancel(commandPeer(context.Background(), "node"))
 	defer stopNode()
@@ -44,7 +43,7 @@ func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
 	go func() {
 		_, err := node.RunSession(nodeCtx, pb.NewNodeControlClient(h.connection), node.Options{
 			InstanceID: "node-1", CommandJournalPath: path, RequiredServerTag: node.DefaultRequiredServerTag,
-			HerdrSocket: fake.path, EnableAgentControl: true, HeartbeatInterval: 10 * time.Millisecond,
+			HerdrSocket: fake.path, EnableAgentControl: true, HeartbeatInterval: journaledTestHeartbeatInterval,
 			VerifyServerPeer: func(_ context.Context, address string) error {
 				if address != "bufconn" {
 					return fmt.Errorf("wrong actual peer: %s", address)
@@ -68,26 +67,12 @@ func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
 		})
 		done <- err
 	}()
-	waitReady := func() *pb.NodeView {
-		t.Helper()
-		for {
-			list, err := fleet.ListNodes(clientCtx, &emptypb.Empty{})
-			if err == nil && len(list.Nodes) == 1 && list.Nodes[0].AgentReady {
-				return list.Nodes[0]
-			}
-			select {
-			case <-clientCtx.Done():
-				t.Fatal("agent session not ready")
-				return nil
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-	}
-	before := waitReady().LastSeen.AsTime()
+	waitAgentNodeReady(t, clientCtx, fleet)
 	waitCtx, stopWait := context.WithCancel(clientCtx)
+	defer stopWait()
 	waitDone := make(chan error, 1)
 	go func() {
-		_, err := fleet.QueryAgent(waitCtx, agentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_WAIT))
+		_, err := fleet.QueryAgent(waitCtx, integrationAgentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_WAIT))
 		waitDone <- err
 	}()
 	select {
@@ -95,15 +80,19 @@ func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
 	case <-clientCtx.Done():
 		t.Fatal("wait not forwarded")
 	}
+	before := waitAgentNodeReady(t, clientCtx, fleet).LastSeen.AsTime()
 	readDone := make(chan error, 2)
 	for i, kind := range []pb.AgentQueryKind{pb.AgentQueryKind_AGENT_QUERY_KIND_GET, pb.AgentQueryKind_AGENT_QUERY_KIND_READ} {
 		actor := []string{"client", "client2"}[i]
 		go func() {
-			ctx, cancel := context.WithTimeout(commandPeer(context.Background(), actor), 3*time.Second)
+			ctx, cancel := context.WithTimeout(commandPeer(context.Background(), actor), 10*time.Second)
 			defer cancel()
-			result, err := fleet.QueryAgent(ctx, agentRequest(kind))
+			result, err := fleet.QueryAgent(ctx, integrationAgentRequest(kind))
 			if err == nil && (result.Agent == nil || (kind == pb.AgentQueryKind_AGENT_QUERY_KIND_READ && result.Text != "PRIVATE QUERY OUTPUT")) {
 				err = errors.New("wrong forwarded projection")
+			}
+			if err != nil {
+				err = fmt.Errorf("%s while WAIT active: %w", kind, err)
 			}
 			readDone <- err
 		}()
@@ -114,7 +103,7 @@ func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
 		}
 	}
 	record, err := fleet.SubmitCommand(clientCtx, &pb.SubmitCommandRequest{
-		NodeInstanceId: "node-1", IdempotencyKey: protocol.NewCommandID(), CommandType: protocol.AgentControlCommandType, Ttl: durationpb.New(5 * time.Second),
+		NodeInstanceId: "node-1", IdempotencyKey: protocol.NewCommandID(), CommandType: protocol.AgentControlCommandType, Ttl: durationpb.New(10 * time.Second),
 		AgentControl: &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT, Target: agentRequest(pb.AgentQueryKind_AGENT_QUERY_KIND_GET).Target, Text: "test prompt"},
 	})
 	if err != nil {
@@ -137,8 +126,13 @@ func TestAgentSessionWaitDoesNotBlockMutationHeartbeatOrCancel(t *testing.T) {
 	if controls.Load() != 1 || record.AgentControl == nil {
 		t.Fatal("control receipt missing")
 	}
-	if !waitReady().LastSeen.AsTime().After(before) {
-		t.Fatal("wait blocked heartbeat")
+	waitAgentHeartbeatAfter(t, clientCtx, fleet, before)
+	select {
+	case err := <-waitDone:
+		t.Fatalf("WAIT ended before explicit cancellation: %v", err)
+	case <-canceled:
+		t.Fatal("executor canceled before explicit cancellation")
+	default:
 	}
 	stopWait()
 	if err := <-waitDone; status.Code(err) != codes.Canceled {

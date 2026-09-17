@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"google.golang.org/protobuf/proto"
@@ -47,6 +48,71 @@ func TestWindowsLiteralDatabasePathAndRepeatedClose(t *testing.T) {
 	}
 }
 
+func privateAccessRules(t *testing.T, dacl *windows.ACL, user *windows.SID) bool {
+	t.Helper()
+	if dacl == nil || dacl.AceCount != 2 {
+		return false
+	}
+	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	requireOK(t, err)
+	const fullControl = 0x1f01ff // Windows FILE_ALL_ACCESS (SDDL FA).
+	var sawUser, sawSystem bool
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		requireOK(t, windows.GetAce(dacl, i, &ace))
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask != fullControl {
+			return false
+		}
+		// Compare SID identities, not SDDL aliases such as LA for Administrator.
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		switch {
+		case sid.Equals(user) && !sawUser:
+			sawUser = true
+		case sid.Equals(system) && !sawSystem:
+			sawSystem = true
+		default:
+			return false
+		}
+	}
+	return sawUser && sawSystem
+}
+
+func TestWindowsPrivateAccessRulesCompareSIDIdentity(t *testing.T) {
+	user, err := windows.StringToSid("LA")
+	requireOK(t, err)
+	administrator := user.String()
+	for _, test := range []struct {
+		name  string
+		rules string
+		valid bool
+	}{
+		{"administrator", "(A;;FA;;;" + administrator + ")(A;;FA;;;SY)", true},
+		{"administrator-alias", "(A;;FA;;;LA)(A;;FA;;;SY)", true},
+		{"numeric-system", "(A;;FA;;;S-1-5-18)(A;;FA;;;" + administrator + ")", true},
+		{"administrators-group", "(A;;FA;;;BA)(A;;FA;;;SY)", false},
+		{"everyone", "(A;;FA;;;WD)(A;;FA;;;SY)", false},
+		{"other-user", "(A;;FA;;;S-1-5-21-1-2-3-501)(A;;FA;;;SY)", false},
+		{"duplicate-user", "(A;;FA;;;" + administrator + ")(A;;FA;;;" + administrator + ")", false},
+		{"deny", "(D;;FA;;;" + administrator + ")(A;;FA;;;SY)", false},
+		{"read-only", "(A;;FR;;;" + administrator + ")(A;;FA;;;SY)", false},
+		{"missing-system", "(A;;FA;;;" + administrator + ")", false},
+		{"extra-trustee", "(A;;FA;;;" + administrator + ")(A;;FA;;;SY)(A;;FA;;;WD)", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sd, err := windows.SecurityDescriptorFromString("D:P" + test.rules)
+			requireOK(t, err)
+			if test.name == "administrator" {
+				t.Logf("serialized administrator descriptor: %s", sd.String())
+			}
+			dacl, _, err := sd.DACL()
+			requireOK(t, err)
+			if privateAccessRules(t, dacl, user) != test.valid {
+				t.Fatalf("incorrect private DACL validation: %s", sd.String())
+			}
+		})
+	}
+}
+
 func securityString(t *testing.T, path string) string {
 	t.Helper()
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
@@ -56,22 +122,12 @@ func securityString(t *testing.T, path string) string {
 	}
 	dacl, _, err := sd.DACL()
 	requireOK(t, err)
-	if dacl == nil || dacl.AceCount != 2 {
-		t.Fatalf("expected exactly current-user and SYSTEM ACEs: %s", sd.String())
-	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	requireOK(t, err)
-	sddl := sd.String()
-	for _, ace := range strings.Split(sddl, "(")[1:] {
-		if !strings.HasPrefix(ace, "A;") ||
-			(!strings.HasSuffix(ace, ";;;"+user.User.Sid.String()+")") && !strings.HasSuffix(ace, ";;;SY)")) {
-			t.Fatalf("unexpected access rule: %s", sddl)
-		}
-		if !strings.Contains(ace, ";FA;") {
-			t.Fatalf("expected full control: %s", sddl)
-		}
+	if !privateAccessRules(t, dacl, user.User.Sid) {
+		t.Fatalf("expected exactly current-user and SYSTEM full-control ACEs: %s", sd.String())
 	}
-	return sddl
+	return sd.String()
 }
 
 func TestWindowsPrivateDirectoryAndFiles(t *testing.T) {

@@ -395,7 +395,7 @@ func TestEnsureWorkspaceProtocolAndConfig(t *testing.T) {
 		config := testConfig()
 		switch field {
 		case "socket":
-			config.SocketPath = "PRIVATE-relative"
+			config.SocketPath = "PRIVATE-invalid\x00"
 		case "timeout":
 			config.RequestTimeout = -time.Second
 		case "refresh":
