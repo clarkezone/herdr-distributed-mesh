@@ -176,6 +176,23 @@ func Shutdown(ctx context.Context, dir string) error {
 	}
 }
 
+func RecordStopped(ctx context.Context, dir string) (result error) {
+	root, err := privateDir(dir, false)
+	if err != nil {
+		return err
+	}
+	guard, err := state.AcquireRoleState(ctx, root, "client")
+	if err != nil {
+		return fmt.Errorf("daemon is active or ownership changed before shutdown could be recorded: %w", err)
+	}
+	defer func() { result = errors.Join(result, guard.Close()) }()
+	status, err := ReadStatus(root)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return writeStatus(root, Status{State: "stopped", DNSName: status.DNSName, Server: status.Server})
+}
+
 func RetainIdentity(dir string, identity ManagedIdentity) error {
 	if !deviceIDPattern.MatchString(identity.DeviceID) || identity.DNSName == "" || len(identity.DNSName) > 253 ||
 		len(identity.Tailnet) > 253 || strings.ContainsAny(identity.DNSName+identity.Tailnet, "\x00\r\n") {

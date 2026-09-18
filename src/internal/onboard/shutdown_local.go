@@ -19,7 +19,10 @@ func stopManaged(ctx context.Context, dir string, output io.Writer) error {
 	defer cancel()
 	err := meshlocal.Shutdown(op, dir)
 	if !errors.Is(err, meshlocal.ErrLegacyShutdown) {
-		return err
+		if err != nil {
+			return err
+		}
+		return meshlocal.RecordStopped(op, dir)
 	}
 	discovery, endDiscovery := context.WithTimeout(ctx, 5*time.Second)
 	identity, identityErr := meshlocal.ResolveManagedIdentity(discovery, dir)
@@ -42,7 +45,7 @@ func stopManaged(ctx context.Context, dir string, output io.Writer) error {
 	if running {
 		return errors.New("managed ownership is still held after shutdown; no state was deleted")
 	}
-	return nil
+	return meshlocal.RecordStopped(op, dir)
 }
 
 func confirmDestroy(ctx context.Context, input io.Reader, expected string) (bool, error) {

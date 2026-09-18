@@ -150,6 +150,31 @@ func TestManagedPurgeRequiresRemoteReceiptAndExclusiveOwnership(t *testing.T) {
 	}
 }
 
+func TestRecordStoppedPreservesIdentityAndCannotOverwriteRunningStatus(t *testing.T) {
+	root := teardownRoot(t)
+	original := Status{State: "ready", DNSName: "desktop.tail.ts.net", Server: "desktop.tail.ts.net:50052"}
+	if err := writeStatus(root, original); err != nil {
+		t.Fatal(err)
+	}
+	guard, err := state.PrepareRoleState(context.Background(), root, "client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStopped(context.Background(), root); err == nil {
+		t.Fatal("shutdown status overwrote a running daemon")
+	}
+	if err := guard.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStopped(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	status, err := ReadStatus(root)
+	if err != nil || status.State != "stopped" || status.DNSName != original.DNSName || status.Server != original.Server {
+		t.Fatal("incorrect stopped status", status, err)
+	}
+}
+
 func TestManagedIdentityIsPinnedAndAvailableOffline(t *testing.T) {
 	root := teardownRoot(t)
 	identity := ManagedIdentity{DeviceID: "nPinned", DNSName: "desktop.tail.ts.net", Tailnet: "example.com"}

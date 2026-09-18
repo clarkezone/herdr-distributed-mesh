@@ -33,17 +33,7 @@ func UnregisterManagedLogin(dir string) (result error) {
 	}
 	defer func() { result = errors.Join(result, key.Close()) }()
 	return unregisterOwnedManagedLogin(dir, func() (string, bool, error) {
-		value, kind, err := key.GetStringValue("HerdrMeshManaged")
-		if errors.Is(err, registry.ErrNotExist) {
-			return "", false, nil
-		}
-		if err != nil {
-			return "", false, err
-		}
-		if kind != registry.SZ {
-			return "", true, errors.New("existing startup entry is not a plain string; refusing removal")
-		}
-		return value, true, nil
+		return readManagedLoginValue(key)
 	}, func() error {
 		err := key.DeleteValue("HerdrMeshManaged")
 		if errors.Is(err, registry.ErrNotExist) {
@@ -65,13 +55,8 @@ func unregisterOwnedManagedLogin(dir string, read func() (string, bool, error), 
 	if !exists {
 		return nil
 	}
-	args, err := windows.DecomposeCommandLine(current)
-	if err != nil || !managedTeardownArgs(args, dir) {
-		return errors.New("HerdrMeshManaged has a conflicting command; refusing removal")
-	}
-	expected, err := loginCommand(args[0], args[3])
-	if err != nil || current != expected {
-		return errors.New("HerdrMeshManaged is not an exact managed sign-in command; refusing removal")
+	if _, err := ownedManagedLoginExecutable(current, dir); err != nil {
+		return err
 	}
 	// Detect a replacement during inspection; the Run API has no compare/delete.
 	latest, exists, err := read()
@@ -88,6 +73,44 @@ func unregisterOwnedManagedLogin(dir string, read func() (string, bool, error), 
 		return fmt.Errorf("remove managed sign-in entry: %w", err)
 	}
 	return nil
+}
+
+func readManagedLoginValue(key registry.Key) (string, bool, error) {
+	value, kind, err := key.GetStringValue("HerdrMeshManaged")
+	if errors.Is(err, registry.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if kind != registry.SZ {
+		return "", true, errors.New("existing startup entry is not a plain string; refusing managed teardown")
+	}
+	return value, true, nil
+}
+
+func readManagedLoginForTeardown() (value string, exists bool, result error) {
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
+	if errors.Is(err, registry.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { result = errors.Join(result, key.Close()) }()
+	return readManagedLoginValue(key)
+}
+
+func ownedManagedLoginExecutable(command, dir string) (string, error) {
+	args, err := windows.DecomposeCommandLine(command)
+	if err != nil || !managedTeardownArgs(args, dir) {
+		return "", errors.New("HerdrMeshManaged has a conflicting command; refusing managed teardown")
+	}
+	expected, err := loginCommand(args[0], args[3])
+	if err != nil || command != expected {
+		return "", errors.New("HerdrMeshManaged is not an exact managed sign-in command; refusing managed teardown")
+	}
+	return args[0], nil
 }
 
 // Paths are compared lexically, not resolved through links or short-name
@@ -153,10 +176,19 @@ type legacyProcessSource struct {
 // StopLegacyDaemon force-stops only the current user's single, exact managed-run
 // process for dir. Call the runtime stop RPC first; this fallback does not stop
 // descendants (Herdr/provider jobs) and never uses process-name termination.
-// No match is an idempotent success. Inspection uncertainty is an error.
+// Discovery considers the shipped/current executable basenames and an owned
+// sign-in executable for dir. An old renamed executable needs that evidence.
+// No match is a no-op, not proof of shutdown: callers must verify IsRunning
+// before claiming success or purging state. Candidate inspection failures error.
 func StopLegacyDaemon(ctx context.Context, dir string) error {
 	return stopLegacyDaemon(ctx, dir, legacyProcessSource{
-		list: listLegacyUserProcesses,
+		list: func() ([]uint32, error) {
+			executable, err := os.Executable()
+			if err != nil {
+				return nil, err
+			}
+			return legacyCandidatePIDs(dir, executable, readManagedLoginForTeardown, snapshotLegacyProcesses)
+		},
 		open: openLegacyProcess,
 	})
 }
@@ -171,7 +203,7 @@ func stopLegacyDaemon(ctx context.Context, dir string, source legacyProcessSourc
 	}
 	pids, err := source.list()
 	if err != nil {
-		return fmt.Errorf("enumerate current user's processes: %w", err)
+		return fmt.Errorf("enumerate legacy managed daemon candidates: %w", err)
 	}
 	var selected legacyTeardownProcess
 	seen := make(map[uint32]bool, len(pids))
@@ -244,45 +276,85 @@ func stopLegacyDaemon(ctx context.Context, dir string, source legacyProcessSourc
 	return nil
 }
 
-// WTS provides owner SIDs without opening protected/system processes. Recheck
-// ownership on the process handle: the enumeration's PID alone is not identity.
-func listLegacyUserProcesses() ([]uint32, error) {
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+type legacyProcessEntry struct {
+	pid  uint32
+	name string
+}
+
+func legacyCandidateNames(dir, executable string, read func() (string, bool, error)) ([]string, error) {
+	dir, err := teardownStateDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	type wtsProcessInfo struct {
-		sessionID, pid uint32
-		name           *uint16
-		sid            *windows.SID
+	executable = filepath.Clean(executable)
+	if !filepath.IsAbs(executable) || filepath.Dir(executable) == executable ||
+		strings.ContainsAny(executable, "\"\x00\r\n") {
+		return nil, errors.New("legacy daemon discovery requires an absolute current executable path")
 	}
-	proc := windows.NewLazySystemDLL("wtsapi32.dll").NewProc("WTSEnumerateProcessesW")
-	if err := proc.Find(); err != nil {
+	names := []string{"herdr-mesh.exe"}
+	add := func(path string) {
+		name := filepath.Base(path)
+		for _, existing := range names {
+			if strings.EqualFold(existing, name) {
+				return
+			}
+		}
+		names = append(names, name)
+	}
+	add(executable)
+	command, exists, err := read()
+	if err != nil {
+		return nil, fmt.Errorf("inspect managed sign-in executable for legacy discovery: %w", err)
+	}
+	if exists {
+		ownedExecutable, err := ownedManagedLoginExecutable(command, dir)
+		if err != nil {
+			return nil, err
+		}
+		add(ownedExecutable)
+	}
+	return names, nil
+}
+
+func legacyCandidatePIDs(dir, executable string, read func() (string, bool, error), snapshot func() ([]legacyProcessEntry, error)) ([]uint32, error) {
+	names, err := legacyCandidateNames(dir, executable, read)
+	if err != nil {
 		return nil, err
 	}
-	var entries *wtsProcessInfo
-	var count uint32
-	ok, _, callErr := proc.Call(0, 0, 1, uintptr(unsafe.Pointer(&entries)), uintptr(unsafe.Pointer(&count)))
-	if ok == 0 {
-		return nil, fmt.Errorf("WTSEnumerateProcessesW: %w", callErr)
-	}
-	defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(entries)))
-	if count > 1<<20 || (count != 0 && entries == nil) {
-		return nil, errors.New("invalid Windows process enumeration")
+	entries, err := snapshot()
+	if err != nil {
+		return nil, err
 	}
 	var pids []uint32
-	for _, entry := range unsafe.Slice(entries, int(count)) {
-		if entry.pid == 0 || entry.pid == 4 {
-			continue
-		}
-		if entry.sid == nil {
-			return nil, fmt.Errorf("cannot determine owner of process %d; refusing stop", entry.pid)
-		}
-		if user.User.Sid.Equals(entry.sid) {
-			pids = append(pids, entry.pid)
+	for _, entry := range entries {
+		for _, name := range names {
+			if strings.EqualFold(entry.name, name) {
+				pids = append(pids, entry.pid)
+				break
+			}
 		}
 	}
 	return pids, nil
+}
+
+// Toolhelp reads only PID/image names here. Owner, command line and image path
+// are queried on held process handles only AFTER bounded candidate narrowing.
+func snapshotLegacyProcesses() (entries []legacyProcessEntry, result error) {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { result = errors.Join(result, windows.CloseHandle(snapshot)) }()
+	entry := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
+	for err := windows.Process32First(snapshot, &entry); ; err = windows.Process32Next(snapshot, &entry) {
+		if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+			return entries, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, legacyProcessEntry{pid: entry.ProcessID, name: windows.UTF16ToString(entry.ExeFile[:])})
+	}
 }
 
 type nativeLegacyProcess struct {
