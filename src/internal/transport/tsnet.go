@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/fleetwatch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
@@ -20,6 +21,8 @@ import (
 )
 
 type Config struct {
+	// UserLog receives bounded login diagnostics instead of writing them publicly.
+	UserLog      func(string)
 	AuthKeyEnv   string
 	Debug        bool
 	Hostname     string
@@ -35,17 +38,20 @@ type PeerIdentity struct {
 }
 
 type SelfStatus struct {
-	BackendState string     `json:"backend_state"`
-	DNSName      string     `json:"dns_name"`
-	Expired      bool       `json:"expired"`
-	Health       []string   `json:"health"`
-	HostName     string     `json:"host_name"`
-	IPs          []string   `json:"ips"`
-	KeyExpiry    *time.Time `json:"key_expiry,omitempty"`
-	OS           string     `json:"os"`
-	StableID     string     `json:"stable_id"`
-	StateDir     string     `json:"state_dir"`
-	Tags         []string   `json:"tags"`
+	MagicDNSEnabled bool       `json:"magic_dns_enabled,omitempty"`
+	Tailnet         string     `json:"tailnet,omitempty"`
+	DNSSuffix       string     `json:"dns_suffix,omitempty"`
+	BackendState    string     `json:"backend_state"`
+	DNSName         string     `json:"dns_name"`
+	Expired         bool       `json:"expired"`
+	Health          []string   `json:"health"`
+	HostName        string     `json:"host_name"`
+	IPs             []string   `json:"ips"`
+	KeyExpiry       *time.Time `json:"key_expiry,omitempty"`
+	OS              string     `json:"os"`
+	StableID        string     `json:"stable_id"`
+	StateDir        string     `json:"state_dir"`
+	Tags            []string   `json:"tags"`
 }
 
 type Network struct {
@@ -72,6 +78,15 @@ func Start(ctx context.Context, config Config) (*Network, error) {
 		AdvertiseTags: config.Tags,
 		UserLogf:      log.Printf,
 	}
+	if config.UserLog != nil {
+		server.UserLogf = func(format string, args ...any) {
+			message := fmt.Sprintf(format, args...)
+			if len(message) > 4096 {
+				message = message[:4096]
+			}
+			config.UserLog(message)
+		}
+	}
 	if config.Debug {
 		server.Logf = log.Printf
 	}
@@ -84,8 +99,7 @@ func Start(ctx context.Context, config Config) (*Network, error) {
 	)
 	status, err := server.Up(ctx)
 	if err != nil {
-		_ = server.Close()
-		return nil, fmt.Errorf("bring up tsnet node: %w", err)
+		return nil, errors.Join(fmt.Errorf("bring up tsnet node: %w", err), server.Close())
 	}
 	ipv4, ipv6 := server.TailscaleIPs()
 	log.Printf("tsnet ready hostname=%s ipv4=%s ipv6=%s", config.Hostname, ipv4, ipv6)
@@ -138,21 +152,26 @@ func (network *Network) dialGRPC(target, tag string) (*grpc.ClientConn, error) {
 		return nil, errors.New("gRPC target is required")
 	}
 	target = normalizeMagicDNSTarget(target, network.magicDNSSuffix)
+	return newGRPCClient(target, func(ctx context.Context, address string) (net.Conn, error) {
+		connection, err := network.server.Dial(ctx, "tcp", address)
+		if err != nil || tag == "" {
+			return connection, err
+		}
+		return authorizePeerConnection(ctx, connection, tag, network.IdentifyPeer)
+	})
+}
+
+func newGRPCClient(target string, dial func(context.Context, string) (net.Conn, error)) (*grpc.ClientConn, error) {
 	return grpc.NewClient(
 		"passthrough:///"+target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(fleetwatch.MaxSnapshotBytes), grpc.MaxCallSendMsgSize(1024*1024)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
 			Timeout:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
-			connection, err := network.server.Dial(ctx, "tcp", address)
-			if err != nil || tag == "" {
-				return connection, err
-			}
-			return authorizePeerConnection(ctx, connection, tag, network.IdentifyPeer)
-		}),
+		grpc.WithContextDialer(dial),
 	)
 }
 
@@ -200,6 +219,7 @@ func (network *Network) IdentifyPeer(ctx context.Context, remoteAddress string) 
 	if err != nil {
 		return PeerIdentity{}, fmt.Errorf("create Tailscale local client: %w", err)
 	}
+
 	response, err := client.WhoIs(ctx, remoteAddress)
 	if err != nil {
 		return PeerIdentity{}, fmt.Errorf("identify Tailscale peer %q: %w", remoteAddress, err)
@@ -247,6 +267,11 @@ func makeSelfStatus(status *ipnstate.Status, stateDir string) SelfStatus {
 		return result
 	}
 	result.BackendState = status.BackendState
+	if status.CurrentTailnet != nil {
+		result.Tailnet = status.CurrentTailnet.Name
+		result.DNSSuffix = status.CurrentTailnet.MagicDNSSuffix
+		result.MagicDNSEnabled = status.CurrentTailnet.MagicDNSEnabled
+	}
 	result.Health = slices.Clone(status.Health)
 	result.IPs = stringifyAddresses(status.TailscaleIPs)
 	if status.Self == nil {

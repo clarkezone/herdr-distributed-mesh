@@ -300,6 +300,120 @@ func (AgentControlAction) EnumDescriptor() ([]byte, []int) {
 	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{4}
 }
 
+type ResolveNamedAgentRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeInstanceId string                 `protobuf:"bytes,1,opt,name=node_instance_id,json=nodeInstanceId,proto3" json:"node_instance_id,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	SessionName    string                 `protobuf:"bytes,3,opt,name=session_name,json=sessionName,proto3" json:"session_name,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ResolveNamedAgentRequest) Reset() {
+	*x = ResolveNamedAgentRequest{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveNamedAgentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveNamedAgentRequest) ProtoMessage() {}
+
+func (x *ResolveNamedAgentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveNamedAgentRequest.ProtoReflect.Descriptor instead.
+func (*ResolveNamedAgentRequest) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ResolveNamedAgentRequest) GetNodeInstanceId() string {
+	if x != nil {
+		return x.NodeInstanceId
+	}
+	return ""
+}
+
+func (x *ResolveNamedAgentRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ResolveNamedAgentRequest) GetSessionName() string {
+	if x != nil {
+		return x.SessionName
+	}
+	return ""
+}
+
+type NamedAgentRecord struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Read-only projection: initial_prompt is omitted from submitted_request.
+	// This projection must never be resubmitted as an execution request.
+	Record               *CommandRecord `protobuf:"bytes,1,opt,name=record,proto3" json:"record,omitempty"`
+	InitialPromptPresent bool           `protobuf:"varint,2,opt,name=initial_prompt_present,json=initialPromptPresent,proto3" json:"initial_prompt_present,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *NamedAgentRecord) Reset() {
+	*x = NamedAgentRecord{}
+	mi := &file_agentflow_v1_control_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NamedAgentRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NamedAgentRecord) ProtoMessage() {}
+
+func (x *NamedAgentRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_agentflow_v1_control_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NamedAgentRecord.ProtoReflect.Descriptor instead.
+func (*NamedAgentRecord) Descriptor() ([]byte, []int) {
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *NamedAgentRecord) GetRecord() *CommandRecord {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
+func (x *NamedAgentRecord) GetInitialPromptPresent() bool {
+	if x != nil {
+		return x.InitialPromptPresent
+	}
+	return false
+}
+
 type ProtocolRange struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Minimum       uint32                 `protobuf:"varint,1,opt,name=minimum,proto3" json:"minimum,omitempty"`
@@ -310,7 +424,7 @@ type ProtocolRange struct {
 
 func (x *ProtocolRange) Reset() {
 	*x = ProtocolRange{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[0]
+	mi := &file_agentflow_v1_control_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -322,7 +436,7 @@ func (x *ProtocolRange) String() string {
 func (*ProtocolRange) ProtoMessage() {}
 
 func (x *ProtocolRange) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[0]
+	mi := &file_agentflow_v1_control_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -335,7 +449,7 @@ func (x *ProtocolRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolRange.ProtoReflect.Descriptor instead.
 func (*ProtocolRange) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{0}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ProtocolRange) GetMinimum() uint32 {
@@ -361,13 +475,14 @@ type Hello struct {
 	Capabilities          []string               `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	StreamEpoch           string                 `protobuf:"bytes,6,opt,name=stream_epoch,json=streamEpoch,proto3" json:"stream_epoch,omitempty"`
 	LastCursor            uint64                 `protobuf:"varint,7,opt,name=last_cursor,json=lastCursor,proto3" json:"last_cursor,omitempty"`
+	Hostname              string                 `protobuf:"bytes,8,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
 	*x = Hello{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[1]
+	mi := &file_agentflow_v1_control_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -379,7 +494,7 @@ func (x *Hello) String() string {
 func (*Hello) ProtoMessage() {}
 
 func (x *Hello) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[1]
+	mi := &file_agentflow_v1_control_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -392,7 +507,7 @@ func (x *Hello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hello.ProtoReflect.Descriptor instead.
 func (*Hello) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{1}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Hello) GetProtocol() *ProtocolRange {
@@ -444,6 +559,13 @@ func (x *Hello) GetLastCursor() uint64 {
 	return 0
 }
 
+func (x *Hello) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
 type HelloAck struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	SelectedProtocol uint32                 `protobuf:"varint,1,opt,name=selected_protocol,json=selectedProtocol,proto3" json:"selected_protocol,omitempty"`
@@ -455,7 +577,7 @@ type HelloAck struct {
 
 func (x *HelloAck) Reset() {
 	*x = HelloAck{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[2]
+	mi := &file_agentflow_v1_control_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -467,7 +589,7 @@ func (x *HelloAck) String() string {
 func (*HelloAck) ProtoMessage() {}
 
 func (x *HelloAck) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[2]
+	mi := &file_agentflow_v1_control_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -480,7 +602,7 @@ func (x *HelloAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HelloAck.ProtoReflect.Descriptor instead.
 func (*HelloAck) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{2}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *HelloAck) GetSelectedProtocol() uint32 {
@@ -519,7 +641,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[3]
+	mi := &file_agentflow_v1_control_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -531,7 +653,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[3]
+	mi := &file_agentflow_v1_control_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -544,7 +666,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{3}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Heartbeat) GetSequence() uint64 {
@@ -607,7 +729,7 @@ type Snapshot struct {
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[4]
+	mi := &file_agentflow_v1_control_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -619,7 +741,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[4]
+	mi := &file_agentflow_v1_control_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -632,7 +754,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{4}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Snapshot) GetSequence() uint64 {
@@ -669,7 +791,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[5]
+	mi := &file_agentflow_v1_control_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -681,7 +803,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[5]
+	mi := &file_agentflow_v1_control_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -694,7 +816,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{5}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Event) GetSequence() uint64 {
@@ -758,7 +880,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[6]
+	mi := &file_agentflow_v1_control_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -770,7 +892,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[6]
+	mi := &file_agentflow_v1_control_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -783,7 +905,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{6}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Command) GetCommandId() string {
@@ -920,7 +1042,7 @@ type WorktreeCreate struct {
 
 func (x *WorktreeCreate) Reset() {
 	*x = WorktreeCreate{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[7]
+	mi := &file_agentflow_v1_control_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -932,7 +1054,7 @@ func (x *WorktreeCreate) String() string {
 func (*WorktreeCreate) ProtoMessage() {}
 
 func (x *WorktreeCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[7]
+	mi := &file_agentflow_v1_control_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -945,7 +1067,7 @@ func (x *WorktreeCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorktreeCreate.ProtoReflect.Descriptor instead.
 func (*WorktreeCreate) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{7}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *WorktreeCreate) GetProjectId() string {
@@ -1013,7 +1135,7 @@ type WorktreeCreateResult struct {
 
 func (x *WorktreeCreateResult) Reset() {
 	*x = WorktreeCreateResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[8]
+	mi := &file_agentflow_v1_control_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1025,7 +1147,7 @@ func (x *WorktreeCreateResult) String() string {
 func (*WorktreeCreateResult) ProtoMessage() {}
 
 func (x *WorktreeCreateResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[8]
+	mi := &file_agentflow_v1_control_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1038,7 +1160,7 @@ func (x *WorktreeCreateResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorktreeCreateResult.ProtoReflect.Descriptor instead.
 func (*WorktreeCreateResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{8}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WorktreeCreateResult) GetProjectId() string {
@@ -1110,7 +1232,7 @@ type WorkspaceEnsure struct {
 
 func (x *WorkspaceEnsure) Reset() {
 	*x = WorkspaceEnsure{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[9]
+	mi := &file_agentflow_v1_control_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1122,7 +1244,7 @@ func (x *WorkspaceEnsure) String() string {
 func (*WorkspaceEnsure) ProtoMessage() {}
 
 func (x *WorkspaceEnsure) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[9]
+	mi := &file_agentflow_v1_control_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1135,7 +1257,7 @@ func (x *WorkspaceEnsure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceEnsure.ProtoReflect.Descriptor instead.
 func (*WorkspaceEnsure) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{9}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WorkspaceEnsure) GetProjectId() string {
@@ -1180,7 +1302,7 @@ type WorkspaceEnsureResult struct {
 
 func (x *WorkspaceEnsureResult) Reset() {
 	*x = WorkspaceEnsureResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[10]
+	mi := &file_agentflow_v1_control_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1314,7 @@ func (x *WorkspaceEnsureResult) String() string {
 func (*WorkspaceEnsureResult) ProtoMessage() {}
 
 func (x *WorkspaceEnsureResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[10]
+	mi := &file_agentflow_v1_control_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1327,7 @@ func (x *WorkspaceEnsureResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceEnsureResult.ProtoReflect.Descriptor instead.
 func (*WorkspaceEnsureResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{10}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WorkspaceEnsureResult) GetProjectId() string {
@@ -1269,7 +1391,7 @@ type SubmitCommandRequest struct {
 
 func (x *SubmitCommandRequest) Reset() {
 	*x = SubmitCommandRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[11]
+	mi := &file_agentflow_v1_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1281,7 +1403,7 @@ func (x *SubmitCommandRequest) String() string {
 func (*SubmitCommandRequest) ProtoMessage() {}
 
 func (x *SubmitCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[11]
+	mi := &file_agentflow_v1_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1294,7 +1416,7 @@ func (x *SubmitCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitCommandRequest.ProtoReflect.Descriptor instead.
 func (*SubmitCommandRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{11}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SubmitCommandRequest) GetNodeInstanceId() string {
@@ -1376,7 +1498,7 @@ type GetCommandRequest struct {
 
 func (x *GetCommandRequest) Reset() {
 	*x = GetCommandRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[12]
+	mi := &file_agentflow_v1_control_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1388,7 +1510,7 @@ func (x *GetCommandRequest) String() string {
 func (*GetCommandRequest) ProtoMessage() {}
 
 func (x *GetCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[12]
+	mi := &file_agentflow_v1_control_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1401,7 +1523,7 @@ func (x *GetCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCommandRequest.ProtoReflect.Descriptor instead.
 func (*GetCommandRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{12}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetCommandRequest) GetCommandId() string {
@@ -1422,7 +1544,7 @@ type CommandAudit struct {
 
 func (x *CommandAudit) Reset() {
 	*x = CommandAudit{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[13]
+	mi := &file_agentflow_v1_control_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1434,7 +1556,7 @@ func (x *CommandAudit) String() string {
 func (*CommandAudit) ProtoMessage() {}
 
 func (x *CommandAudit) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[13]
+	mi := &file_agentflow_v1_control_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1447,7 +1569,7 @@ func (x *CommandAudit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandAudit.ProtoReflect.Descriptor instead.
 func (*CommandAudit) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{13}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CommandAudit) GetStatus() CommandStatus {
@@ -1490,7 +1612,7 @@ type CommandRecord struct {
 
 func (x *CommandRecord) Reset() {
 	*x = CommandRecord{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[14]
+	mi := &file_agentflow_v1_control_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1502,7 +1624,7 @@ func (x *CommandRecord) String() string {
 func (*CommandRecord) ProtoMessage() {}
 
 func (x *CommandRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[14]
+	mi := &file_agentflow_v1_control_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1515,7 +1637,7 @@ func (x *CommandRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandRecord.ProtoReflect.Descriptor instead.
 func (*CommandRecord) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{14}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CommandRecord) GetCommand() *Command {
@@ -1607,7 +1729,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[15]
+	mi := &file_agentflow_v1_control_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1619,7 +1741,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[15]
+	mi := &file_agentflow_v1_control_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1632,7 +1754,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{15}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Actor) GetActorId() string {
@@ -1674,7 +1796,7 @@ type CommandAck struct {
 
 func (x *CommandAck) Reset() {
 	*x = CommandAck{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[16]
+	mi := &file_agentflow_v1_control_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1686,7 +1808,7 @@ func (x *CommandAck) String() string {
 func (*CommandAck) ProtoMessage() {}
 
 func (x *CommandAck) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[16]
+	mi := &file_agentflow_v1_control_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1699,7 +1821,7 @@ func (x *CommandAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandAck.ProtoReflect.Descriptor instead.
 func (*CommandAck) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{16}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CommandAck) GetCommandId() string {
@@ -1740,7 +1862,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[17]
+	mi := &file_agentflow_v1_control_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1752,7 +1874,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[17]
+	mi := &file_agentflow_v1_control_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1765,7 +1887,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{17}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CommandResult) GetCommandId() string {
@@ -1859,7 +1981,7 @@ type NodeEnvelope struct {
 
 func (x *NodeEnvelope) Reset() {
 	*x = NodeEnvelope{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[18]
+	mi := &file_agentflow_v1_control_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1871,7 +1993,7 @@ func (x *NodeEnvelope) String() string {
 func (*NodeEnvelope) ProtoMessage() {}
 
 func (x *NodeEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[18]
+	mi := &file_agentflow_v1_control_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1884,7 +2006,7 @@ func (x *NodeEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeEnvelope.ProtoReflect.Descriptor instead.
 func (*NodeEnvelope) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{18}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *NodeEnvelope) GetBody() isNodeEnvelope_Body {
@@ -2172,7 +2294,7 @@ type AgentStart struct {
 
 func (x *AgentStart) Reset() {
 	*x = AgentStart{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	mi := &file_agentflow_v1_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2184,7 +2306,7 @@ func (x *AgentStart) String() string {
 func (*AgentStart) ProtoMessage() {}
 
 func (x *AgentStart) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[19]
+	mi := &file_agentflow_v1_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2197,7 +2319,7 @@ func (x *AgentStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStart.ProtoReflect.Descriptor instead.
 func (*AgentStart) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{19}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *AgentStart) GetProjectId() string {
@@ -2275,7 +2397,7 @@ type AgentStop struct {
 
 func (x *AgentStop) Reset() {
 	*x = AgentStop{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[20]
+	mi := &file_agentflow_v1_control_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2287,7 +2409,7 @@ func (x *AgentStop) String() string {
 func (*AgentStop) ProtoMessage() {}
 
 func (x *AgentStop) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[20]
+	mi := &file_agentflow_v1_control_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2300,7 +2422,7 @@ func (x *AgentStop) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStop.ProtoReflect.Descriptor instead.
 func (*AgentStop) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{20}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AgentStop) GetTarget() *AgentTarget {
@@ -2343,7 +2465,7 @@ type AgentLifecycleHandle struct {
 
 func (x *AgentLifecycleHandle) Reset() {
 	*x = AgentLifecycleHandle{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[21]
+	mi := &file_agentflow_v1_control_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2355,7 +2477,7 @@ func (x *AgentLifecycleHandle) String() string {
 func (*AgentLifecycleHandle) ProtoMessage() {}
 
 func (x *AgentLifecycleHandle) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[21]
+	mi := &file_agentflow_v1_control_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2368,7 +2490,7 @@ func (x *AgentLifecycleHandle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentLifecycleHandle.ProtoReflect.Descriptor instead.
 func (*AgentLifecycleHandle) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{21}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AgentLifecycleHandle) GetTarget() *AgentTarget {
@@ -2412,7 +2534,7 @@ type AgentLifecycleStage struct {
 
 func (x *AgentLifecycleStage) Reset() {
 	*x = AgentLifecycleStage{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[22]
+	mi := &file_agentflow_v1_control_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2424,7 +2546,7 @@ func (x *AgentLifecycleStage) String() string {
 func (*AgentLifecycleStage) ProtoMessage() {}
 
 func (x *AgentLifecycleStage) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[22]
+	mi := &file_agentflow_v1_control_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2437,7 +2559,7 @@ func (x *AgentLifecycleStage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentLifecycleStage.ProtoReflect.Descriptor instead.
 func (*AgentLifecycleStage) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{22}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AgentLifecycleStage) GetStage() string {
@@ -2478,7 +2600,7 @@ type AgentLifecycleReceipt struct {
 
 func (x *AgentLifecycleReceipt) Reset() {
 	*x = AgentLifecycleReceipt{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[23]
+	mi := &file_agentflow_v1_control_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2490,7 +2612,7 @@ func (x *AgentLifecycleReceipt) String() string {
 func (*AgentLifecycleReceipt) ProtoMessage() {}
 
 func (x *AgentLifecycleReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[23]
+	mi := &file_agentflow_v1_control_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2503,7 +2625,7 @@ func (x *AgentLifecycleReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentLifecycleReceipt.ProtoReflect.Descriptor instead.
 func (*AgentLifecycleReceipt) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{23}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AgentLifecycleReceipt) GetHandle() *AgentLifecycleHandle {
@@ -2572,7 +2694,7 @@ type CommandProgress struct {
 
 func (x *CommandProgress) Reset() {
 	*x = CommandProgress{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	mi := &file_agentflow_v1_control_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2584,7 +2706,7 @@ func (x *CommandProgress) String() string {
 func (*CommandProgress) ProtoMessage() {}
 
 func (x *CommandProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[24]
+	mi := &file_agentflow_v1_control_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2597,7 +2719,7 @@ func (x *CommandProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandProgress.ProtoReflect.Descriptor instead.
 func (*CommandProgress) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{24}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CommandProgress) GetCommandId() string {
@@ -2624,7 +2746,7 @@ type SessionEnsure struct {
 
 func (x *SessionEnsure) Reset() {
 	*x = SessionEnsure{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	mi := &file_agentflow_v1_control_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2636,7 +2758,7 @@ func (x *SessionEnsure) String() string {
 func (*SessionEnsure) ProtoMessage() {}
 
 func (x *SessionEnsure) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[25]
+	mi := &file_agentflow_v1_control_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2649,7 +2771,7 @@ func (x *SessionEnsure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEnsure.ProtoReflect.Descriptor instead.
 func (*SessionEnsure) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{25}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SessionEnsure) GetName() string {
@@ -2668,7 +2790,7 @@ type ListSessionsRequest struct {
 
 func (x *ListSessionsRequest) Reset() {
 	*x = ListSessionsRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	mi := &file_agentflow_v1_control_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2680,7 +2802,7 @@ func (x *ListSessionsRequest) String() string {
 func (*ListSessionsRequest) ProtoMessage() {}
 
 func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[26]
+	mi := &file_agentflow_v1_control_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2693,7 +2815,7 @@ func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{26}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListSessionsRequest) GetNodeInstanceId() string {
@@ -2713,7 +2835,7 @@ type SessionList struct {
 
 func (x *SessionList) Reset() {
 	*x = SessionList{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	mi := &file_agentflow_v1_control_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2725,7 +2847,7 @@ func (x *SessionList) String() string {
 func (*SessionList) ProtoMessage() {}
 
 func (x *SessionList) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[27]
+	mi := &file_agentflow_v1_control_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2738,7 +2860,7 @@ func (x *SessionList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionList.ProtoReflect.Descriptor instead.
 func (*SessionList) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{27}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SessionList) GetSessions() []*SessionView {
@@ -2773,7 +2895,7 @@ type SessionView struct {
 
 func (x *SessionView) Reset() {
 	*x = SessionView{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	mi := &file_agentflow_v1_control_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2785,7 +2907,7 @@ func (x *SessionView) String() string {
 func (*SessionView) ProtoMessage() {}
 
 func (x *SessionView) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[28]
+	mi := &file_agentflow_v1_control_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2798,7 +2920,7 @@ func (x *SessionView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionView.ProtoReflect.Descriptor instead.
 func (*SessionView) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{28}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SessionView) GetName() string {
@@ -2862,7 +2984,7 @@ type SessionInventory struct {
 
 func (x *SessionInventory) Reset() {
 	*x = SessionInventory{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	mi := &file_agentflow_v1_control_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2874,7 +2996,7 @@ func (x *SessionInventory) String() string {
 func (*SessionInventory) ProtoMessage() {}
 
 func (x *SessionInventory) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[29]
+	mi := &file_agentflow_v1_control_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2887,7 +3009,7 @@ func (x *SessionInventory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionInventory.ProtoReflect.Descriptor instead.
 func (*SessionInventory) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{29}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SessionInventory) GetSessions() []*SessionView {
@@ -2930,7 +3052,7 @@ type RegisterProjectRequest struct {
 
 func (x *RegisterProjectRequest) Reset() {
 	*x = RegisterProjectRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	mi := &file_agentflow_v1_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2942,7 +3064,7 @@ func (x *RegisterProjectRequest) String() string {
 func (*RegisterProjectRequest) ProtoMessage() {}
 
 func (x *RegisterProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[30]
+	mi := &file_agentflow_v1_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2955,7 +3077,7 @@ func (x *RegisterProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterProjectRequest.ProtoReflect.Descriptor instead.
 func (*RegisterProjectRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{30}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RegisterProjectRequest) GetNodeInstanceId() string {
@@ -2996,7 +3118,7 @@ type GetProjectRequest struct {
 
 func (x *GetProjectRequest) Reset() {
 	*x = GetProjectRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	mi := &file_agentflow_v1_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3008,7 +3130,7 @@ func (x *GetProjectRequest) String() string {
 func (*GetProjectRequest) ProtoMessage() {}
 
 func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[31]
+	mi := &file_agentflow_v1_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3021,7 +3143,7 @@ func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectRequest.ProtoReflect.Descriptor instead.
 func (*GetProjectRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{31}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetProjectRequest) GetNodeInstanceId() string {
@@ -3050,7 +3172,7 @@ type ListProjectsRequest struct {
 
 func (x *ListProjectsRequest) Reset() {
 	*x = ListProjectsRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[32]
+	mi := &file_agentflow_v1_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3062,7 +3184,7 @@ func (x *ListProjectsRequest) String() string {
 func (*ListProjectsRequest) ProtoMessage() {}
 
 func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[32]
+	mi := &file_agentflow_v1_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3075,7 +3197,7 @@ func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{32}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListProjectsRequest) GetNodeInstanceId() string {
@@ -3112,7 +3234,7 @@ type ProjectConfig struct {
 
 func (x *ProjectConfig) Reset() {
 	*x = ProjectConfig{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[33]
+	mi := &file_agentflow_v1_control_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3124,7 +3246,7 @@ func (x *ProjectConfig) String() string {
 func (*ProjectConfig) ProtoMessage() {}
 
 func (x *ProjectConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[33]
+	mi := &file_agentflow_v1_control_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3137,7 +3259,7 @@ func (x *ProjectConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectConfig.ProtoReflect.Descriptor instead.
 func (*ProjectConfig) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{33}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ProjectConfig) GetNodeInstanceId() string {
@@ -3190,7 +3312,7 @@ type ProjectAck struct {
 
 func (x *ProjectAck) Reset() {
 	*x = ProjectAck{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[34]
+	mi := &file_agentflow_v1_control_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3202,7 +3324,7 @@ func (x *ProjectAck) String() string {
 func (*ProjectAck) ProtoMessage() {}
 
 func (x *ProjectAck) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[34]
+	mi := &file_agentflow_v1_control_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3215,7 +3337,7 @@ func (x *ProjectAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectAck.ProtoReflect.Descriptor instead.
 func (*ProjectAck) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{34}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ProjectAck) GetProjectId() string {
@@ -3273,7 +3395,7 @@ type ProjectRecord struct {
 
 func (x *ProjectRecord) Reset() {
 	*x = ProjectRecord{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[35]
+	mi := &file_agentflow_v1_control_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3285,7 +3407,7 @@ func (x *ProjectRecord) String() string {
 func (*ProjectRecord) ProtoMessage() {}
 
 func (x *ProjectRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[35]
+	mi := &file_agentflow_v1_control_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3298,7 +3420,7 @@ func (x *ProjectRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRecord.ProtoReflect.Descriptor instead.
 func (*ProjectRecord) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{35}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ProjectRecord) GetDesired() *ProjectConfig {
@@ -3339,7 +3461,7 @@ type ProjectList struct {
 
 func (x *ProjectList) Reset() {
 	*x = ProjectList{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[36]
+	mi := &file_agentflow_v1_control_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3351,7 +3473,7 @@ func (x *ProjectList) String() string {
 func (*ProjectList) ProtoMessage() {}
 
 func (x *ProjectList) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[36]
+	mi := &file_agentflow_v1_control_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3364,7 +3486,7 @@ func (x *ProjectList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectList.ProtoReflect.Descriptor instead.
 func (*ProjectList) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{36}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ProjectList) GetProjects() []*ProjectRecord {
@@ -3391,7 +3513,7 @@ type LegacyProjects struct {
 
 func (x *LegacyProjects) Reset() {
 	*x = LegacyProjects{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[37]
+	mi := &file_agentflow_v1_control_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3403,7 +3525,7 @@ func (x *LegacyProjects) String() string {
 func (*LegacyProjects) ProtoMessage() {}
 
 func (x *LegacyProjects) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[37]
+	mi := &file_agentflow_v1_control_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3416,7 +3538,7 @@ func (x *LegacyProjects) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LegacyProjects.ProtoReflect.Descriptor instead.
 func (*LegacyProjects) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{37}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *LegacyProjects) GetProjects() []*RegisterProjectRequest {
@@ -3438,7 +3560,7 @@ type ServerInfo struct {
 
 func (x *ServerInfo) Reset() {
 	*x = ServerInfo{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[38]
+	mi := &file_agentflow_v1_control_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3450,7 +3572,7 @@ func (x *ServerInfo) String() string {
 func (*ServerInfo) ProtoMessage() {}
 
 func (x *ServerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[38]
+	mi := &file_agentflow_v1_control_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3463,7 +3585,7 @@ func (x *ServerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerInfo.ProtoReflect.Descriptor instead.
 func (*ServerInfo) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{38}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ServerInfo) GetInstanceId() string {
@@ -3513,7 +3635,7 @@ type HerdrEntity struct {
 
 func (x *HerdrEntity) Reset() {
 	*x = HerdrEntity{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[39]
+	mi := &file_agentflow_v1_control_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3525,7 +3647,7 @@ func (x *HerdrEntity) String() string {
 func (*HerdrEntity) ProtoMessage() {}
 
 func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[39]
+	mi := &file_agentflow_v1_control_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3538,7 +3660,7 @@ func (x *HerdrEntity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HerdrEntity.ProtoReflect.Descriptor instead.
 func (*HerdrEntity) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{39}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *HerdrEntity) GetId() string {
@@ -3631,7 +3753,7 @@ type HerdrState struct {
 
 func (x *HerdrState) Reset() {
 	*x = HerdrState{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[40]
+	mi := &file_agentflow_v1_control_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3643,7 +3765,7 @@ func (x *HerdrState) String() string {
 func (*HerdrState) ProtoMessage() {}
 
 func (x *HerdrState) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[40]
+	mi := &file_agentflow_v1_control_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3656,7 +3778,7 @@ func (x *HerdrState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HerdrState.ProtoReflect.Descriptor instead.
 func (*HerdrState) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{40}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *HerdrState) GetStatus() string {
@@ -3747,13 +3869,15 @@ type NodeView struct {
 	SessionsReady      bool                   `protobuf:"varint,13,opt,name=sessions_ready,json=sessionsReady,proto3" json:"sessions_ready,omitempty"`
 	SessionsReceivedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=sessions_received_at,json=sessionsReceivedAt,proto3" json:"sessions_received_at,omitempty"`
 	SessionsErrorCode  string                 `protobuf:"bytes,15,opt,name=sessions_error_code,json=sessionsErrorCode,proto3" json:"sessions_error_code,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Operator-assigned logical node name, not a native machine inventory label.
+	Hostname      string `protobuf:"bytes,16,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NodeView) Reset() {
 	*x = NodeView{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[41]
+	mi := &file_agentflow_v1_control_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3765,7 +3889,7 @@ func (x *NodeView) String() string {
 func (*NodeView) ProtoMessage() {}
 
 func (x *NodeView) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[41]
+	mi := &file_agentflow_v1_control_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3778,7 +3902,7 @@ func (x *NodeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeView.ProtoReflect.Descriptor instead.
 func (*NodeView) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{41}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *NodeView) GetInstanceId() string {
@@ -3886,6 +4010,13 @@ func (x *NodeView) GetSessionsErrorCode() string {
 	return ""
 }
 
+func (x *NodeView) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
 type NodeList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Nodes         []*NodeView            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
@@ -3895,7 +4026,7 @@ type NodeList struct {
 
 func (x *NodeList) Reset() {
 	*x = NodeList{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[42]
+	mi := &file_agentflow_v1_control_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3907,7 +4038,7 @@ func (x *NodeList) String() string {
 func (*NodeList) ProtoMessage() {}
 
 func (x *NodeList) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[42]
+	mi := &file_agentflow_v1_control_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3920,7 +4051,7 @@ func (x *NodeList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeList.ProtoReflect.Descriptor instead.
 func (*NodeList) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{42}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *NodeList) GetNodes() []*NodeView {
@@ -3943,7 +4074,7 @@ type AgentTarget struct {
 
 func (x *AgentTarget) Reset() {
 	*x = AgentTarget{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[43]
+	mi := &file_agentflow_v1_control_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3955,7 +4086,7 @@ func (x *AgentTarget) String() string {
 func (*AgentTarget) ProtoMessage() {}
 
 func (x *AgentTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[43]
+	mi := &file_agentflow_v1_control_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3968,7 +4099,7 @@ func (x *AgentTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentTarget.ProtoReflect.Descriptor instead.
 func (*AgentTarget) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{43}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *AgentTarget) GetPaneId() string {
@@ -4023,7 +4154,7 @@ type AgentView struct {
 
 func (x *AgentView) Reset() {
 	*x = AgentView{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[44]
+	mi := &file_agentflow_v1_control_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4035,7 +4166,7 @@ func (x *AgentView) String() string {
 func (*AgentView) ProtoMessage() {}
 
 func (x *AgentView) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[44]
+	mi := &file_agentflow_v1_control_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4048,7 +4179,7 @@ func (x *AgentView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentView.ProtoReflect.Descriptor instead.
 func (*AgentView) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{44}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *AgentView) GetTarget() *AgentTarget {
@@ -4128,7 +4259,7 @@ type AgentQueryRequest struct {
 
 func (x *AgentQueryRequest) Reset() {
 	*x = AgentQueryRequest{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[45]
+	mi := &file_agentflow_v1_control_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4140,7 +4271,7 @@ func (x *AgentQueryRequest) String() string {
 func (*AgentQueryRequest) ProtoMessage() {}
 
 func (x *AgentQueryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[45]
+	mi := &file_agentflow_v1_control_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4153,7 +4284,7 @@ func (x *AgentQueryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQueryRequest.ProtoReflect.Descriptor instead.
 func (*AgentQueryRequest) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{45}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *AgentQueryRequest) GetNodeInstanceId() string {
@@ -4210,7 +4341,7 @@ type AgentQuery struct {
 
 func (x *AgentQuery) Reset() {
 	*x = AgentQuery{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[46]
+	mi := &file_agentflow_v1_control_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4222,7 +4353,7 @@ func (x *AgentQuery) String() string {
 func (*AgentQuery) ProtoMessage() {}
 
 func (x *AgentQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[46]
+	mi := &file_agentflow_v1_control_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4235,7 +4366,7 @@ func (x *AgentQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQuery.ProtoReflect.Descriptor instead.
 func (*AgentQuery) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{46}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *AgentQuery) GetQueryId() string {
@@ -4272,7 +4403,7 @@ type AgentQueryResult struct {
 
 func (x *AgentQueryResult) Reset() {
 	*x = AgentQueryResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[47]
+	mi := &file_agentflow_v1_control_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4284,7 +4415,7 @@ func (x *AgentQueryResult) String() string {
 func (*AgentQueryResult) ProtoMessage() {}
 
 func (x *AgentQueryResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[47]
+	mi := &file_agentflow_v1_control_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4297,7 +4428,7 @@ func (x *AgentQueryResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQueryResult.ProtoReflect.Descriptor instead.
 func (*AgentQueryResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{47}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *AgentQueryResult) GetQueryId() string {
@@ -4344,7 +4475,7 @@ type AgentQueryCancel struct {
 
 func (x *AgentQueryCancel) Reset() {
 	*x = AgentQueryCancel{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[48]
+	mi := &file_agentflow_v1_control_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4356,7 +4487,7 @@ func (x *AgentQueryCancel) String() string {
 func (*AgentQueryCancel) ProtoMessage() {}
 
 func (x *AgentQueryCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[48]
+	mi := &file_agentflow_v1_control_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4369,7 +4500,7 @@ func (x *AgentQueryCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentQueryCancel.ProtoReflect.Descriptor instead.
 func (*AgentQueryCancel) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{48}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *AgentQueryCancel) GetQueryId() string {
@@ -4391,7 +4522,7 @@ type AgentControl struct {
 
 func (x *AgentControl) Reset() {
 	*x = AgentControl{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[49]
+	mi := &file_agentflow_v1_control_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4403,7 +4534,7 @@ func (x *AgentControl) String() string {
 func (*AgentControl) ProtoMessage() {}
 
 func (x *AgentControl) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[49]
+	mi := &file_agentflow_v1_control_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4416,7 +4547,7 @@ func (x *AgentControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentControl.ProtoReflect.Descriptor instead.
 func (*AgentControl) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{49}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *AgentControl) GetAction() AgentControlAction {
@@ -4458,7 +4589,7 @@ type AgentControlResult struct {
 
 func (x *AgentControlResult) Reset() {
 	*x = AgentControlResult{}
-	mi := &file_agentflow_v1_control_proto_msgTypes[50]
+	mi := &file_agentflow_v1_control_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4470,7 +4601,7 @@ func (x *AgentControlResult) String() string {
 func (*AgentControlResult) ProtoMessage() {}
 
 func (x *AgentControlResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agentflow_v1_control_proto_msgTypes[50]
+	mi := &file_agentflow_v1_control_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4483,7 +4614,7 @@ func (x *AgentControlResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentControlResult.ProtoReflect.Descriptor instead.
 func (*AgentControlResult) Descriptor() ([]byte, []int) {
-	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{50}
+	return file_agentflow_v1_control_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *AgentControlResult) GetTarget() *AgentTarget {
@@ -4511,10 +4642,17 @@ var File_agentflow_v1_control_proto protoreflect.FileDescriptor
 
 const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1aagentflow/v1/control.proto\x12\fagentflow.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"C\n" +
+	"\x1aagentflow/v1/control.proto\x12\fagentflow.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"{\n" +
+	"\x18ResolveNamedAgentRequest\x12(\n" +
+	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
+	"\fsession_name\x18\x03 \x01(\tR\vsessionName\"}\n" +
+	"\x10NamedAgentRecord\x123\n" +
+	"\x06record\x18\x01 \x01(\v2\x1b.agentflow.v1.CommandRecordR\x06record\x124\n" +
+	"\x16initial_prompt_present\x18\x02 \x01(\bR\x14initialPromptPresent\"C\n" +
 	"\rProtocolRange\x12\x18\n" +
 	"\aminimum\x18\x01 \x01(\rR\aminimum\x12\x18\n" +
-	"\amaximum\x18\x02 \x01(\rR\amaximum\"\xa8\x02\n" +
+	"\amaximum\x18\x02 \x01(\rR\amaximum\"\xc4\x02\n" +
 	"\x05Hello\x127\n" +
 	"\bprotocol\x18\x01 \x01(\v2\x1b.agentflow.v1.ProtocolRangeR\bprotocol\x125\n" +
 	"\x16implementation_version\x18\x02 \x01(\tR\x15implementationVersion\x12\x1f\n" +
@@ -4524,7 +4662,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\x12!\n" +
 	"\fstream_epoch\x18\x06 \x01(\tR\vstreamEpoch\x12\x1f\n" +
 	"\vlast_cursor\x18\a \x01(\x04R\n" +
-	"lastCursor\"\x89\x01\n" +
+	"lastCursor\x12\x1a\n" +
+	"\bhostname\x18\b \x01(\tR\bhostname\"\x89\x01\n" +
 	"\bHelloAck\x12+\n" +
 	"\x11selected_protocol\x18\x01 \x01(\rR\x10selectedProtocol\x12,\n" +
 	"\x12server_instance_id\x18\x02 \x01(\tR\x10serverInstanceId\x12\"\n" +
@@ -4838,7 +4977,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x04tabs\x18\b \x03(\v2\x19.agentflow.v1.HerdrEntityR\x04tabs\x12/\n" +
 	"\x05panes\x18\t \x03(\v2\x19.agentflow.v1.HerdrEntityR\x05panes\x121\n" +
 	"\x06agents\x18\n" +
-	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xb2\x05\n" +
+	" \x03(\v2\x19.agentflow.v1.HerdrEntityR\x06agents\"\xce\x05\n" +
 	"\bNodeView\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12.\n" +
@@ -4857,7 +4996,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\bsessions\x18\f \x03(\v2\x19.agentflow.v1.SessionViewR\bsessions\x12%\n" +
 	"\x0esessions_ready\x18\r \x01(\bR\rsessionsReady\x12L\n" +
 	"\x14sessions_received_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x12sessionsReceivedAt\x12.\n" +
-	"\x13sessions_error_code\x18\x0f \x01(\tR\x11sessionsErrorCode\"8\n" +
+	"\x13sessions_error_code\x18\x0f \x01(\tR\x11sessionsErrorCode\x12\x1a\n" +
+	"\bhostname\x18\x10 \x01(\tR\bhostname\"8\n" +
 	"\bNodeList\x12,\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x16.agentflow.v1.NodeViewR\x05nodes\"\xc5\x01\n" +
 	"\vAgentTarget\x12\x17\n" +
@@ -4940,7 +5080,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x1aAGENT_CONTROL_ACTION_INPUT\x10\x02\x12\"\n" +
 	"\x1eAGENT_CONTROL_ACTION_INTERRUPT\x10\x032T\n" +
 	"\vNodeControl\x12E\n" +
-	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\xf2\x05\n" +
+	"\aConnect\x12\x1a.agentflow.v1.NodeEnvelope\x1a\x1a.agentflow.v1.NodeEnvelope(\x010\x012\xcf\x06\n" +
 	"\x05Fleet\x12A\n" +
 	"\rGetServerInfo\x12\x16.google.protobuf.Empty\x1a\x18.agentflow.v1.ServerInfo\x12;\n" +
 	"\tListNodes\x12\x16.google.protobuf.Empty\x1a\x16.agentflow.v1.NodeList\x12>\n" +
@@ -4955,7 +5095,8 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\fListProjects\x12!.agentflow.v1.ListProjectsRequest\x1a\x19.agentflow.v1.ProjectList\x12J\n" +
 	"\n" +
 	"GetProject\x12\x1f.agentflow.v1.GetProjectRequest\x1a\x1b.agentflow.v1.ProjectRecord\x12L\n" +
-	"\fListSessions\x12!.agentflow.v1.ListSessionsRequest\x1a\x19.agentflow.v1.SessionListBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
+	"\fListSessions\x12!.agentflow.v1.ListSessionsRequest\x1a\x19.agentflow.v1.SessionList\x12[\n" +
+	"\x11ResolveNamedAgent\x12&.agentflow.v1.ResolveNamedAgentRequest\x1a\x1e.agentflow.v1.NamedAgentRecordBOZMgithub.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1b\x06proto3"
 
 var (
 	file_agentflow_v1_control_proto_rawDescOnce sync.Once
@@ -4970,197 +5111,202 @@ func file_agentflow_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_agentflow_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
+var file_agentflow_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_agentflow_v1_control_proto_goTypes = []any{
-	(Role)(0),                      // 0: agentflow.v1.Role
-	(CommandStatus)(0),             // 1: agentflow.v1.CommandStatus
-	(ActorOrigin)(0),               // 2: agentflow.v1.ActorOrigin
-	(AgentQueryKind)(0),            // 3: agentflow.v1.AgentQueryKind
-	(AgentControlAction)(0),        // 4: agentflow.v1.AgentControlAction
-	(*ProtocolRange)(nil),          // 5: agentflow.v1.ProtocolRange
-	(*Hello)(nil),                  // 6: agentflow.v1.Hello
-	(*HelloAck)(nil),               // 7: agentflow.v1.HelloAck
-	(*Heartbeat)(nil),              // 8: agentflow.v1.Heartbeat
-	(*Snapshot)(nil),               // 9: agentflow.v1.Snapshot
-	(*Event)(nil),                  // 10: agentflow.v1.Event
-	(*Command)(nil),                // 11: agentflow.v1.Command
-	(*WorktreeCreate)(nil),         // 12: agentflow.v1.WorktreeCreate
-	(*WorktreeCreateResult)(nil),   // 13: agentflow.v1.WorktreeCreateResult
-	(*WorkspaceEnsure)(nil),        // 14: agentflow.v1.WorkspaceEnsure
-	(*WorkspaceEnsureResult)(nil),  // 15: agentflow.v1.WorkspaceEnsureResult
-	(*SubmitCommandRequest)(nil),   // 16: agentflow.v1.SubmitCommandRequest
-	(*GetCommandRequest)(nil),      // 17: agentflow.v1.GetCommandRequest
-	(*CommandAudit)(nil),           // 18: agentflow.v1.CommandAudit
-	(*CommandRecord)(nil),          // 19: agentflow.v1.CommandRecord
-	(*Actor)(nil),                  // 20: agentflow.v1.Actor
-	(*CommandAck)(nil),             // 21: agentflow.v1.CommandAck
-	(*CommandResult)(nil),          // 22: agentflow.v1.CommandResult
-	(*NodeEnvelope)(nil),           // 23: agentflow.v1.NodeEnvelope
-	(*AgentStart)(nil),             // 24: agentflow.v1.AgentStart
-	(*AgentStop)(nil),              // 25: agentflow.v1.AgentStop
-	(*AgentLifecycleHandle)(nil),   // 26: agentflow.v1.AgentLifecycleHandle
-	(*AgentLifecycleStage)(nil),    // 27: agentflow.v1.AgentLifecycleStage
-	(*AgentLifecycleReceipt)(nil),  // 28: agentflow.v1.AgentLifecycleReceipt
-	(*CommandProgress)(nil),        // 29: agentflow.v1.CommandProgress
-	(*SessionEnsure)(nil),          // 30: agentflow.v1.SessionEnsure
-	(*ListSessionsRequest)(nil),    // 31: agentflow.v1.ListSessionsRequest
-	(*SessionList)(nil),            // 32: agentflow.v1.SessionList
-	(*SessionView)(nil),            // 33: agentflow.v1.SessionView
-	(*SessionInventory)(nil),       // 34: agentflow.v1.SessionInventory
-	(*RegisterProjectRequest)(nil), // 35: agentflow.v1.RegisterProjectRequest
-	(*GetProjectRequest)(nil),      // 36: agentflow.v1.GetProjectRequest
-	(*ListProjectsRequest)(nil),    // 37: agentflow.v1.ListProjectsRequest
-	(*ProjectConfig)(nil),          // 38: agentflow.v1.ProjectConfig
-	(*ProjectAck)(nil),             // 39: agentflow.v1.ProjectAck
-	(*ProjectRecord)(nil),          // 40: agentflow.v1.ProjectRecord
-	(*ProjectList)(nil),            // 41: agentflow.v1.ProjectList
-	(*LegacyProjects)(nil),         // 42: agentflow.v1.LegacyProjects
-	(*ServerInfo)(nil),             // 43: agentflow.v1.ServerInfo
-	(*HerdrEntity)(nil),            // 44: agentflow.v1.HerdrEntity
-	(*HerdrState)(nil),             // 45: agentflow.v1.HerdrState
-	(*NodeView)(nil),               // 46: agentflow.v1.NodeView
-	(*NodeList)(nil),               // 47: agentflow.v1.NodeList
-	(*AgentTarget)(nil),            // 48: agentflow.v1.AgentTarget
-	(*AgentView)(nil),              // 49: agentflow.v1.AgentView
-	(*AgentQueryRequest)(nil),      // 50: agentflow.v1.AgentQueryRequest
-	(*AgentQuery)(nil),             // 51: agentflow.v1.AgentQuery
-	(*AgentQueryResult)(nil),       // 52: agentflow.v1.AgentQueryResult
-	(*AgentQueryCancel)(nil),       // 53: agentflow.v1.AgentQueryCancel
-	(*AgentControl)(nil),           // 54: agentflow.v1.AgentControl
-	(*AgentControlResult)(nil),     // 55: agentflow.v1.AgentControlResult
-	(*timestamppb.Timestamp)(nil),  // 56: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),        // 57: google.protobuf.Struct
-	(*durationpb.Duration)(nil),    // 58: google.protobuf.Duration
-	(*emptypb.Empty)(nil),          // 59: google.protobuf.Empty
+	(Role)(0),                        // 0: agentflow.v1.Role
+	(CommandStatus)(0),               // 1: agentflow.v1.CommandStatus
+	(ActorOrigin)(0),                 // 2: agentflow.v1.ActorOrigin
+	(AgentQueryKind)(0),              // 3: agentflow.v1.AgentQueryKind
+	(AgentControlAction)(0),          // 4: agentflow.v1.AgentControlAction
+	(*ResolveNamedAgentRequest)(nil), // 5: agentflow.v1.ResolveNamedAgentRequest
+	(*NamedAgentRecord)(nil),         // 6: agentflow.v1.NamedAgentRecord
+	(*ProtocolRange)(nil),            // 7: agentflow.v1.ProtocolRange
+	(*Hello)(nil),                    // 8: agentflow.v1.Hello
+	(*HelloAck)(nil),                 // 9: agentflow.v1.HelloAck
+	(*Heartbeat)(nil),                // 10: agentflow.v1.Heartbeat
+	(*Snapshot)(nil),                 // 11: agentflow.v1.Snapshot
+	(*Event)(nil),                    // 12: agentflow.v1.Event
+	(*Command)(nil),                  // 13: agentflow.v1.Command
+	(*WorktreeCreate)(nil),           // 14: agentflow.v1.WorktreeCreate
+	(*WorktreeCreateResult)(nil),     // 15: agentflow.v1.WorktreeCreateResult
+	(*WorkspaceEnsure)(nil),          // 16: agentflow.v1.WorkspaceEnsure
+	(*WorkspaceEnsureResult)(nil),    // 17: agentflow.v1.WorkspaceEnsureResult
+	(*SubmitCommandRequest)(nil),     // 18: agentflow.v1.SubmitCommandRequest
+	(*GetCommandRequest)(nil),        // 19: agentflow.v1.GetCommandRequest
+	(*CommandAudit)(nil),             // 20: agentflow.v1.CommandAudit
+	(*CommandRecord)(nil),            // 21: agentflow.v1.CommandRecord
+	(*Actor)(nil),                    // 22: agentflow.v1.Actor
+	(*CommandAck)(nil),               // 23: agentflow.v1.CommandAck
+	(*CommandResult)(nil),            // 24: agentflow.v1.CommandResult
+	(*NodeEnvelope)(nil),             // 25: agentflow.v1.NodeEnvelope
+	(*AgentStart)(nil),               // 26: agentflow.v1.AgentStart
+	(*AgentStop)(nil),                // 27: agentflow.v1.AgentStop
+	(*AgentLifecycleHandle)(nil),     // 28: agentflow.v1.AgentLifecycleHandle
+	(*AgentLifecycleStage)(nil),      // 29: agentflow.v1.AgentLifecycleStage
+	(*AgentLifecycleReceipt)(nil),    // 30: agentflow.v1.AgentLifecycleReceipt
+	(*CommandProgress)(nil),          // 31: agentflow.v1.CommandProgress
+	(*SessionEnsure)(nil),            // 32: agentflow.v1.SessionEnsure
+	(*ListSessionsRequest)(nil),      // 33: agentflow.v1.ListSessionsRequest
+	(*SessionList)(nil),              // 34: agentflow.v1.SessionList
+	(*SessionView)(nil),              // 35: agentflow.v1.SessionView
+	(*SessionInventory)(nil),         // 36: agentflow.v1.SessionInventory
+	(*RegisterProjectRequest)(nil),   // 37: agentflow.v1.RegisterProjectRequest
+	(*GetProjectRequest)(nil),        // 38: agentflow.v1.GetProjectRequest
+	(*ListProjectsRequest)(nil),      // 39: agentflow.v1.ListProjectsRequest
+	(*ProjectConfig)(nil),            // 40: agentflow.v1.ProjectConfig
+	(*ProjectAck)(nil),               // 41: agentflow.v1.ProjectAck
+	(*ProjectRecord)(nil),            // 42: agentflow.v1.ProjectRecord
+	(*ProjectList)(nil),              // 43: agentflow.v1.ProjectList
+	(*LegacyProjects)(nil),           // 44: agentflow.v1.LegacyProjects
+	(*ServerInfo)(nil),               // 45: agentflow.v1.ServerInfo
+	(*HerdrEntity)(nil),              // 46: agentflow.v1.HerdrEntity
+	(*HerdrState)(nil),               // 47: agentflow.v1.HerdrState
+	(*NodeView)(nil),                 // 48: agentflow.v1.NodeView
+	(*NodeList)(nil),                 // 49: agentflow.v1.NodeList
+	(*AgentTarget)(nil),              // 50: agentflow.v1.AgentTarget
+	(*AgentView)(nil),                // 51: agentflow.v1.AgentView
+	(*AgentQueryRequest)(nil),        // 52: agentflow.v1.AgentQueryRequest
+	(*AgentQuery)(nil),               // 53: agentflow.v1.AgentQuery
+	(*AgentQueryResult)(nil),         // 54: agentflow.v1.AgentQueryResult
+	(*AgentQueryCancel)(nil),         // 55: agentflow.v1.AgentQueryCancel
+	(*AgentControl)(nil),             // 56: agentflow.v1.AgentControl
+	(*AgentControlResult)(nil),       // 57: agentflow.v1.AgentControlResult
+	(*timestamppb.Timestamp)(nil),    // 58: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),          // 59: google.protobuf.Struct
+	(*durationpb.Duration)(nil),      // 60: google.protobuf.Duration
+	(*emptypb.Empty)(nil),            // 61: google.protobuf.Empty
 }
 var file_agentflow_v1_control_proto_depIdxs = []int32{
-	5,   // 0: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
-	0,   // 1: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
-	56,  // 2: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
-	57,  // 3: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
-	56,  // 4: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
-	57,  // 5: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
-	20,  // 6: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
-	58,  // 7: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
-	57,  // 8: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
-	57,  // 9: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
-	56,  // 10: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
-	14,  // 11: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
-	12,  // 12: agentflow.v1.Command.worktree_create:type_name -> agentflow.v1.WorktreeCreate
-	54,  // 13: agentflow.v1.Command.agent_control:type_name -> agentflow.v1.AgentControl
-	16,  // 14: agentflow.v1.Command.submitted_request:type_name -> agentflow.v1.SubmitCommandRequest
-	30,  // 15: agentflow.v1.Command.session_ensure:type_name -> agentflow.v1.SessionEnsure
-	24,  // 16: agentflow.v1.Command.agent_start:type_name -> agentflow.v1.AgentStart
-	25,  // 17: agentflow.v1.Command.agent_stop:type_name -> agentflow.v1.AgentStop
-	56,  // 18: agentflow.v1.Command.execution_expires_at:type_name -> google.protobuf.Timestamp
-	58,  // 19: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
-	14,  // 20: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
-	12,  // 21: agentflow.v1.SubmitCommandRequest.worktree_create:type_name -> agentflow.v1.WorktreeCreate
-	54,  // 22: agentflow.v1.SubmitCommandRequest.agent_control:type_name -> agentflow.v1.AgentControl
-	30,  // 23: agentflow.v1.SubmitCommandRequest.session_ensure:type_name -> agentflow.v1.SessionEnsure
-	24,  // 24: agentflow.v1.SubmitCommandRequest.agent_start:type_name -> agentflow.v1.AgentStart
-	25,  // 25: agentflow.v1.SubmitCommandRequest.agent_stop:type_name -> agentflow.v1.AgentStop
-	1,   // 26: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
-	56,  // 27: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
-	11,  // 28: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
-	1,   // 29: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
-	56,  // 30: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
-	56,  // 31: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
-	18,  // 32: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
-	15,  // 33: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
-	13,  // 34: agentflow.v1.CommandRecord.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
-	55,  // 35: agentflow.v1.CommandRecord.agent_control:type_name -> agentflow.v1.AgentControlResult
-	33,  // 36: agentflow.v1.CommandRecord.session_ensure:type_name -> agentflow.v1.SessionView
-	28,  // 37: agentflow.v1.CommandRecord.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
-	0,   // 38: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
-	2,   // 39: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
-	1,   // 40: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
-	1,   // 41: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
-	57,  // 42: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
-	15,  // 43: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
-	13,  // 44: agentflow.v1.CommandResult.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
-	55,  // 45: agentflow.v1.CommandResult.agent_control:type_name -> agentflow.v1.AgentControlResult
-	33,  // 46: agentflow.v1.CommandResult.session_ensure:type_name -> agentflow.v1.SessionView
-	28,  // 47: agentflow.v1.CommandResult.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
-	6,   // 48: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
-	7,   // 49: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
-	8,   // 50: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
-	9,   // 51: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
-	10,  // 52: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
-	11,  // 53: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
-	21,  // 54: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
-	22,  // 55: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
-	45,  // 56: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
-	51,  // 57: agentflow.v1.NodeEnvelope.agent_query:type_name -> agentflow.v1.AgentQuery
-	52,  // 58: agentflow.v1.NodeEnvelope.agent_query_result:type_name -> agentflow.v1.AgentQueryResult
-	53,  // 59: agentflow.v1.NodeEnvelope.agent_query_cancel:type_name -> agentflow.v1.AgentQueryCancel
-	38,  // 60: agentflow.v1.NodeEnvelope.project_config:type_name -> agentflow.v1.ProjectConfig
-	39,  // 61: agentflow.v1.NodeEnvelope.project_ack:type_name -> agentflow.v1.ProjectAck
-	42,  // 62: agentflow.v1.NodeEnvelope.legacy_projects:type_name -> agentflow.v1.LegacyProjects
-	34,  // 63: agentflow.v1.NodeEnvelope.session_inventory:type_name -> agentflow.v1.SessionInventory
-	29,  // 64: agentflow.v1.NodeEnvelope.command_progress:type_name -> agentflow.v1.CommandProgress
-	48,  // 65: agentflow.v1.AgentStop.target:type_name -> agentflow.v1.AgentTarget
-	48,  // 66: agentflow.v1.AgentLifecycleHandle.target:type_name -> agentflow.v1.AgentTarget
-	26,  // 67: agentflow.v1.AgentLifecycleReceipt.handle:type_name -> agentflow.v1.AgentLifecycleHandle
-	27,  // 68: agentflow.v1.AgentLifecycleReceipt.stages:type_name -> agentflow.v1.AgentLifecycleStage
-	28,  // 69: agentflow.v1.CommandProgress.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
-	33,  // 70: agentflow.v1.SessionList.sessions:type_name -> agentflow.v1.SessionView
-	45,  // 71: agentflow.v1.SessionView.herdr:type_name -> agentflow.v1.HerdrState
-	56,  // 72: agentflow.v1.SessionView.herdr_received_at:type_name -> google.protobuf.Timestamp
-	33,  // 73: agentflow.v1.SessionInventory.sessions:type_name -> agentflow.v1.SessionView
-	56,  // 74: agentflow.v1.SessionInventory.observed_at:type_name -> google.protobuf.Timestamp
-	38,  // 75: agentflow.v1.ProjectRecord.desired:type_name -> agentflow.v1.ProjectConfig
-	39,  // 76: agentflow.v1.ProjectRecord.applied:type_name -> agentflow.v1.ProjectAck
-	40,  // 77: agentflow.v1.ProjectList.projects:type_name -> agentflow.v1.ProjectRecord
-	35,  // 78: agentflow.v1.LegacyProjects.projects:type_name -> agentflow.v1.RegisterProjectRequest
-	5,   // 79: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
-	56,  // 80: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
-	44,  // 81: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
-	44,  // 82: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
-	44,  // 83: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
-	44,  // 84: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
-	56,  // 85: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
-	45,  // 86: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
-	56,  // 87: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
-	33,  // 88: agentflow.v1.NodeView.sessions:type_name -> agentflow.v1.SessionView
-	56,  // 89: agentflow.v1.NodeView.sessions_received_at:type_name -> google.protobuf.Timestamp
-	46,  // 90: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
-	48,  // 91: agentflow.v1.AgentView.target:type_name -> agentflow.v1.AgentTarget
-	3,   // 92: agentflow.v1.AgentQueryRequest.kind:type_name -> agentflow.v1.AgentQueryKind
-	48,  // 93: agentflow.v1.AgentQueryRequest.target:type_name -> agentflow.v1.AgentTarget
-	50,  // 94: agentflow.v1.AgentQuery.request:type_name -> agentflow.v1.AgentQueryRequest
-	56,  // 95: agentflow.v1.AgentQuery.expires_at:type_name -> google.protobuf.Timestamp
-	49,  // 96: agentflow.v1.AgentQueryResult.agent:type_name -> agentflow.v1.AgentView
-	4,   // 97: agentflow.v1.AgentControl.action:type_name -> agentflow.v1.AgentControlAction
-	48,  // 98: agentflow.v1.AgentControl.target:type_name -> agentflow.v1.AgentTarget
-	48,  // 99: agentflow.v1.AgentControlResult.target:type_name -> agentflow.v1.AgentTarget
-	23,  // 100: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
-	59,  // 101: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
-	59,  // 102: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
-	59,  // 103: agentflow.v1.Fleet.WatchNodes:input_type -> google.protobuf.Empty
-	16,  // 104: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
-	17,  // 105: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
-	50,  // 106: agentflow.v1.Fleet.QueryAgent:input_type -> agentflow.v1.AgentQueryRequest
-	35,  // 107: agentflow.v1.Fleet.RegisterProject:input_type -> agentflow.v1.RegisterProjectRequest
-	37,  // 108: agentflow.v1.Fleet.ListProjects:input_type -> agentflow.v1.ListProjectsRequest
-	36,  // 109: agentflow.v1.Fleet.GetProject:input_type -> agentflow.v1.GetProjectRequest
-	31,  // 110: agentflow.v1.Fleet.ListSessions:input_type -> agentflow.v1.ListSessionsRequest
-	23,  // 111: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
-	43,  // 112: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
-	47,  // 113: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
-	47,  // 114: agentflow.v1.Fleet.WatchNodes:output_type -> agentflow.v1.NodeList
-	19,  // 115: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
-	19,  // 116: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
-	52,  // 117: agentflow.v1.Fleet.QueryAgent:output_type -> agentflow.v1.AgentQueryResult
-	40,  // 118: agentflow.v1.Fleet.RegisterProject:output_type -> agentflow.v1.ProjectRecord
-	41,  // 119: agentflow.v1.Fleet.ListProjects:output_type -> agentflow.v1.ProjectList
-	40,  // 120: agentflow.v1.Fleet.GetProject:output_type -> agentflow.v1.ProjectRecord
-	32,  // 121: agentflow.v1.Fleet.ListSessions:output_type -> agentflow.v1.SessionList
-	111, // [111:122] is the sub-list for method output_type
-	100, // [100:111] is the sub-list for method input_type
-	100, // [100:100] is the sub-list for extension type_name
-	100, // [100:100] is the sub-list for extension extendee
-	0,   // [0:100] is the sub-list for field type_name
+	21,  // 0: agentflow.v1.NamedAgentRecord.record:type_name -> agentflow.v1.CommandRecord
+	7,   // 1: agentflow.v1.Hello.protocol:type_name -> agentflow.v1.ProtocolRange
+	0,   // 2: agentflow.v1.Hello.role:type_name -> agentflow.v1.Role
+	58,  // 3: agentflow.v1.Heartbeat.sent_at:type_name -> google.protobuf.Timestamp
+	59,  // 4: agentflow.v1.Snapshot.payload:type_name -> google.protobuf.Struct
+	58,  // 5: agentflow.v1.Event.occurred_at:type_name -> google.protobuf.Timestamp
+	59,  // 6: agentflow.v1.Event.payload:type_name -> google.protobuf.Struct
+	22,  // 7: agentflow.v1.Command.actor:type_name -> agentflow.v1.Actor
+	60,  // 8: agentflow.v1.Command.ttl:type_name -> google.protobuf.Duration
+	59,  // 9: agentflow.v1.Command.preconditions:type_name -> google.protobuf.Struct
+	59,  // 10: agentflow.v1.Command.payload:type_name -> google.protobuf.Struct
+	58,  // 11: agentflow.v1.Command.expires_at:type_name -> google.protobuf.Timestamp
+	16,  // 12: agentflow.v1.Command.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	14,  // 13: agentflow.v1.Command.worktree_create:type_name -> agentflow.v1.WorktreeCreate
+	56,  // 14: agentflow.v1.Command.agent_control:type_name -> agentflow.v1.AgentControl
+	18,  // 15: agentflow.v1.Command.submitted_request:type_name -> agentflow.v1.SubmitCommandRequest
+	32,  // 16: agentflow.v1.Command.session_ensure:type_name -> agentflow.v1.SessionEnsure
+	26,  // 17: agentflow.v1.Command.agent_start:type_name -> agentflow.v1.AgentStart
+	27,  // 18: agentflow.v1.Command.agent_stop:type_name -> agentflow.v1.AgentStop
+	58,  // 19: agentflow.v1.Command.execution_expires_at:type_name -> google.protobuf.Timestamp
+	60,  // 20: agentflow.v1.SubmitCommandRequest.ttl:type_name -> google.protobuf.Duration
+	16,  // 21: agentflow.v1.SubmitCommandRequest.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsure
+	14,  // 22: agentflow.v1.SubmitCommandRequest.worktree_create:type_name -> agentflow.v1.WorktreeCreate
+	56,  // 23: agentflow.v1.SubmitCommandRequest.agent_control:type_name -> agentflow.v1.AgentControl
+	32,  // 24: agentflow.v1.SubmitCommandRequest.session_ensure:type_name -> agentflow.v1.SessionEnsure
+	26,  // 25: agentflow.v1.SubmitCommandRequest.agent_start:type_name -> agentflow.v1.AgentStart
+	27,  // 26: agentflow.v1.SubmitCommandRequest.agent_stop:type_name -> agentflow.v1.AgentStop
+	1,   // 27: agentflow.v1.CommandAudit.status:type_name -> agentflow.v1.CommandStatus
+	58,  // 28: agentflow.v1.CommandAudit.occurred_at:type_name -> google.protobuf.Timestamp
+	13,  // 29: agentflow.v1.CommandRecord.command:type_name -> agentflow.v1.Command
+	1,   // 30: agentflow.v1.CommandRecord.status:type_name -> agentflow.v1.CommandStatus
+	58,  // 31: agentflow.v1.CommandRecord.created_at:type_name -> google.protobuf.Timestamp
+	58,  // 32: agentflow.v1.CommandRecord.updated_at:type_name -> google.protobuf.Timestamp
+	20,  // 33: agentflow.v1.CommandRecord.audit:type_name -> agentflow.v1.CommandAudit
+	17,  // 34: agentflow.v1.CommandRecord.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	15,  // 35: agentflow.v1.CommandRecord.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
+	57,  // 36: agentflow.v1.CommandRecord.agent_control:type_name -> agentflow.v1.AgentControlResult
+	35,  // 37: agentflow.v1.CommandRecord.session_ensure:type_name -> agentflow.v1.SessionView
+	30,  // 38: agentflow.v1.CommandRecord.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
+	0,   // 39: agentflow.v1.Actor.role:type_name -> agentflow.v1.Role
+	2,   // 40: agentflow.v1.Actor.origin:type_name -> agentflow.v1.ActorOrigin
+	1,   // 41: agentflow.v1.CommandAck.status:type_name -> agentflow.v1.CommandStatus
+	1,   // 42: agentflow.v1.CommandResult.status:type_name -> agentflow.v1.CommandStatus
+	59,  // 43: agentflow.v1.CommandResult.payload:type_name -> google.protobuf.Struct
+	17,  // 44: agentflow.v1.CommandResult.workspace_ensure:type_name -> agentflow.v1.WorkspaceEnsureResult
+	15,  // 45: agentflow.v1.CommandResult.worktree_create:type_name -> agentflow.v1.WorktreeCreateResult
+	57,  // 46: agentflow.v1.CommandResult.agent_control:type_name -> agentflow.v1.AgentControlResult
+	35,  // 47: agentflow.v1.CommandResult.session_ensure:type_name -> agentflow.v1.SessionView
+	30,  // 48: agentflow.v1.CommandResult.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
+	8,   // 49: agentflow.v1.NodeEnvelope.hello:type_name -> agentflow.v1.Hello
+	9,   // 50: agentflow.v1.NodeEnvelope.hello_ack:type_name -> agentflow.v1.HelloAck
+	10,  // 51: agentflow.v1.NodeEnvelope.heartbeat:type_name -> agentflow.v1.Heartbeat
+	11,  // 52: agentflow.v1.NodeEnvelope.snapshot:type_name -> agentflow.v1.Snapshot
+	12,  // 53: agentflow.v1.NodeEnvelope.event:type_name -> agentflow.v1.Event
+	13,  // 54: agentflow.v1.NodeEnvelope.command:type_name -> agentflow.v1.Command
+	23,  // 55: agentflow.v1.NodeEnvelope.command_ack:type_name -> agentflow.v1.CommandAck
+	24,  // 56: agentflow.v1.NodeEnvelope.command_result:type_name -> agentflow.v1.CommandResult
+	47,  // 57: agentflow.v1.NodeEnvelope.herdr_state:type_name -> agentflow.v1.HerdrState
+	53,  // 58: agentflow.v1.NodeEnvelope.agent_query:type_name -> agentflow.v1.AgentQuery
+	54,  // 59: agentflow.v1.NodeEnvelope.agent_query_result:type_name -> agentflow.v1.AgentQueryResult
+	55,  // 60: agentflow.v1.NodeEnvelope.agent_query_cancel:type_name -> agentflow.v1.AgentQueryCancel
+	40,  // 61: agentflow.v1.NodeEnvelope.project_config:type_name -> agentflow.v1.ProjectConfig
+	41,  // 62: agentflow.v1.NodeEnvelope.project_ack:type_name -> agentflow.v1.ProjectAck
+	44,  // 63: agentflow.v1.NodeEnvelope.legacy_projects:type_name -> agentflow.v1.LegacyProjects
+	36,  // 64: agentflow.v1.NodeEnvelope.session_inventory:type_name -> agentflow.v1.SessionInventory
+	31,  // 65: agentflow.v1.NodeEnvelope.command_progress:type_name -> agentflow.v1.CommandProgress
+	50,  // 66: agentflow.v1.AgentStop.target:type_name -> agentflow.v1.AgentTarget
+	50,  // 67: agentflow.v1.AgentLifecycleHandle.target:type_name -> agentflow.v1.AgentTarget
+	28,  // 68: agentflow.v1.AgentLifecycleReceipt.handle:type_name -> agentflow.v1.AgentLifecycleHandle
+	29,  // 69: agentflow.v1.AgentLifecycleReceipt.stages:type_name -> agentflow.v1.AgentLifecycleStage
+	30,  // 70: agentflow.v1.CommandProgress.agent_lifecycle:type_name -> agentflow.v1.AgentLifecycleReceipt
+	35,  // 71: agentflow.v1.SessionList.sessions:type_name -> agentflow.v1.SessionView
+	47,  // 72: agentflow.v1.SessionView.herdr:type_name -> agentflow.v1.HerdrState
+	58,  // 73: agentflow.v1.SessionView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	35,  // 74: agentflow.v1.SessionInventory.sessions:type_name -> agentflow.v1.SessionView
+	58,  // 75: agentflow.v1.SessionInventory.observed_at:type_name -> google.protobuf.Timestamp
+	40,  // 76: agentflow.v1.ProjectRecord.desired:type_name -> agentflow.v1.ProjectConfig
+	41,  // 77: agentflow.v1.ProjectRecord.applied:type_name -> agentflow.v1.ProjectAck
+	42,  // 78: agentflow.v1.ProjectList.projects:type_name -> agentflow.v1.ProjectRecord
+	37,  // 79: agentflow.v1.LegacyProjects.projects:type_name -> agentflow.v1.RegisterProjectRequest
+	7,   // 80: agentflow.v1.ServerInfo.protocol:type_name -> agentflow.v1.ProtocolRange
+	58,  // 81: agentflow.v1.HerdrState.observed_at:type_name -> google.protobuf.Timestamp
+	46,  // 82: agentflow.v1.HerdrState.workspaces:type_name -> agentflow.v1.HerdrEntity
+	46,  // 83: agentflow.v1.HerdrState.tabs:type_name -> agentflow.v1.HerdrEntity
+	46,  // 84: agentflow.v1.HerdrState.panes:type_name -> agentflow.v1.HerdrEntity
+	46,  // 85: agentflow.v1.HerdrState.agents:type_name -> agentflow.v1.HerdrEntity
+	58,  // 86: agentflow.v1.NodeView.last_seen:type_name -> google.protobuf.Timestamp
+	47,  // 87: agentflow.v1.NodeView.herdr:type_name -> agentflow.v1.HerdrState
+	58,  // 88: agentflow.v1.NodeView.herdr_received_at:type_name -> google.protobuf.Timestamp
+	35,  // 89: agentflow.v1.NodeView.sessions:type_name -> agentflow.v1.SessionView
+	58,  // 90: agentflow.v1.NodeView.sessions_received_at:type_name -> google.protobuf.Timestamp
+	48,  // 91: agentflow.v1.NodeList.nodes:type_name -> agentflow.v1.NodeView
+	50,  // 92: agentflow.v1.AgentView.target:type_name -> agentflow.v1.AgentTarget
+	3,   // 93: agentflow.v1.AgentQueryRequest.kind:type_name -> agentflow.v1.AgentQueryKind
+	50,  // 94: agentflow.v1.AgentQueryRequest.target:type_name -> agentflow.v1.AgentTarget
+	52,  // 95: agentflow.v1.AgentQuery.request:type_name -> agentflow.v1.AgentQueryRequest
+	58,  // 96: agentflow.v1.AgentQuery.expires_at:type_name -> google.protobuf.Timestamp
+	51,  // 97: agentflow.v1.AgentQueryResult.agent:type_name -> agentflow.v1.AgentView
+	4,   // 98: agentflow.v1.AgentControl.action:type_name -> agentflow.v1.AgentControlAction
+	50,  // 99: agentflow.v1.AgentControl.target:type_name -> agentflow.v1.AgentTarget
+	50,  // 100: agentflow.v1.AgentControlResult.target:type_name -> agentflow.v1.AgentTarget
+	25,  // 101: agentflow.v1.NodeControl.Connect:input_type -> agentflow.v1.NodeEnvelope
+	61,  // 102: agentflow.v1.Fleet.GetServerInfo:input_type -> google.protobuf.Empty
+	61,  // 103: agentflow.v1.Fleet.ListNodes:input_type -> google.protobuf.Empty
+	61,  // 104: agentflow.v1.Fleet.WatchNodes:input_type -> google.protobuf.Empty
+	18,  // 105: agentflow.v1.Fleet.SubmitCommand:input_type -> agentflow.v1.SubmitCommandRequest
+	19,  // 106: agentflow.v1.Fleet.GetCommand:input_type -> agentflow.v1.GetCommandRequest
+	52,  // 107: agentflow.v1.Fleet.QueryAgent:input_type -> agentflow.v1.AgentQueryRequest
+	37,  // 108: agentflow.v1.Fleet.RegisterProject:input_type -> agentflow.v1.RegisterProjectRequest
+	39,  // 109: agentflow.v1.Fleet.ListProjects:input_type -> agentflow.v1.ListProjectsRequest
+	38,  // 110: agentflow.v1.Fleet.GetProject:input_type -> agentflow.v1.GetProjectRequest
+	33,  // 111: agentflow.v1.Fleet.ListSessions:input_type -> agentflow.v1.ListSessionsRequest
+	5,   // 112: agentflow.v1.Fleet.ResolveNamedAgent:input_type -> agentflow.v1.ResolveNamedAgentRequest
+	25,  // 113: agentflow.v1.NodeControl.Connect:output_type -> agentflow.v1.NodeEnvelope
+	45,  // 114: agentflow.v1.Fleet.GetServerInfo:output_type -> agentflow.v1.ServerInfo
+	49,  // 115: agentflow.v1.Fleet.ListNodes:output_type -> agentflow.v1.NodeList
+	49,  // 116: agentflow.v1.Fleet.WatchNodes:output_type -> agentflow.v1.NodeList
+	21,  // 117: agentflow.v1.Fleet.SubmitCommand:output_type -> agentflow.v1.CommandRecord
+	21,  // 118: agentflow.v1.Fleet.GetCommand:output_type -> agentflow.v1.CommandRecord
+	54,  // 119: agentflow.v1.Fleet.QueryAgent:output_type -> agentflow.v1.AgentQueryResult
+	42,  // 120: agentflow.v1.Fleet.RegisterProject:output_type -> agentflow.v1.ProjectRecord
+	43,  // 121: agentflow.v1.Fleet.ListProjects:output_type -> agentflow.v1.ProjectList
+	42,  // 122: agentflow.v1.Fleet.GetProject:output_type -> agentflow.v1.ProjectRecord
+	34,  // 123: agentflow.v1.Fleet.ListSessions:output_type -> agentflow.v1.SessionList
+	6,   // 124: agentflow.v1.Fleet.ResolveNamedAgent:output_type -> agentflow.v1.NamedAgentRecord
+	113, // [113:125] is the sub-list for method output_type
+	101, // [101:113] is the sub-list for method input_type
+	101, // [101:101] is the sub-list for extension type_name
+	101, // [101:101] is the sub-list for extension extendee
+	0,   // [0:101] is the sub-list for field type_name
 }
 
 func init() { file_agentflow_v1_control_proto_init() }
@@ -5168,7 +5314,7 @@ func file_agentflow_v1_control_proto_init() {
 	if File_agentflow_v1_control_proto != nil {
 		return
 	}
-	file_agentflow_v1_control_proto_msgTypes[18].OneofWrappers = []any{
+	file_agentflow_v1_control_proto_msgTypes[20].OneofWrappers = []any{
 		(*NodeEnvelope_Hello)(nil),
 		(*NodeEnvelope_HelloAck)(nil),
 		(*NodeEnvelope_Heartbeat)(nil),
@@ -5187,14 +5333,14 @@ func file_agentflow_v1_control_proto_init() {
 		(*NodeEnvelope_SessionInventory)(nil),
 		(*NodeEnvelope_CommandProgress)(nil),
 	}
-	file_agentflow_v1_control_proto_msgTypes[39].OneofWrappers = []any{}
+	file_agentflow_v1_control_proto_msgTypes[41].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentflow_v1_control_proto_rawDesc), len(file_agentflow_v1_control_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   51,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

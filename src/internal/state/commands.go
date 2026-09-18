@@ -418,6 +418,9 @@ func (s *Store) CreateCommand(ctx context.Context, command *pb.Command, now time
 		if err := checkCoordinatorLifecycleFence(ctx, tx, command); err != nil {
 			return err
 		}
+		if err := checkNamedAgentClaim(ctx, tx, command); err != nil {
+			return err
+		}
 		record = &pb.CommandRecord{
 			Command: proto.Clone(command).(*pb.Command), Status: statusAccepted, Detail: "accepted",
 			CreatedAt: stamp, UpdatedAt: proto.Clone(stamp).(*timestamppb.Timestamp),

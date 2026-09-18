@@ -30,6 +30,9 @@ import (
 var capabilities = []string{"node.heartbeat.v1"}
 
 type Options struct {
+	// OnRegistered runs after the authenticated hello and initial heartbeat.
+	OnRegistered    func(string)
+	Name            string
 	ManagedProjects *projects.Managed
 	HerdrExecutable string
 	SessionManager  SessionManager
@@ -64,11 +67,30 @@ type Options struct {
 }
 
 func Run(ctx context.Context, options Options) (err error) {
+	return run(ctx, options, nil)
+}
+
+// RunWithNetwork preserves all role locks and peer verification while borrowing
+// the managed network. Only its caller owns the network lifetime.
+func RunWithNetwork(ctx context.Context, options Options, network transport.RuntimeNetwork) error {
+	if network == nil {
+		return errors.New("shared node network is required")
+	}
+	return run(ctx, options, network)
+}
+
+func run(ctx context.Context, options Options, network transport.RuntimeNetwork) (err error) {
+	borrowed := network != nil
 	guard, err := state.PrepareRoleState(ctx, options.Transport.RoleStateDir, "node")
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, guard.Close()) }()
+	if borrowed {
+		if err := guard.DisableFullRoleBackup(); err != nil {
+			return err
+		}
+	}
 	instanceID, err := identity.LoadOrCreate(options.Transport.RoleStateDir)
 	if err != nil {
 		return err
@@ -112,13 +134,17 @@ func Run(ctx context.Context, options Options) (err error) {
 			}
 		}()
 	}
-	network, err := transport.Start(ctx, options.Transport)
-	if err != nil {
-		return err
+	if network == nil {
+		network, err = transport.Start(ctx, options.Transport)
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, network.Close()) }()
 	}
-	defer func() { err = errors.Join(err, network.Close()) }()
-	if err := guard.Activate(); err != nil {
-		return err
+	if !borrowed {
+		if err := guard.Activate(); err != nil {
+			return err
+		}
 	}
 	// Always override any injected verifier in production with fresh WhoIs of
 	// the actual stream peer, not the configured server address or DNS identity.
@@ -264,6 +290,7 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 				Protocol:              protocol.SupportedRange(),
 				ImplementationVersion: buildinfo.Version,
 				InstanceId:            options.InstanceID,
+				Hostname:              options.Name,
 				Role:                  agentflowv1.Role_ROLE_NODE,
 				Capabilities:          advertised,
 			},
@@ -509,6 +536,9 @@ func runSessionWithMutationExecutors(ctx context.Context, client agentflowv1.Nod
 	}
 	if err := sendHeartbeat(time.Now()); err != nil {
 		return true, fmt.Errorf("send initial heartbeat: %w", err)
+	}
+	if options.OnRegistered != nil {
+		options.OnRegistered(options.InstanceID)
 	}
 	handleIncoming := func(message incomingMessage) error {
 		if message.err != nil {

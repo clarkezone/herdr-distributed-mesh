@@ -59,6 +59,20 @@ type service struct {
 }
 
 func Run(ctx context.Context, options Options) (result error) {
+	return run(ctx, options, nil)
+}
+
+// RunWithNetwork retains the normal role guard and journal but never closes the
+// borrowed network. The caller must keep it alive until this function returns.
+func RunWithNetwork(ctx context.Context, options Options, network transport.RuntimeNetwork) error {
+	if network == nil {
+		return errors.New("shared server network is required")
+	}
+	return run(ctx, options, network)
+}
+
+func run(ctx context.Context, options Options, network transport.RuntimeNetwork) (result error) {
+	borrowed := network != nil
 	if err := validateDashboardOptions(options); err != nil {
 		return err
 	}
@@ -70,6 +84,11 @@ func Run(ctx context.Context, options Options) (result error) {
 		return err
 	}
 	defer func() { result = errors.Join(result, guard.Close()) }()
+	if borrowed {
+		if err := guard.DisableFullRoleBackup(); err != nil {
+			return err
+		}
+	}
 	instanceID, err := identity.LoadOrCreate(options.Transport.RoleStateDir)
 	if err != nil {
 		return err
@@ -97,16 +116,25 @@ func Run(ctx context.Context, options Options) (result error) {
 	api.fleet.storage = store
 	api.fleet.commands = store
 	api.fleet.fatal = make(chan error, 1)
+	for _, view := range restored {
+		if err := validateLogicalNodeName(view.GetHostname()); err != nil {
+			return fmt.Errorf("restore durable fleet name: %w", err)
+		}
+	}
 	if err := api.fleet.restore(restored, time.Now()); err != nil {
 		return fmt.Errorf("restore durable fleet: %w", err)
 	}
-	network, err := transport.Start(ctx, options.Transport)
-	if err != nil {
-		return err
+	if network == nil {
+		network, err = transport.Start(ctx, options.Transport)
+		if err != nil {
+			return err
+		}
+		defer func() { result = errors.Join(result, network.Close()) }()
 	}
-	defer func() { result = errors.Join(result, network.Close()) }()
-	if err := guard.Activate(); err != nil {
-		return err
+	if !borrowed {
+		if err := guard.Activate(); err != nil {
+			return err
+		}
 	}
 	self := network.SelfStatus()
 	if err := self.Validate(options.Transport.Tags, time.Now()); err != nil {
@@ -150,7 +178,11 @@ func Run(ctx context.Context, options Options) (result error) {
 
 	log.Printf("mesh server ready instance_id=%s address=%s", options.InstanceID, listener.Addr())
 	if options.DashboardListenAddress != "" {
-		return serveHostedCoordinator(ctx, options, network, listener, grpcServer, api)
+		embedded, ok := network.(*transport.Network)
+		if !ok {
+			return errors.New("hosted dashboard requires an embedded Tailscale network")
+		}
+		return serveHostedCoordinator(ctx, options, embedded, listener, grpcServer, api)
 	}
 	return serveCoordinator(ctx, listener, grpcServer, &api.fleet)
 }
@@ -216,6 +248,9 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 	if err := protocol.ValidateNodeHello(hello); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "invalid hello: %v", err)
 	}
+	if err := validateLogicalNodeName(hello.Hostname); err != nil {
+		return err
+	}
 	selectedProtocol, _ := protocol.Negotiate(hello.Protocol)
 	if service.bindNode != nil {
 		if err := service.bindNode(identity.StableID, hello.InstanceId); err != nil {
@@ -235,6 +270,9 @@ func (service *service) Connect(stream grpc.BidiStreamingServer[agentflowv1.Node
 			result = err
 		}
 	}()
+	if err := service.fleet.setLogicalName(entry, hello.Hostname); err != nil {
+		return err
+	}
 	service.fleet.mu.Lock()
 	entry.probes = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProbeCapability)
 	entry.projects = service.commands != nil && slices.Contains(hello.Capabilities, protocol.ProjectConfigCapability)

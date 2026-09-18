@@ -20,6 +20,17 @@ func runDashboard(ctx context.Context, args []string, streams IO) error {
 	if flags.NArg() != 0 {
 		return errors.New("dashboard does not accept positional arguments")
 	}
+	if managedExplicitServer(args) && *serverAddress == "" {
+		return errors.New("explicit -server must not be empty")
+	}
+	if *serverAddress == "" {
+		client, closeClient, _, err := managedFleet(ctx)
+		if err != nil {
+			return err
+		}
+		defer closeClient()
+		return dashboard.Run(ctx, dashboard.Options{FleetClient: client, ListenAddress: *listenAddress, Output: streams.Out})
+	}
 	return dashboard.Run(ctx, dashboard.Options{
 		ServerAddress: *serverAddress,
 		ListenAddress: *listenAddress,

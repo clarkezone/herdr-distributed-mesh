@@ -2,6 +2,8 @@ package setup
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -135,6 +137,71 @@ func TestSetupTokenValidationBeforeHost(t *testing.T) {
 		})
 		if err == nil || strings.Contains(err.Error(), "wrong-kind") {
 			t.Fatal("invalid token error")
+		}
+	}
+}
+
+func TestPolicyOnlyUsesPromptedTokenWithoutKeysOrParentEnvironment(t *testing.T) {
+	requirePowerShell(t)
+	for _, apply := range []bool{false, true} {
+		o := testOptions(t)
+		o.PolicyOnly, o.Apply = true, apply
+		t.Setenv(o.ApiTokenEnvironmentVariable, "parent-token-is-not-used")
+		report, err := runWithToken(context.Background(), o, "tskey-api-prompted-only", mockedSetupHost)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.KeysCreated != 0 || os.Getenv(o.ApiTokenEnvironmentVariable) != "parent-token-is-not-used" {
+			t.Fatal("keys created or parent environment changed")
+		}
+		for _, warning := range report.Warnings {
+			if warning == "auth_key_secrets" || warning == "primary_alias_preserved" {
+				t.Fatal("policy-only emitted key warning")
+			}
+		}
+		entries, err := os.ReadDir(o.OutputDirectory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.Contains(entry.Name(), "-key") {
+				t.Fatalf("policy-only wrote key artifact %s", entry.Name())
+			}
+			data, err := os.ReadFile(filepath.Join(o.OutputDirectory, entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(data), "tskey-") {
+				t.Fatal("token saved")
+			}
+		}
+		var proposal map[string]json.RawMessage
+		data, err := os.ReadFile(report.PolicyProposal)
+		if err != nil || json.Unmarshal(data, &proposal) != nil || !strings.Contains(string(proposal["acls"]), `"*:*"`) {
+			t.Fatalf("unrelated wildcard ACL was lost: %s %v", data, err)
+		}
+	}
+}
+
+func TestPolicyOnlyApplyFencedToReviewedPolicy(t *testing.T) {
+	requirePowerShell(t)
+	for _, changed := range []bool{false, true} {
+		o := testOptions(t)
+		o.PolicyOnly, o.Apply = true, true
+		policy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
+		if changed {
+			policy = "a different policy was reviewed"
+		}
+		hash := sha256.Sum256([]byte(policy))
+		o.ExpectedPolicySHA256 = hex.EncodeToString(hash[:])
+		_, err := run(context.Background(), o, mockedSetupHost)
+		if changed {
+			var e *Error
+			if !errors.As(err, &e) || e.Code != "policy_changed" {
+				t.Fatalf("policy race accepted: %v", err)
+			}
+		} else if err != nil {
+			t.Fatal(err)
 		}
 	}
 }

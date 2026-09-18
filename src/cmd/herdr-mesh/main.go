@@ -16,7 +16,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	err := app.Run(ctx, os.Args[1:], app.IO{Out: os.Stdout, Err: os.Stderr})
+	err := app.Run(ctx, os.Args[1:], app.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	if err == nil || errors.Is(err, flag.ErrHelp) {
 		return
 	}

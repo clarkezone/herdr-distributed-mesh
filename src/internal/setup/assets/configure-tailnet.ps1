@@ -10,7 +10,7 @@ param(
     [ValidateRange(3600, 7776000)]
     [int]$KeyExpirySeconds = 604800,
 
-    [ValidateRange(1, 100)]
+    [ValidateRange(0, 100)]
     [int]$KeysPerRole = 2,
 
     [ValidateRange(1, 65535)]
@@ -20,10 +20,14 @@ param(
     [string]$OutputDirectory,
 
     [switch]$Apply,
+    [switch]$PolicyOnly,
+    [string]$ExpectedPolicySHA256,
     [switch]$Structured
 )
 
 $ErrorActionPreference = 'Stop'
+if ($PolicyOnly) { $KeysPerRole = 0 }
+elseif ($KeysPerRole -lt 1) { throw 'KeysPerRole must be positive unless PolicyOnly is selected.' }
 
 function Protect-SecretFile {
     param(
@@ -299,6 +303,12 @@ if ($policyContent -is [byte[]]) {
     $policyContent = [Text.Encoding]::UTF8.GetString($policyContent)
 }
 if ($policyContent -isnot [string] -or $policyContent.Length -gt 1048576) { Stop-Setup 'policy_invalid' }
+if ($ExpectedPolicySHA256) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($policyContent))).Replace('-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    if ($hash -cne $ExpectedPolicySHA256) { Stop-Setup 'policy_changed' }
+}
 
 $timestamp = (Get-Date -Format 'yyyyMMdd-HHmmssfff') + '-' + [Guid]::NewGuid().ToString('N')
 $backupPath = Join-Path $OutputDirectory "policy-before-$timestamp.json"
@@ -407,6 +417,7 @@ if ($changesApplied) {
         -Body $proposedPolicy | Out-Null
     } catch { Stop-Setup 'api_update_failed' }
 
+    if (-not $PolicyOnly) {
     foreach ($role in $roles.Keys) {
         $tag = $roles[$role]
         for ($keyNumber = 1; $keyNumber -le $KeysPerRole; $keyNumber++) {
@@ -466,6 +477,7 @@ if ($changesApplied) {
             $createdAliases += $primaryPath
         }
     }
+    }
     } catch {
         $originalError = $_
         $revocationFailed = $false
@@ -496,7 +508,7 @@ if ($changesApplied) {
 
 Write-Host "Existing policy backup: $backupPath"
 Write-Host "Proposed merged policy: $proposedPath"
-if ($changesApplied) {
+if ($changesApplied -and -not $PolicyOnly) {
     $warningCodes += 'auth_key_secrets'
     Write-Host (
         "Numbered role key files: $OutputDirectory\server-key-1.ps1 through " +
@@ -511,6 +523,8 @@ if ($changesApplied) {
         'environment variables and securely delete consumed key files. Revoke any ' +
         'unused keys before their configured expiry.'
     )
+} elseif ($changesApplied) {
+    Write-Host 'Policy updated; browser enrollment will be used. No auth keys were created.'
 } else {
     Write-Host 'Preview complete; the tailnet was not changed and no auth keys were created.'
 }

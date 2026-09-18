@@ -1,5 +1,11 @@
 # Windows two-node operational acceptance
 
+**Advanced release-validation checklist, not a getting-started guide.** For
+normal two-computer setup, use the [operator guide](operator-guide.md). This
+checklist deliberately exercises independently configured legacy roles,
+recovery, and failure cases. Its extra identities are not required by managed
+`init`/`join` setup.
+
 Test the installed **`herdr-mesh`** CLI end to end, not a spike, helper script,
 or direct native Herdr command. This runbook covers the complete current mesh:
 central project configuration, headless sessions, workspaces/worktrees, agent

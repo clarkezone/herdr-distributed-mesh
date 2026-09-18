@@ -36,6 +36,7 @@ const (
 )
 
 type Options struct {
+	FleetClient   agentflowv1.FleetClient
 	ListenAddress string
 	ServerAddress string
 	Transport     transport.Config
@@ -63,7 +64,7 @@ func ValidateListenAddress(address string) error {
 }
 
 func Run(ctx context.Context, options Options) (result error) {
-	if strings.TrimSpace(options.ServerAddress) == "" {
+	if options.FleetClient == nil && strings.TrimSpace(options.ServerAddress) == "" {
 		return errors.New("-server is required")
 	}
 	if err := ValidateListenAddress(options.ListenAddress); err != nil {
@@ -74,6 +75,9 @@ func Run(ctx context.Context, options Options) (result error) {
 		return fmt.Errorf("listen for dashboard: %w", err)
 	}
 	defer listener.Close()
+	if options.FleetClient != nil {
+		return serve(ctx, listener, options.FleetClient, options.Output)
+	}
 
 	guard, err := state.PrepareRoleState(ctx, options.Transport.RoleStateDir, "client")
 	if err != nil {

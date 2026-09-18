@@ -12,7 +12,7 @@ try {
     $code = $_.Exception.Data['HerdrSetupCode']
     $allowed = @('api_read_failed', 'api_update_failed', 'key_creation_failed',
         'key_response_invalid', 'key_revocation_unconfirmed', 'policy_invalid',
-        'output_exists', 'output_unavailable', 'token_rejected', 'etag_missing', 'key_cleanup_failed', 'prerequisite_version')
+        'output_exists', 'output_unavailable', 'token_rejected', 'etag_missing', 'key_cleanup_failed', 'prerequisite_version', 'policy_changed')
     if ($code -notin $allowed) { $code = 'local_failure' }
     @{ ok = $false; error_code = $code } | ConvertTo-Json -Compress
 }

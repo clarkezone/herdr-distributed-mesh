@@ -36,6 +36,7 @@ func TestProductionHasOneCLIEntrypoint(t *testing.T) {
 func TestOperatorGuideUsesOneProductCommand(t *testing.T) {
 	for _, guide := range []string{
 		"operator-guide.md",
+		"advanced-operator-guide.md",
 		"windows-live-validation.md",
 		"tailnet-setup.md",
 		"node-bootstrap.md",

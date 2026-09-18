@@ -48,8 +48,11 @@ func parseMCPFlags(args []string, streams IO) (mcpConfig, error) {
 	if flags.NArg() != 0 {
 		return config, errors.New("unexpected positional arguments")
 	}
-	if strings.TrimSpace(config.control.ServerAddress) == "" || strings.TrimSpace(config.control.RequiredServerTag) == "" {
-		return config, errors.New("-server and a nonempty -required-server-tag are required")
+	if managedExplicitServer(args) && strings.TrimSpace(config.control.ServerAddress) == "" {
+		return config, errors.New("explicit -server must not be empty")
+	}
+	if strings.TrimSpace(config.control.RequiredServerTag) == "" {
+		return config, errors.New("a nonempty -required-server-tag is required")
 	}
 	if config.limits.MaxActiveCalls < meshmcp.MinActiveCalls || config.limits.MaxActiveCalls > 64 {
 		return config, errors.New("-max-active-calls must be 2..64; one total slot is reserved for interrupt/stop")
@@ -73,6 +76,14 @@ func runMCP(ctx context.Context, args []string, streams IO) error {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, config.timeout)
 		defer cancel()
+	}
+	if config.control.ServerAddress == "" {
+		client, closeClient, _, err := managedFleet(ctx)
+		if err != nil {
+			return err
+		}
+		defer closeClient()
+		config.control.FleetClient = client
 	}
 	return serveMCP(ctx, config, streams)
 }

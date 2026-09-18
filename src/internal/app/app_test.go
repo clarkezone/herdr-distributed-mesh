@@ -13,8 +13,22 @@ func TestRunHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !strings.Contains(output.String(), "herdr-mesh server") {
+	if !strings.Contains(output.String(), "herdr-mesh init --tailnet") ||
+		!strings.Contains(output.String(), "herdr-mesh join --server") ||
+		strings.Contains(output.String(), "-idempotency-key") {
 		t.Fatalf("help output = %q", output.String())
+	}
+}
+
+func TestAdvancedHelpRetainsExplicitRoles(t *testing.T) {
+	var output bytes.Buffer
+	if err := Run(context.Background(), []string{"help", "--advanced"}, IO{Out: &output, Err: &output}); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"herdr-mesh server", "herdr-mesh node", "herdr-mesh ctl", "herdr-mesh maintenance"} {
+		if !strings.Contains(output.String(), command) {
+			t.Fatalf("advanced help omitted %s", command)
+		}
 	}
 }
 

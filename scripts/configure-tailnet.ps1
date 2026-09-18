@@ -8,7 +8,9 @@ param(
     [ValidateRange(1, 100)][int]$KeysPerRole = 2,
     [ValidateRange(1, 65535)][int]$DashboardPort,
     [string]$OutputDirectory = (Join-Path $env:LOCALAPPDATA 'herdr-mesh\tailnet-setup'),
-    [switch]$Apply
+    [switch]$Apply,
+    [switch]$PolicyOnly,
+    [string]$ExpectedPolicySHA256
 )
 $ErrorActionPreference = 'Stop'
 $arguments = @{}

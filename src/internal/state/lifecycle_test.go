@@ -154,6 +154,7 @@ func TestLifecycleStartupBudgetDoesNotExtendDispatchTTL(t *testing.T) {
 	s := commandStoreAtPath(t, testPath(t))
 	running, queued := lifecycleCommand(t, 1), lifecycleCommand(t, 2)
 	queued.AgentStart.WorkspaceId, queued.SubmittedRequest.AgentStart.WorkspaceId = "ws:2", "ws:2"
+	queued.AgentStart.Name, queued.SubmittedRequest.AgentStart.Name = "queued-agent", "queued-agent"
 	admitWorkspace(t, s, running, true)
 	admitWorkspace(t, s, queued, false)
 	requireOK(t, s.ExpireCommands(ctx, commandTestTime.Add(11*time.Second)))

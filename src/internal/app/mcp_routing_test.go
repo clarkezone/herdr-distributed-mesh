@@ -20,7 +20,7 @@ func TestRunRoutesMCPHelpWithoutNetwork(t *testing.T) {
 	}
 	output.Reset()
 	if err := Run(context.Background(), []string{"help"}, IO{Out: &output, Err: &diagnostics}); err != nil ||
-		!strings.Contains(output.String(), "herdr-mesh mcp -server") {
+		!strings.Contains(output.String(), "herdr-mesh mcp") {
 		t.Fatalf("top-level usage omitted MCP: %v %s", err, output.String())
 	}
 }

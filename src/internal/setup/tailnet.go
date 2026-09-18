@@ -32,6 +32,8 @@ type Options struct {
 	DashboardPort               *int          `json:"DashboardPort,omitempty"`
 	OutputDirectory             string        `json:"OutputDirectory"`
 	Apply                       bool          `json:"Apply"`
+	PolicyOnly                  bool          `json:"PolicyOnly"`
+	ExpectedPolicySHA256        string        `json:"ExpectedPolicySHA256,omitempty"`
 	Timeout                     time.Duration `json:"-"`
 }
 
@@ -45,10 +47,14 @@ var owner = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_@.:+-]{0,253}$`)
 var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
 func (o Options) Normalize() (Options, error) {
+	if o.PolicyOnly {
+		o.KeysPerRole = 0
+	}
 	if !identifier.MatchString(o.Tailnet) || strings.HasPrefix(o.Tailnet, "tskey-") ||
 		!owner.MatchString(o.TagOwner) || strings.HasPrefix(o.TagOwner, "tskey-") ||
 		!environmentName.MatchString(o.ApiTokenEnvironmentVariable) ||
-		o.KeyExpirySeconds < 3600 || o.KeyExpirySeconds > 7776000 || o.KeysPerRole < 1 || o.KeysPerRole > 100 ||
+		o.KeyExpirySeconds < 3600 || o.KeyExpirySeconds > 7776000 || (!o.PolicyOnly && (o.KeysPerRole < 1 || o.KeysPerRole > 100)) ||
+		(o.ExpectedPolicySHA256 != "" && !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(o.ExpectedPolicySHA256)) ||
 		(o.DashboardPort != nil && (*o.DashboardPort < 1 || *o.DashboardPort > 65535)) ||
 		o.Timeout <= 0 || o.Timeout > scripthost.MaxTimeout || len(o.OutputDirectory) > 4096 ||
 		strings.ContainsAny(o.OutputDirectory, "\x00\r\n") {
@@ -105,12 +111,21 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	return run(ctx, options, scripthost.Run)
 }
 
+// RunWithToken supplies a prompted token only to the child environment, never to
+// the parent environment, arguments, options file, or report.
+func RunWithToken(ctx context.Context, options Options, token []byte) (Report, error) {
+	return runWithToken(ctx, options, strings.TrimSpace(string(token)), scripthost.Run)
+}
+
 func run(ctx context.Context, options Options, host func(context.Context, scripthost.Request) (scripthost.Result, error)) (Report, error) {
+	return runWithToken(ctx, options, strings.TrimSpace(os.Getenv(options.ApiTokenEnvironmentVariable)), host)
+}
+
+func runWithToken(ctx context.Context, options Options, token string, host func(context.Context, scripthost.Request) (scripthost.Result, error)) (Report, error) {
 	options, err := options.Normalize()
 	if err != nil {
 		return Report{}, err
 	}
-	token := strings.TrimSpace(os.Getenv(options.ApiTokenEnvironmentVariable))
 	if token == "" {
 		return Report{}, &Error{Code: "token_missing"}
 	}
@@ -118,7 +133,8 @@ func run(ctx context.Context, options Options, host func(context.Context, script
 		return Report{}, &Error{Code: "token_kind"}
 	}
 	result, err := host(ctx, scripthost.Request{Script: entry,
-		Assets: map[string][]byte{"configure-tailnet.ps1": script}, Options: options, Timeout: options.Timeout})
+		Assets: map[string][]byte{"configure-tailnet.ps1": script}, Options: options, Timeout: options.Timeout,
+		Environment: map[string]string{options.ApiTokenEnvironmentVariable: token}})
 	fail := func(code string) (Report, error) {
 		return Report{}, &Error{Code: code, RemoteEffectsUnknown: options.Apply && result.Started}
 	}
@@ -145,7 +161,7 @@ func run(ctx context.Context, options Options, host func(context.Context, script
 	if !envelope.OK {
 		switch envelope.ErrorCode {
 		case "api_read_failed", "api_update_failed", "key_creation_failed", "key_response_invalid",
-			"key_revocation_unconfirmed", "policy_invalid", "output_exists", "output_unavailable", "local_failure", "token_rejected", "etag_missing", "key_cleanup_failed", "prerequisite_version":
+			"key_revocation_unconfirmed", "policy_invalid", "policy_changed", "output_exists", "output_unavailable", "local_failure", "token_rejected", "etag_missing", "key_cleanup_failed", "prerequisite_version":
 			return fail(envelope.ErrorCode)
 		default:
 			return fail("invalid_result")
@@ -175,7 +191,8 @@ func run(ctx context.Context, options Options, host func(context.Context, script
 			return fail("invalid_result")
 		}
 	}
-	if !seen["policy_round_trip"] || (options.Apply && !seen["auth_key_secrets"]) {
+	if !seen["policy_round_trip"] || (options.Apply && !options.PolicyOnly && !seen["auth_key_secrets"]) ||
+		(options.PolicyOnly && (seen["auth_key_secrets"] || seen["primary_alias_preserved"])) {
 		return fail("invalid_result")
 	}
 	return *report, nil

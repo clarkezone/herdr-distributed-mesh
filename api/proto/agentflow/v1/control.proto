@@ -25,6 +25,22 @@ service Fleet {
   rpc ListProjects(ListProjectsRequest) returns (ProjectList);
   rpc GetProject(GetProjectRequest) returns (ProjectRecord);
   rpc ListSessions(ListSessionsRequest) returns (SessionList);
+  // Resolves the original operator-assigned start name, never a native label.
+  // Returns pending and partial receipts too; callers must validate outcomes.
+  rpc ResolveNamedAgent(ResolveNamedAgentRequest) returns (NamedAgentRecord);
+}
+
+message ResolveNamedAgentRequest {
+  string node_instance_id = 1;
+  string name = 2;
+  string session_name = 3;
+}
+
+message NamedAgentRecord {
+  // Read-only projection: initial_prompt is omitted from submitted_request.
+  // This projection must never be resubmitted as an execution request.
+  CommandRecord record = 1;
+  bool initial_prompt_present = 2;
 }
 
 enum Role {
@@ -66,6 +82,7 @@ message Hello {
   repeated string capabilities = 5;
   string stream_epoch = 6;
   uint64 last_cursor = 7;
+  string hostname = 8;
 }
 
 message HelloAck {
@@ -422,6 +439,8 @@ message NodeView {
   bool sessions_ready = 13;
   google.protobuf.Timestamp sessions_received_at = 14;
   string sessions_error_code = 15;
+  // Operator-assigned logical node name, not a native machine inventory label.
+  string hostname = 16;
 }
 
 message NodeList {

@@ -31,6 +31,8 @@ type Request struct {
 	Assets  map[string][]byte
 	Options any
 	Timeout time.Duration
+	// Environment overrides are process-only and never serialized to options.
+	Environment map[string]string
 }
 
 // Output is available only on success and still requires caller schema validation.
@@ -153,6 +155,22 @@ func run(ctx context.Context, request Request, find func() (string, error), star
 	cmd := exec.Command(path, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 		"-File", filepath.Join(root, "host.ps1"), "-OptionsPath", filepath.Join(root, "options.json"))
 	cmd.Dir = root
+	if len(request.Environment) != 0 {
+		cmd.Env = os.Environ()
+		for key, value := range request.Environment {
+			if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(key) || strings.ContainsRune(value, 0) {
+				return result, &Error{Code: "invalid_request"}
+			}
+			filtered := cmd.Env[:0]
+			for _, entry := range cmd.Env {
+				name, _, _ := strings.Cut(entry, "=")
+				if !strings.EqualFold(name, key) {
+					filtered = append(filtered, entry)
+				}
+			}
+			cmd.Env = append(filtered, key+"="+value)
+		}
+	}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.WaitDelay = time.Second
 	result.Started, err = start(op, cmd)

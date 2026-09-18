@@ -2,20 +2,46 @@
 
 Distributed mesh support for Herdr.
 
-## Production foundation
+## Start here
 
 The product has one public executable and command: **`herdr-mesh`**
 (`herdr-mesh.exe` on Windows). Install it on `PATH` and use its subcommands;
 server, node, controller, dashboard, MCP, and maintenance are not separate binaries.
-See the [operator guide](docs/operator-guide.md) for installed-CLI workflows.
+Start with the [two-computer operator guide](docs/operator-guide.md).
+Managed setup uses one background mesh connection per computer; diagnostics,
+the dashboard, MCP, and commands share it.
+
+On the first computer:
 
 ```powershell
-herdr-mesh server
-herdr-mesh node -server '<server-magic-dns-name>:50052' -herdr-executable herdr
-herdr-mesh ctl server-info -server '<server-magic-dns-name>:50052'
-herdr-mesh doctor -server '<server-magic-dns-name>:50052'
-herdr-mesh dashboard -server '<server-magic-dns-name>:50052'
+herdr-mesh init --tailnet example.com --name desktop
 ```
+
+On the second computer, use the exact full MagicDNS address printed by setup:
+
+```powershell
+herdr-mesh join --server herdr-mesh-desktop.example.ts.net --name laptop
+```
+
+From either computer afterward:
+
+```powershell
+herdr-mesh nodes
+herdr-mesh doctor
+herdr-mesh dashboard
+```
+
+First-time tailnet configuration prompts for an API access token privately.
+Device connection uses browser sign-in; normal setup does not require counting
+or distributing enrollment keys. Herdr, Git, and the intended authenticated
+provider must be installed. Managed background startup currently targets Windows
+sign-in, not a boot-before-sign-in system service.
+
+## Advanced and developer reference
+
+The remainder describes explicit legacy roles and implementation-level
+validation. It is not a sequence of extra steps required after `init`/`join`.
+See the [advanced operator guide](docs/advanced-operator-guide.md) for those modes.
 
 Tailnet setup (`herdr-mesh setup tailnet`) and prepared-endpoint Windows bootstrap
 (`herdr-mesh bootstrap`) are embedded in that same executable. The operator guide
@@ -42,10 +68,9 @@ production listener defaults to port `50052`, keeping it separate from the
 disposable spike on `50051`.
 
 Use [Windows operational acceptance](docs/windows-live-validation.md) for the
-two-host testing sequence: default role startup, central projects, named headless
-sessions, worktrees, agent tasks/control/stop, and explicit retry/recovery checks.
-It also covers tailnet setup, role rejection, network changes and restart loops.
-Examples use named values and returned IDs without shell-variable scaffolding.
+advanced two-host release-validation matrix, including role rejection, network
+changes, explicit target pins, and restart/recovery checks. Normal first use
+does not require completing that matrix.
 
 The versioned protocol source is
 `api\proto\agentflow\v1\control.proto`. Regenerate Go bindings with:

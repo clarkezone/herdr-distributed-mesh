@@ -116,16 +116,17 @@ var NodeControl_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Fleet_GetServerInfo_FullMethodName   = "/agentflow.v1.Fleet/GetServerInfo"
-	Fleet_ListNodes_FullMethodName       = "/agentflow.v1.Fleet/ListNodes"
-	Fleet_WatchNodes_FullMethodName      = "/agentflow.v1.Fleet/WatchNodes"
-	Fleet_SubmitCommand_FullMethodName   = "/agentflow.v1.Fleet/SubmitCommand"
-	Fleet_GetCommand_FullMethodName      = "/agentflow.v1.Fleet/GetCommand"
-	Fleet_QueryAgent_FullMethodName      = "/agentflow.v1.Fleet/QueryAgent"
-	Fleet_RegisterProject_FullMethodName = "/agentflow.v1.Fleet/RegisterProject"
-	Fleet_ListProjects_FullMethodName    = "/agentflow.v1.Fleet/ListProjects"
-	Fleet_GetProject_FullMethodName      = "/agentflow.v1.Fleet/GetProject"
-	Fleet_ListSessions_FullMethodName    = "/agentflow.v1.Fleet/ListSessions"
+	Fleet_GetServerInfo_FullMethodName     = "/agentflow.v1.Fleet/GetServerInfo"
+	Fleet_ListNodes_FullMethodName         = "/agentflow.v1.Fleet/ListNodes"
+	Fleet_WatchNodes_FullMethodName        = "/agentflow.v1.Fleet/WatchNodes"
+	Fleet_SubmitCommand_FullMethodName     = "/agentflow.v1.Fleet/SubmitCommand"
+	Fleet_GetCommand_FullMethodName        = "/agentflow.v1.Fleet/GetCommand"
+	Fleet_QueryAgent_FullMethodName        = "/agentflow.v1.Fleet/QueryAgent"
+	Fleet_RegisterProject_FullMethodName   = "/agentflow.v1.Fleet/RegisterProject"
+	Fleet_ListProjects_FullMethodName      = "/agentflow.v1.Fleet/ListProjects"
+	Fleet_GetProject_FullMethodName        = "/agentflow.v1.Fleet/GetProject"
+	Fleet_ListSessions_FullMethodName      = "/agentflow.v1.Fleet/ListSessions"
+	Fleet_ResolveNamedAgent_FullMethodName = "/agentflow.v1.Fleet/ResolveNamedAgent"
 )
 
 // FleetClient is the client API for Fleet service.
@@ -143,6 +144,9 @@ type FleetClient interface {
 	ListProjects(ctx context.Context, in *ListProjectsRequest, opts ...grpc.CallOption) (*ProjectList, error)
 	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*ProjectRecord, error)
 	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*SessionList, error)
+	// Resolves the original operator-assigned start name, never a native label.
+	// Returns pending and partial receipts too; callers must validate outcomes.
+	ResolveNamedAgent(ctx context.Context, in *ResolveNamedAgentRequest, opts ...grpc.CallOption) (*NamedAgentRecord, error)
 }
 
 type fleetClient struct {
@@ -262,6 +266,16 @@ func (c *fleetClient) ListSessions(ctx context.Context, in *ListSessionsRequest,
 	return out, nil
 }
 
+func (c *fleetClient) ResolveNamedAgent(ctx context.Context, in *ResolveNamedAgentRequest, opts ...grpc.CallOption) (*NamedAgentRecord, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NamedAgentRecord)
+	err := c.cc.Invoke(ctx, Fleet_ResolveNamedAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FleetServer is the server API for Fleet service.
 // All implementations must embed UnimplementedFleetServer
 // for forward compatibility.
@@ -277,6 +291,9 @@ type FleetServer interface {
 	ListProjects(context.Context, *ListProjectsRequest) (*ProjectList, error)
 	GetProject(context.Context, *GetProjectRequest) (*ProjectRecord, error)
 	ListSessions(context.Context, *ListSessionsRequest) (*SessionList, error)
+	// Resolves the original operator-assigned start name, never a native label.
+	// Returns pending and partial receipts too; callers must validate outcomes.
+	ResolveNamedAgent(context.Context, *ResolveNamedAgentRequest) (*NamedAgentRecord, error)
 	mustEmbedUnimplementedFleetServer()
 }
 
@@ -316,6 +333,9 @@ func (UnimplementedFleetServer) GetProject(context.Context, *GetProjectRequest) 
 }
 func (UnimplementedFleetServer) ListSessions(context.Context, *ListSessionsRequest) (*SessionList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+}
+func (UnimplementedFleetServer) ResolveNamedAgent(context.Context, *ResolveNamedAgentRequest) (*NamedAgentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveNamedAgent not implemented")
 }
 func (UnimplementedFleetServer) mustEmbedUnimplementedFleetServer() {}
 func (UnimplementedFleetServer) testEmbeddedByValue()               {}
@@ -511,6 +531,24 @@ func _Fleet_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fleet_ResolveNamedAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveNamedAgentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FleetServer).ResolveNamedAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fleet_ResolveNamedAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FleetServer).ResolveNamedAgent(ctx, req.(*ResolveNamedAgentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fleet_ServiceDesc is the grpc.ServiceDesc for Fleet service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -553,6 +591,10 @@ var Fleet_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSessions",
 			Handler:    _Fleet_ListSessions_Handler,
+		},
+		{
+			MethodName: "ResolveNamedAgent",
+			Handler:    _Fleet_ResolveNamedAgent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

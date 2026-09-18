@@ -42,6 +42,16 @@ func Run(ctx context.Context, args []string, streams IO) error {
 	}
 
 	switch args[0] {
+	case "init", "join":
+		return runOnboarding(ctx, args[0], args[1:], streams)
+	case "managed-run":
+		return runManagedDaemon(ctx, args[1:], streams)
+	}
+	if handled, err := runManagedCommands(ctx, args, streams); handled {
+		return err
+	}
+
+	switch args[0] {
 	case "server":
 		return runServer(ctx, args[1:], streams)
 	case "node":
@@ -64,7 +74,20 @@ func Run(ctx context.Context, args []string, streams IO) error {
 		fmt.Fprintln(streams.Out, buildinfo.Version)
 		return nil
 	case "help", "-h", "--help":
-		printUsage(streams.Out)
+		flags := flag.NewFlagSet("help", flag.ContinueOnError)
+		flags.SetOutput(streams.Err)
+		advanced := flags.Bool("advanced", false, "show explicit role and low-level control commands")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("help does not accept positional arguments")
+		}
+		if *advanced {
+			printAdvancedUsage(streams.Out)
+		} else {
+			printUsage(streams.Out)
+		}
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -303,6 +326,29 @@ func splitList(value string) []string {
 }
 
 func printUsage(output io.Writer) {
+	fmt.Fprintln(output, `Herdr distributed mesh
+
+Connect each computer once:
+  herdr-mesh init --tailnet <tailnet> --name <computer-name>
+  herdr-mesh join --server <coordinator-full-magic-dns-name> --name <computer-name>
+
+Use the saved mesh connection:
+  herdr-mesh nodes
+  herdr-mesh status
+  herdr-mesh doctor
+  herdr-mesh dashboard
+  herdr-mesh mcp
+  herdr-mesh project add <project> --node <computer-name> --path <existing-checkout>
+  herdr-mesh agent start <name> --node <computer-name> --project <project> --prompt <task>
+  herdr-mesh agent follow <name> --node <computer-name>
+  herdr-mesh agent stop <name> --node <computer-name>
+
+Use --help on a command for options.
+  herdr-mesh version
+  herdr-mesh help --advanced`)
+}
+
+func printAdvancedUsage(output io.Writer) {
 	fmt.Fprintln(output, `Herdr distributed mesh
 
 Usage:

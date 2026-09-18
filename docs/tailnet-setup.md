@@ -1,5 +1,14 @@
 # Tailnet setup through herdr-mesh
 
+This is the advanced setup reference. The normal
+[operator guide](operator-guide.md) uses guided `init` and browser-based `join`,
+without asking you to count or distribute device keys.
+
+A **Tailscale auth key** (also called an enrollment key here) is a secret
+invitation for a mesh instance to join the private network. It is used for
+initial connection, not for every command, agent, or restart. It is distinct
+from an **API access token**, which grants permission to configure Tailscale.
+
 `herdr-mesh setup tailnet` contains the policy/key setup implementation. No source
 checkout or separately distributed setup script is required. PowerShell is an
 internal runtime prerequisite: `pwsh` on PATH, or Windows PowerShell on Windows.

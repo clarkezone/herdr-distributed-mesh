@@ -218,6 +218,8 @@ func (s *service) commandErrorLocked(err error) error {
 		return status.Error(codes.FailedPrecondition, "command identity or outcome conflict")
 	case errors.Is(err, state.ErrLifecycleUnresolved):
 		return status.Error(codes.FailedPrecondition, "native target has unresolved effects; use its original receipt or explicitly pinned stop/interrupt")
+	case errors.Is(err, state.ErrNamedAgentExists):
+		return status.Error(codes.FailedPrecondition, "agent name already has a durable start; resolve its original receipt instead of launching again")
 	case errors.Is(err, state.ErrCommandCapacity):
 		return status.Error(codes.ResourceExhausted, "command journal capacity reached; records were not discarded")
 	default:
