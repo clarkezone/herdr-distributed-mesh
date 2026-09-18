@@ -92,7 +92,7 @@ func TestManagedStartExistingCheckoutDefaultsAndCancellationExactRetry(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
+	dir := maintenanceAppTempDir(t)
 	var requests []*pb.SubmitCommandRequest
 	cancelStart := true
 	client := &managedFleetFixture{mcpFleetFixture: &mcpFleetFixture{
@@ -180,7 +180,7 @@ func TestManagedNameHandleRefusesUnknownAndPreservesOptionalProviderSession(t *t
 }
 
 func TestManagedLedgerCancellationAndChangedTargets(t *testing.T) {
-	dir := t.TempDir()
+	dir := maintenanceAppTempDir(t)
 	request := &pb.SubmitCommandRequest{NodeInstanceId: "node-1", CommandType: protocol.SessionEnsureCommandType, SessionEnsure: &pb.SessionEnsure{Name: "main"}}
 	first, err := managedSaveRequest(context.Background(), dir, "session", request)
 	if err != nil {
@@ -202,7 +202,7 @@ func TestManagedLedgerCancellationAndChangedTargets(t *testing.T) {
 }
 
 func TestManagedLedgerIncompleteWriteNeverGeneratesAnotherKey(t *testing.T) {
-	dir := t.TempDir()
+	dir := maintenanceAppTempDir(t)
 	_, err := managedPersist(context.Background(), dir, "request", []byte(`{"partial":`))
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestManagedStartCrossClientNameDoesNotSetUpAnotherPane(t *testing.T) {
 	client := &managedFleetFixture{mcpFleetFixture: &mcpFleetFixture{}, resolve: func(context.Context, *pb.ResolveNamedAgentRequest) (*pb.NamedAgentRecord, error) {
 		return &pb.NamedAgentRecord{Record: &pb.CommandRecord{Status: pb.CommandStatus_COMMAND_STATUS_RUNNING}}, nil
 	}}
-	err := managedStart(context.Background(), managedOptions(client, a, io.Discard), t.TempDir(), "node-1", a)
+	err := managedStart(context.Background(), managedOptions(client, a, io.Discard), maintenanceAppTempDir(t), "node-1", a)
 	if err == nil || !strings.Contains(err.Error(), "already has a durable start") {
 		t.Fatalf("another controller's pending start bypassed: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestManagedStopCrossClientUsesOriginalHandleAndDurableRetry(t *testing.T) {
 	}, resolve: func(context.Context, *pb.ResolveNamedAgentRequest) (*pb.NamedAgentRecord, error) {
 		return managedNamedProjection(original), nil
 	}}
-	dir := t.TempDir()
+	dir := maintenanceAppTempDir(t)
 	for range 2 {
 		if err := executeManaged(context.Background(), client, dir, a, IO{Out: io.Discard, Err: io.Discard}); err != nil {
 			t.Fatal(err)
@@ -307,7 +307,7 @@ func TestManagedDashboardBorrowsFleetWithoutTransport(t *testing.T) {
 func TestManagedLongStartReleasesLedgerForIndependentNamedStop(t *testing.T) {
 	for _, phase := range []string{"submit", "wait"} {
 		t.Run(phase, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := maintenanceAppTempDir(t)
 			startArgs := managedArgs{root: "agent", verb: "start", node: "laptop", name: "new-agent",
 				project: "demo", session: "main", provider: "copilot"}
 			stopArgs := managedArgs{root: "agent", verb: "stop", node: "laptop", name: "existing-agent",

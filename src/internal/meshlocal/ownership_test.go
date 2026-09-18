@@ -10,7 +10,7 @@ import (
 )
 
 func TestOwnershipProbeRecognizesStartupWithoutTrustingStatus(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "managed")
+	dir := filepath.Join(canonicalTempDir(t), "managed")
 	if running, err := IsRunning(dir); err != nil || running {
 		t.Fatalf("missing runtime reported live: %t %v", running, err)
 	}

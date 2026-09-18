@@ -9,7 +9,7 @@ import (
 )
 
 func TestUnixManagedIPCAndFilesArePrivate(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -21,17 +21,21 @@ func TestUnixManagedIPCAndFilesArePrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	for _, name := range []string{"", "config.json", "status.json", "fleet.sock"} {
-		info, err := os.Stat(filepath.Join(dir, name))
+	socket, err := ipcSocketPath(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{dir, filepath.Join(dir, "config.json"), filepath.Join(dir, "status.json"), socket} {
+		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		want := os.FileMode(0600)
-		if name == "" {
+		if path == dir {
 			want = 0700
 		}
 		if info.Mode().Perm() != want {
-			t.Fatalf("%s mode = %o, want %o", name, info.Mode().Perm(), want)
+			t.Fatalf("%s mode = %o, want %o", path, info.Mode().Perm(), want)
 		}
 	}
 }

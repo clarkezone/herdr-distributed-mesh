@@ -104,7 +104,7 @@ func (f remoteFleet) ListNodes(context.Context, *emptypb.Empty) (*pb.NodeList, e
 func TestManagedWorkerOnlyAndRemoteProtocolGate(t *testing.T) {
 	for _, compatible := range []bool{true, false} {
 		t.Run(fmt.Sprint(compatible), func(t *testing.T) {
-			dir := t.TempDir()
+			dir := canonicalTempDir(t)
 			if err := Save(dir, Config{Version: 1, Name: "desktop", Server: "remote.tail.test:50052"}); err != nil {
 				t.Fatal(err)
 			}
@@ -231,7 +231,16 @@ func (n *localNetwork) dependencies(t *testing.T) runtimeDependencies {
 }
 
 func TestManagedRuntimeSharesOneNetworkAcrossRolesAndParallelClients(t *testing.T) {
-	dir := t.TempDir()
+	testManagedRuntimeAssignedDNS(t, "herdr-mesh-desktop.assigned-tail.test")
+}
+
+func TestManagedRuntimePreservesAssignedCollisionSuffix(t *testing.T) {
+	testManagedRuntimeAssignedDNS(t, "herdr-mesh-desktop-1.assigned-tail.test")
+}
+
+func testManagedRuntimeAssignedDNS(t *testing.T, assignedDNS string) {
+	t.Helper()
+	dir := canonicalTempDir(t)
 	if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +251,17 @@ func TestManagedRuntimeSharesOneNetworkAcrossRolesAndParallelClients(t *testing.
 	defer cancel()
 	var output bytes.Buffer
 	network := &localNetwork{}
+	deps := network.dependencies(t)
+	start := deps.start
+	deps.start = func(ctx context.Context, config transport.Config) (transport.RuntimeNetwork, error) {
+		n, err := start(ctx, config)
+		if err == nil {
+			network.self.DNSName = assignedDNS + "."
+		}
+		return n, err
+	}
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, dir, &output, network.dependencies(t)) }()
+	go func() { done <- run(ctx, dir, &output, deps) }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -254,7 +272,7 @@ func TestManagedRuntimeSharesOneNetworkAcrossRolesAndParallelClients(t *testing.
 	})
 	waitStatus(t, dir, "ready", done)
 	stateValue, err := ReadStatus(dir)
-	if err != nil || stateValue.Server != "herdr-mesh-desktop.assigned-tail.test:50052" || stateValue.DNSName != "herdr-mesh-desktop.assigned-tail.test" || stateValue.AuthURL != "" {
+	if err != nil || stateValue.Server != assignedDNS+":50052" || stateValue.DNSName != assignedDNS || stateValue.AuthURL != "" {
 		t.Fatalf("incorrect assigned status: %+v, %v", stateValue, err)
 	}
 	// Neither another managed owner nor a legacy role can acquire these guards.
@@ -338,6 +356,9 @@ func TestManagedRuntimeSharesOneNetworkAcrossRolesAndParallelClients(t *testing.
 	if strings.Contains(output.String(), "private-token") || strings.Contains(output.String(), "https://") {
 		t.Fatal("login secret leaked to runtime output")
 	}
+	if !strings.Contains(output.String(), "coordinator "+assignedDNS+":50052;") {
+		t.Fatalf("runtime output did not preserve assigned coordinator DNS: %s", output.String())
+	}
 	after, err := ReadStatus(dir)
 	if err != nil || after.State != "stopped" {
 		t.Fatalf("shutdown status %+v, %v", after, err)
@@ -364,7 +385,7 @@ func TestManagedRuntimeSharesOneNetworkAcrossRolesAndParallelClients(t *testing.
 		if err != nil || !bytes.Contains(marker, []byte("pending")) || bytes.Contains(marker, []byte("\nactive\n")) {
 			t.Fatalf("managed %s child activated legacy backup contract: %q %v", role, marker, err)
 		}
-		if _, err := state.BackupMaintenance(context.Background(), filepath.Join(dir, role), role, filepath.Join(t.TempDir(), "backup")); err == nil {
+		if _, err := state.BackupMaintenance(context.Background(), filepath.Join(dir, role), role, filepath.Join(canonicalTempDir(t), "backup")); err == nil {
 			t.Fatalf("managed %s child advertised a full identity backup: %v", role, err)
 		}
 	}
@@ -390,7 +411,7 @@ func waitStatus(t *testing.T, dir, want string, done chan error) {
 }
 
 func TestConfigCreateOnlyAndBoundedPrivateStatus(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	config := Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}
 	if err := Save(dir, config); err != nil {
 		t.Fatal(err)
@@ -441,9 +462,9 @@ func TestManagedDiagnosticsAreBoundedAndDoNotExposeCredentials(t *testing.T) {
 }
 
 func TestManagedRejectedIdentityNeverPublishesIPC(t *testing.T) {
-	for _, test := range []string{"missing-role", "wrong-tailnet", "startup-error", "name-collision", "unqualified-name", "magicdns-disabled"} {
+	for _, test := range []string{"missing-role", "wrong-tailnet", "startup-error", "empty-label", "unqualified-name", "magicdns-disabled"} {
 		t.Run(test, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := canonicalTempDir(t)
 			if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
 				t.Fatal(err)
 			}
@@ -464,8 +485,8 @@ func TestManagedRejectedIdentityNeverPublishesIPC(t *testing.T) {
 					network.self.Tags = []string{nodeTag}
 				case "wrong-tailnet":
 					network.self.Tailnet = "other.test"
-				case "name-collision":
-					network.self.DNSName = "herdr-mesh-desktop-1.assigned-tail.test"
+				case "empty-label":
+					network.self.DNSName = ".assigned-tail.test"
 				case "unqualified-name":
 					network.self.DNSName = "herdr-mesh-desktop"
 				case "magicdns-disabled":

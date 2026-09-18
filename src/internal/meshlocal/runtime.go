@@ -163,11 +163,8 @@ func run(ctx context.Context, dir string, output io.Writer, deps runtimeDependen
 	}
 	dnsName := strings.TrimSuffix(self.DNSName, ".")
 	label, suffix, qualified := strings.Cut(dnsName, ".")
-	if !qualified || suffix == "" {
+	if !qualified || label == "" || suffix == "" {
 		return errors.New("managed network has no assigned full DNS name")
-	}
-	if !strings.EqualFold(label, transportConfig.Hostname) {
-		return fmt.Errorf("managed name conflict: assigned DNS name %q does not match requested hostname %q; reconcile the duplicate or renamed registration before retrying (saved identity retained)", self.DNSName, transportConfig.Hostname)
 	}
 	if err := self.Validate(tags, time.Now()); err != nil {
 		return fmt.Errorf("validate assigned managed roles: %w", err)
@@ -275,7 +272,7 @@ func run(ctx context.Context, dir string, output io.Writer, deps runtimeDependen
 		return err
 	}
 	if output != nil {
-		if _, err := fmt.Fprintln(output, "Managed mesh ready; local clients share one authenticated connection."); err != nil {
+		if _, err := fmt.Fprintf(output, "Managed mesh ready; coordinator %s; local clients share one authenticated connection.\n", target); err != nil {
 			return err
 		}
 	}

@@ -11,7 +11,7 @@ import (
 func TestCoordinatorCannotStartNetworkBeforeCompletedPolicy(t *testing.T) {
 	for _, record := range []string{"", "pending", "Policy-only setup completed", policyCompleteRecord + "extra"} {
 		t.Run(record, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := canonicalTempDir(t)
 			if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
 				t.Fatal(err)
 			}
@@ -39,7 +39,7 @@ func TestCoordinatorCannotStartNetworkBeforeCompletedPolicy(t *testing.T) {
 }
 
 func TestCompletedPolicyRecordAuthorizesStartupDespitePendingCleanup(t *testing.T) {
-	dir, err := privateDir(t.TempDir(), false)
+	dir, err := privateDir(canonicalTempDir(t), false)
 	if err != nil {
 		t.Fatal(err)
 	}

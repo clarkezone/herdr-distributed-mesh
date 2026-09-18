@@ -52,7 +52,7 @@ func assertPrivateDACL(t *testing.T, sd *windows.SECURITY_DESCRIPTOR) {
 }
 
 func TestWindowsManagedPipeAndFilesHaveOwnerSystemACL(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
 		t.Fatal(err)
 	}

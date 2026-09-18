@@ -115,7 +115,15 @@ func newProxy(upstream grpc.ClientConnInterface) (*grpc.Server, error) {
 				}
 				gate := regular
 				stopField := method.Input().Fields().ByName("agent_stop")
-				if strings.Contains(string(method.Name()), "Stop") || (stopField != nil && request.Has(stopField)) {
+				interrupt := false
+				controlField := method.Input().Fields().ByName("agent_control")
+				if controlField != nil && controlField.Kind() == protoreflect.MessageKind && request.Has(controlField) {
+					control := request.Get(controlField).Message()
+					action := control.Descriptor().Fields().ByName("action")
+					interrupt = action != nil && action.Kind() == protoreflect.EnumKind &&
+						control.Get(action).Enum() == protoreflect.EnumNumber(pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT)
+				}
+				if strings.Contains(string(method.Name()), "Stop") || (stopField != nil && request.Has(stopField)) || interrupt {
 					gate = urgent
 				}
 				if !acquire(gate) {

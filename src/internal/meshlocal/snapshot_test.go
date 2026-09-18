@@ -67,7 +67,7 @@ func TestPrivateProxyAcceptsFullSnapshotsAndRejectsOversize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		dir, err := privateDir(t.TempDir(), false)
+		dir, err := privateDir(canonicalTempDir(t), false)
 		if err != nil {
 			t.Fatal(err)
 		}

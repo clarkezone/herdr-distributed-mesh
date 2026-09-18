@@ -85,7 +85,7 @@ func TestProxyForwardsEveryFleetUnaryAndStripsIdentityMetadata(t *testing.T) {
 	}
 }
 
-func TestProxyReservesStopCapacityAndBoundsRequests(t *testing.T) {
+func TestProxyReservesStopAndInterruptCapacityAndBoundsRequests(t *testing.T) {
 	entered := make(chan struct{}, 64)
 	connection := proxyConnection(t, mockUpstream{invoke: func(ctx context.Context, method string, request, response any) error {
 		if strings.HasSuffix(method, "/ListNodes") {
@@ -114,6 +114,12 @@ func TestProxyReservesStopCapacityAndBoundsRequests(t *testing.T) {
 	}
 	if _, err := client.SubmitCommand(ctx, &pb.SubmitCommandRequest{AgentStop: &pb.AgentStop{}}); err != nil {
 		t.Fatalf("ordinary requests blocked reserved stop capacity: %v", err)
+	}
+	if _, err := client.SubmitCommand(ctx, &pb.SubmitCommandRequest{AgentControl: &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT}}); err != nil {
+		t.Fatalf("ordinary requests blocked reserved interrupt capacity: %v", err)
+	}
+	if _, err := client.SubmitCommand(ctx, &pb.SubmitCommandRequest{AgentControl: &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_INPUT}}); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("ordinary input consumed reserved urgent capacity: %v", err)
 	}
 	if _, err := client.SubmitCommand(ctx, &pb.SubmitCommandRequest{IdempotencyKey: strings.Repeat("x", maxMessage+1)}); status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("oversized message accepted: %v", err)
