@@ -113,11 +113,25 @@ func run(ctx context.Context, dir string, output io.Writer, deps runtimeDependen
 		return fmt.Errorf("acquire managed runtime ownership: %w", err)
 	}
 	defer func() { result = errors.Join(result, guard.Close()) }()
+	if err := CheckNotDestroying(root); err != nil {
+		return err
+	}
+	// Re-read after acquiring ownership so a concurrent purge cannot resurrect
+	// an installation using configuration read before the guard was acquired.
+	config, err = Load(root)
+	if err != nil {
+		return err
+	}
 	if err := guard.DisableFullRoleBackup(); err != nil {
 		return err
 	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
+	stopMonitor, err := startShutdownMonitor(child, root, cancel)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, stopMonitor()) }()
 	writer := &statusWriter{dir: root, cancel: cancel}
 	if err := writer.update(func(status *Status) { status.State = "starting" }); err != nil {
 		return err
@@ -172,6 +186,9 @@ func run(ctx context.Context, dir string, output io.Writer, deps runtimeDependen
 	tailnet := strings.TrimSuffix(config.Tailnet, ".")
 	if tailnet != "" && !strings.EqualFold(tailnet, strings.TrimSuffix(self.Tailnet, ".")) && !strings.EqualFold(tailnet, strings.TrimSuffix(self.DNSSuffix, ".")) {
 		return errors.New("assigned network does not match the configured tailnet")
+	}
+	if err := RetainIdentity(root, ManagedIdentity{DeviceID: self.StableID, DNSName: dnsName, Tailnet: self.Tailnet}); err != nil {
+		return err
 	}
 	target := config.Server
 	if config.Coordinator {

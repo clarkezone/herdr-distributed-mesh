@@ -42,6 +42,8 @@ func TestManagedHelpDoesNotCreateStateOrRequireEnrollment(t *testing.T) {
 		{"agent", "start", "smoke", "--help"},
 		{"agent", "follow", "smoke", "--help"},
 		{"agent", "stop", "smoke", "--help"},
+		{"shutdown", "--help"},
+		{"shutdown", "--destroy", "--help"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer

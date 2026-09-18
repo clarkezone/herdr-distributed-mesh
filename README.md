@@ -37,6 +37,21 @@ or distributing enrollment keys. Herdr, Git, and the intended authenticated
 provider must be installed. Managed background startup currently targets Windows
 sign-in, not a boot-before-sign-in system service.
 
+Stop the managed daemon without destroying any state:
+
+```powershell
+herdr-mesh shutdown
+```
+
+For deliberate deinitialization and a clean start, use
+`herdr-mesh shutdown --destroy`; add `--remove-policy` on the coordinator to
+request removal of provably owned, unused policy additions. Preview with
+`--dry-run`. Destruction requires typed confirmation (or explicit `--yes`) and
+private Tailscale API authorization. Local identity/recovery data is retained
+until remote cleanup is confirmed. Herdr sessions, agents, repositories,
+worktrees and other computers are not deleted. See the operator guide for
+partial-cleanup recovery and the distinction from `agent stop`.
+
 ## Advanced and developer reference
 
 The remainder describes explicit legacy roles and implementation-level

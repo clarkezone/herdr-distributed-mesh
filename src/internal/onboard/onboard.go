@@ -52,7 +52,7 @@ var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 func (o Options) Normalize() (Options, error) {
 	if len(o.Name) > 40 || !portableName.MatchString(o.Name) ||
 		regexp.MustCompile(`^(con|prn|aux|nul|com[0-9]|lpt[0-9])$`).MatchString(o.Name) {
-		return o, errors.New("name must be 1..40 lowercase letters, digits or single hyphens, start with a letter, and not be a reserved Windows name; choose a unique name for this computer")
+		return o, errors.New("--name (this computer's mesh node label) must be 1..40 lowercase letters, digits or single hyphens, start with a letter, and not be a reserved Windows name")
 	}
 	if o.HerdrExecutable == "" {
 		o.HerdrExecutable = "herdr"
@@ -161,6 +161,9 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 		return err
 	}
 	defer func() { result = errors.Join(result, os.Remove(lock)) }()
+	if err := meshlocal.CheckNotDestroying(dir); err != nil {
+		return err
+	}
 	if o.Coordinator {
 		if err := configurePolicy(ctx, dir, o.Tailnet, output, d); err != nil {
 			return err
@@ -364,7 +367,7 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 				}
 				fmt.Fprintf(output, "Ready: %s\n", status.DNSName)
 				if coordinator {
-					fmt.Fprintf(output, "On another computer run:\nherdr-mesh join --server %s --name <choose-name>\n", endpoint)
+					fmt.Fprintf(output, "On another computer run:\nherdr-mesh join --server %s --name <choose-node-name>\n", endpoint)
 				}
 				return nil
 			case "error", "failed", "stopped":

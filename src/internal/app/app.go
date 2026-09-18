@@ -46,6 +46,8 @@ func Run(ctx context.Context, args []string, streams IO) error {
 		return runOnboarding(ctx, args[0], args[1:], streams)
 	case "managed-run":
 		return runManagedDaemon(ctx, args[1:], streams)
+	case "shutdown":
+		return runShutdown(ctx, args[1:], streams)
 	}
 	if handled, err := runManagedCommands(ctx, args, streams); handled {
 		return err
@@ -347,6 +349,12 @@ Use the saved mesh connection:
 <agent-name> is the name chosen with agent start, not a workspace, tab or session name.
 Example: herdr-mesh agent stop smoke --node laptop
 Stopping an agent does not stop the mesh daemon.
+
+Stop or remove this computer's managed installation:
+  herdr-mesh shutdown
+  herdr-mesh shutdown --destroy --remove-policy --dry-run
+  herdr-mesh shutdown --destroy --remove-policy
+Shutdown preserves state by default. --destroy requires confirmation and an API token.
 
 Use --help on a command for options.
   herdr-mesh version

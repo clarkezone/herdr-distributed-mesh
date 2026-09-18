@@ -154,17 +154,66 @@ An accepted prompt is not proof the provider completed the task. Check the
 actual response. Provider sign-in and permission prompts are not approved
 automatically.
 
+## 6. Shut down or destroy this installation
+
+Stop only this computer's managed daemon:
+
+```powershell
+herdr-mesh shutdown
+```
+
+This **does not delete state**. It keeps enrollment, databases, configuration,
+journals and any Windows sign-in startup entry. The daemon can start again at
+the next sign-in, or by repeating the original `init`/`join` command from the
+same installed executable. Herdr sessions, provider agents, repositories and
+worktrees stay untouched. Stopping the coordinator disconnects mesh control for
+the other nodes; it does not stop their agents.
+
+For a clean start, preview the destructive scope, then apply:
+
+```powershell
+herdr-mesh shutdown --destroy --remove-policy --dry-run
+herdr-mesh shutdown --destroy --remove-policy
+```
+
+`--destroy` removes this computer's managed startup entry and exact Tailscale
+device, then deletes its managed configuration, databases, journals and tsnet
+state. It does not delete the executable or anything outside the managed state
+directory. You must type the displayed **mesh node label** to confirm.
+`--yes` is an explicit confirmation bypass for controlled automation.
+
+`--remove-policy` is optional and coordinator-only. It removes only additions
+provably owned by this installation's original policy apply, with concurrency
+protection. Existing rules and unrelated changes are preserved. If ownership
+cannot be proved, or other devices depend on those additions, cleanup stops
+rather than removing shared access. Without this flag, tailnet policy is retained.
+
+Destruction needs a **Tailscale API access token**, prompted without echo; a
+device enrollment key is not sufficient. No token is required for ordinary
+shutdown. For automation, `--api-token-env` names a privately supplied environment
+variable, never an inline credential. Authorization and policy conflicts are
+checked before teardown. A dry run performs no teardown and does not certify
+remote authorization.
+
+Local recovery data is retained when remote cleanup is incomplete or uncertain.
+Resume with the same flags; do not delete the retained destroy record or change
+identity to bypass an unknown result. A destroy intent prevents `init`/`join`
+from restarting the retiring installation. Once completed, run `init`/`join`
+normally to create a fresh identity. Destroying journals intentionally discards
+retry history; do not reuse old command receipts or retry old work afterward.
+
+New daemons shut down cooperatively. Older daemons use a verified same-user,
+exact-command-line process stop, never a process-name or process-tree kill.
+Inspect any interrupted work before retrying it.
+
 ## Existing installations and advanced operations
 
 Do not delete identity directories to make setup run again. Existing managed
 configuration is checked rather than silently overwritten; older independently
 running roles need an explicit migration decision.
 
-There is currently no managed `deinit`/uninstall command or public daemon-stop
-command. `agent stop` stops an agent, not the daemon. Complete removal is not
-just deleting a database: it also involves the per-user startup registration,
-the computer's Tailscale device, and any mesh-created tailnet policy entries.
-Do not delete live managed state or remove shared/preexisting tailnet rules.
+`agent stop` stops an agent, not the daemon. Use `shutdown` for the daemon and
+explicitly opt into `shutdown --destroy` for managed deinitialization.
 The advanced per-role maintenance commands are not a managed uninstall path.
 
 For MCP, configure your MCP client to run:

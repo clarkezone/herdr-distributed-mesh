@@ -105,7 +105,7 @@ func TestInitPolicyOnlyThenActualDNSAndExactResume(t *testing.T) {
 	if strings.Trim(string(f.token), "\x00") != "" {
 		t.Fatal("prompt token buffer retained")
 	}
-	want := "herdr-mesh join --server herdr-mesh-desktop.actual-tail.ts.net --name <choose-name>"
+	want := "herdr-mesh join --server herdr-mesh-desktop.actual-tail.ts.net --name <choose-node-name>"
 	if !strings.Contains(out.String(), want) || strings.Contains(out.String(), ":50052") || strings.Contains(out.String(), "tskey-api-hidden-test") {
 		t.Fatalf("bad output: %s", &out)
 	}
