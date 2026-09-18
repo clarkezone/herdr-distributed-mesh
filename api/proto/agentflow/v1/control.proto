@@ -1,0 +1,530 @@
+syntax = "proto3";
+
+package agentflow.v1;
+
+option go_package = "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1;agentflowv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service NodeControl {
+  rpc Connect(stream NodeEnvelope) returns (stream NodeEnvelope);
+}
+
+service Fleet {
+  rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfo);
+  rpc ListNodes(google.protobuf.Empty) returns (NodeList);
+  // Complete replacement snapshots; reconnect starts with a full snapshot.
+  rpc WatchNodes(google.protobuf.Empty) returns (stream NodeList);
+  rpc SubmitCommand(SubmitCommandRequest) returns (CommandRecord);
+  rpc GetCommand(GetCommandRequest) returns (CommandRecord);
+  rpc QueryAgent(AgentQueryRequest) returns (AgentQueryResult);
+  rpc RegisterProject(RegisterProjectRequest) returns (ProjectRecord);
+  rpc ListProjects(ListProjectsRequest) returns (ProjectList);
+  rpc GetProject(GetProjectRequest) returns (ProjectRecord);
+  rpc ListSessions(ListSessionsRequest) returns (SessionList);
+  // Resolves the original operator-assigned start name, never a native label.
+  // Returns pending and partial receipts too; callers must validate outcomes.
+  rpc ResolveNamedAgent(ResolveNamedAgentRequest) returns (NamedAgentRecord);
+}
+
+message ResolveNamedAgentRequest {
+  string node_instance_id = 1;
+  string name = 2;
+  string session_name = 3;
+}
+
+message NamedAgentRecord {
+  // Read-only projection: initial_prompt is omitted from submitted_request.
+  // This projection must never be resubmitted as an execution request.
+  CommandRecord record = 1;
+  bool initial_prompt_present = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_NODE = 1;
+  ROLE_CONTROLLER = 2;
+  ROLE_OBSERVER = 3;
+}
+
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  COMMAND_STATUS_ACCEPTED = 1;
+  COMMAND_STATUS_RUNNING = 2;
+  COMMAND_STATUS_SUCCEEDED = 3;
+  COMMAND_STATUS_FAILED = 4;
+  COMMAND_STATUS_TIMED_OUT = 5;
+  COMMAND_STATUS_REJECTED = 6;
+  COMMAND_STATUS_INDETERMINATE = 7;
+  COMMAND_STATUS_NODE_UNAVAILABLE = 8;
+}
+
+enum ActorOrigin {
+  ACTOR_ORIGIN_UNSPECIFIED = 0;
+  ACTOR_ORIGIN_HUMAN = 1;
+  ACTOR_ORIGIN_AGENT = 2;
+  ACTOR_ORIGIN_SYSTEM = 3;
+}
+
+message ProtocolRange {
+  uint32 minimum = 1;
+  uint32 maximum = 2;
+}
+
+message Hello {
+  ProtocolRange protocol = 1;
+  string implementation_version = 2;
+  string instance_id = 3;
+  Role role = 4;
+  repeated string capabilities = 5;
+  string stream_epoch = 6;
+  uint64 last_cursor = 7;
+  string hostname = 8;
+}
+
+message HelloAck {
+  uint32 selected_protocol = 1;
+  string server_instance_id = 2;
+  repeated string capabilities = 3;
+}
+
+message Heartbeat {
+  uint64 sequence = 1;
+  google.protobuf.Timestamp sent_at = 2;
+  bool command_ready = 3;
+  bool workspace_ready = 4;
+  bool worktree_ready = 5;
+  bool agent_ready = 6;
+  bool sessions_ready = 7;
+}
+
+message Snapshot {
+  uint64 sequence = 1;
+  string snapshot_type = 2;
+  google.protobuf.Struct payload = 3;
+}
+
+message Event {
+  uint64 sequence = 1;
+  string event_type = 2;
+  string entity_id = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  google.protobuf.Struct payload = 5;
+}
+
+message Command {
+  string command_id = 1;
+  string idempotency_key = 2;
+  string command_type = 3;
+  string target_id = 4;
+  Actor actor = 5;
+  google.protobuf.Duration ttl = 6;
+  google.protobuf.Struct preconditions = 7;
+  google.protobuf.Struct payload = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  WorkspaceEnsure workspace_ensure = 10;
+  WorktreeCreate worktree_create = 11;
+  AgentControl agent_control = 12;
+  // Original operator request for new managed commands. Historical records omit it.
+  SubmitCommandRequest submitted_request = 13;
+  SessionEnsure session_ensure = 14;
+  AgentStart agent_start = 15;
+  AgentStop agent_stop = 16;
+  google.protobuf.Timestamp execution_expires_at = 17;
+}
+
+message WorktreeCreate {
+  string project_id = 1;
+  string binding_revision = 2;
+  string name = 3;
+  string branch = 4;
+  string base_commit = 5;
+  string session_name = 6;
+  string session_incarnation = 7;
+}
+
+message WorktreeCreateResult {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  string name = 4;
+  string branch = 5;
+  string base_commit = 6;
+  string session_name = 7;
+  string session_incarnation = 8;
+}
+
+// Commands carry identity only. Paths travel exclusively in project configuration.
+message WorkspaceEnsure {
+  string project_id = 1;
+  string binding_revision = 2;
+  string session_name = 3;
+  string session_incarnation = 4;
+}
+
+message WorkspaceEnsureResult {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  bool created = 4;
+  string session_name = 5;
+  string session_incarnation = 6;
+}
+
+// The actor and command ID are assigned by the authenticated coordinator.
+message SubmitCommandRequest {
+  string node_instance_id = 1;
+  string idempotency_key = 2;
+  string command_type = 3;
+  google.protobuf.Duration ttl = 4;
+  WorkspaceEnsure workspace_ensure = 5;
+  WorktreeCreate worktree_create = 6;
+  AgentControl agent_control = 7;
+  SessionEnsure session_ensure = 8;
+  AgentStart agent_start = 9;
+  AgentStop agent_stop = 10;
+}
+
+message GetCommandRequest {
+  string command_id = 1;
+}
+
+message CommandAudit {
+  CommandStatus status = 1;
+  string detail = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}
+
+message CommandRecord {
+  Command command = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  repeated CommandAudit audit = 6;
+  WorkspaceEnsureResult workspace_ensure = 7;
+  WorktreeCreateResult worktree_create = 8;
+  AgentControlResult agent_control = 9;
+  SessionView session_ensure = 10;
+  AgentLifecycleReceipt agent_lifecycle = 11;
+}
+
+message Actor {
+  string actor_id = 1;
+  Role role = 2;
+  ActorOrigin origin = 3;
+  uint32 hop_count = 4;
+}
+
+message CommandAck {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+}
+
+message CommandResult {
+  string command_id = 1;
+  CommandStatus status = 2;
+  string detail = 3;
+  google.protobuf.Struct payload = 4;
+  WorkspaceEnsureResult workspace_ensure = 5;
+  WorktreeCreateResult worktree_create = 6;
+  AgentControlResult agent_control = 7;
+  SessionView session_ensure = 8;
+  AgentLifecycleReceipt agent_lifecycle = 9;
+}
+
+message NodeEnvelope {
+  oneof body {
+    Hello hello = 1;
+    HelloAck hello_ack = 2;
+    Heartbeat heartbeat = 3;
+    Snapshot snapshot = 4;
+    Event event = 5;
+    Command command = 6;
+    CommandAck command_ack = 7;
+    CommandResult command_result = 8;
+    HerdrState herdr_state = 9;
+    AgentQuery agent_query = 10;
+    AgentQueryResult agent_query_result = 11;
+    AgentQueryCancel agent_query_cancel = 12;
+    ProjectConfig project_config = 13;
+    ProjectAck project_ack = 14;
+    LegacyProjects legacy_projects = 15;
+    SessionInventory session_inventory = 16;
+    CommandProgress command_progress = 17;
+  }
+}
+
+// Launches use node-local project/workspace paths, never caller-supplied shell
+// commands or provider arguments. Prompt acknowledgement is not task success.
+message AgentStart {
+  string project_id = 1;
+  string binding_revision = 2;
+  string workspace_id = 3;
+  string name = 4;
+  string provider = 5;
+  string session_name = 6;
+  string session_incarnation = 7;
+  uint32 startup_timeout_ms = 8;
+  string initial_prompt = 9;
+}
+message AgentStop {
+  AgentTarget target = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string provider = 4;
+}
+message AgentLifecycleHandle {
+  AgentTarget target = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string provider = 4;
+}
+message AgentLifecycleStage {
+  // create_pane, launch, prompt, or close_pane.
+  string stage = 1;
+  bool before = 2;
+  // not_attempted, unknown, or confirmed.
+  string outcome = 3;
+}
+message AgentLifecycleReceipt {
+  AgentLifecycleHandle handle = 1;
+  string pane_outcome = 2;
+  string launch_outcome = 3;
+  string prompt_outcome = 4;
+  string stop_outcome = 5;
+  string observed_status = 6;
+  uint32 sequence = 7;
+  // Compact cumulative checkpoints; at most eight entries.
+  repeated AgentLifecycleStage stages = 8;
+}
+message CommandProgress {
+  string command_id = 1;
+  AgentLifecycleReceipt agent_lifecycle = 2;
+}
+
+// Local endpoint paths never cross the mesh protocol.
+message SessionEnsure { string name = 1; }
+message ListSessionsRequest { string node_instance_id = 1; }
+message SessionList {
+  repeated SessionView sessions = 1;
+  string error_code = 2;
+}
+message SessionView {
+  string name = 1;
+  string incarnation = 2;
+  // stopped, starting, ready, unavailable, or unsupported.
+  string status = 3;
+  string error_code = 4;
+  HerdrState herdr = 5;
+  // Coordinator-assigned receipt time of this session's latest observation.
+  // Nodes must omit both projection fields in SessionInventory.
+  google.protobuf.Timestamp herdr_received_at = 6;
+  bool stale = 7;
+}
+message SessionInventory {
+  repeated SessionView sessions = 1;
+  uint64 sequence = 2;
+  google.protobuf.Timestamp observed_at = 3;
+  string error_code = 4;
+}
+
+message RegisterProjectRequest {
+  string node_instance_id = 1;
+  string project_id = 2;
+  string checkout_path = 3;
+  string worktree_root = 4;
+}
+
+message GetProjectRequest {
+  string node_instance_id = 1;
+  string project_id = 2;
+}
+
+message ListProjectsRequest {
+  string node_instance_id = 1;
+  // Defaults to 64, also the maximum. CLI inspection follows all pages.
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ProjectConfig {
+  string node_instance_id = 1;
+  string project_id = 2;
+  uint64 generation = 3;
+  string checkout_path = 4;
+  string worktree_root = 5;
+}
+
+message ProjectAck {
+  string project_id = 1;
+  uint64 generation = 2;
+  // applied or invalid; errors are bounded categories, never raw filesystem errors.
+  string status = 3;
+  string checkout_path = 4;
+  string worktree_root = 5;
+  string error_code = 6;
+}
+
+message ProjectRecord {
+  ProjectConfig desired = 1;
+  ProjectAck applied = 2;
+  // pending, offline, applied, invalid, or unsupported (computed per live stream).
+  string readiness = 3;
+  string adoption_status = 4;
+}
+
+message ProjectList {
+  repeated ProjectRecord projects = 1;
+  string next_page_token = 2;
+}
+
+// Bounded upgrade-only offers. Old policy files never authorize managed commands.
+message LegacyProjects { repeated RegisterProjectRequest projects = 1; }
+
+message ServerInfo {
+  string instance_id = 1;
+  string implementation_version = 2;
+  ProtocolRange protocol = 3;
+  repeated string capabilities = 4;
+}
+
+// Read-only identity and display metadata. No terminal text, automatic titles,
+// provider session-file paths, or arbitrary native metadata.
+message HerdrEntity {
+  string id = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string agent_status = 4;
+  bool focused = 5;
+  string provider = 6;
+  optional bool interactive_ready = 7;
+  string terminal_id = 8;
+  string provider_session_id = 9;
+  string project_id = 10;
+  // Display only; never an identity or command selector.
+  string display_name = 11;
+  // Reported foreground/cwd, or workspace checkout path. Never controller-local.
+  string directory = 12;
+}
+
+message HerdrState {
+  // disabled, waiting, ready, or unavailable
+  string status = 1;
+  string version = 2;
+  uint32 protocol = 3;
+  uint64 sequence = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  // A sanitized category, never raw local API error text.
+  string error_code = 6;
+  repeated HerdrEntity workspaces = 7;
+  repeated HerdrEntity tabs = 8;
+  repeated HerdrEntity panes = 9;
+  repeated HerdrEntity agents = 10;
+}
+
+message NodeView {
+  string instance_id = 1;
+  string tailscale_stable_id = 2;
+  bool connected = 3;
+  google.protobuf.Timestamp last_seen = 4;
+  HerdrState herdr = 5;
+  bool stale = 6;
+  google.protobuf.Timestamp herdr_received_at = 7;
+  // Only negotiated allowlisted command types are available, not general execution.
+  bool command_ready = 8;
+  bool workspace_ready = 9;
+  bool worktree_ready = 10;
+  bool agent_ready = 11;
+  repeated SessionView sessions = 12;
+  bool sessions_ready = 13;
+  google.protobuf.Timestamp sessions_received_at = 14;
+  string sessions_error_code = 15;
+  // Operator-assigned logical node name, not a native machine inventory label.
+  string hostname = 16;
+}
+
+message NodeList {
+  repeated NodeView nodes = 1;
+}
+
+message AgentTarget {
+  string pane_id = 1;
+  string terminal_id = 2;
+  string agent_session_id = 3;
+  string session_name = 4;
+  string session_incarnation = 5;
+}
+
+message AgentView {
+  AgentTarget target = 1;
+  string workspace_id = 2;
+  string tab_id = 3;
+  string provider = 4;
+  string status = 5;
+  bool interactive_ready = 6;
+  bool launch_pending = 7;
+  uint64 revision = 8;
+  uint64 state_change_seq = 9;
+  string display_name = 10;
+  string directory = 11;
+}
+
+enum AgentQueryKind {
+  AGENT_QUERY_KIND_UNSPECIFIED = 0;
+  AGENT_QUERY_KIND_GET = 1;
+  AGENT_QUERY_KIND_READ = 2;
+  AGENT_QUERY_KIND_WAIT = 3;
+}
+
+message AgentQueryRequest {
+  string node_instance_id = 1;
+  AgentQueryKind kind = 2;
+  AgentTarget target = 3;
+  uint32 lines = 4;
+  repeated string until = 5;
+  uint32 timeout_ms = 6;
+}
+
+// Ephemeral queries and output never enter the durable command journal.
+message AgentQuery {
+  string query_id = 1;
+  AgentQueryRequest request = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message AgentQueryResult {
+  string query_id = 1;
+  AgentView agent = 2;
+  string text = 3;
+  bool truncated = 4;
+  string error_code = 5;
+}
+
+message AgentQueryCancel {
+  string query_id = 1;
+}
+
+enum AgentControlAction {
+  AGENT_CONTROL_ACTION_UNSPECIFIED = 0;
+  AGENT_CONTROL_ACTION_PROMPT = 1;
+  AGENT_CONTROL_ACTION_INPUT = 2;
+  AGENT_CONTROL_ACTION_INTERRUPT = 3;
+}
+
+message AgentControl {
+  AgentControlAction action = 1;
+  AgentTarget target = 2;
+  string text = 3;
+  repeated string keys = 4;
+}
+
+message AgentControlResult {
+  AgentTarget target = 1;
+  string observed_status = 2;
+  uint64 state_change_seq = 3;
+}
