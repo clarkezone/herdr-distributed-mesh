@@ -25,12 +25,12 @@ func TestGeneratedSessionJSONMatchesDashboardModel(t *testing.T) {
 	session := func(name, incarnation string, received *timestamppb.Timestamp) *pb.SessionView {
 		return &pb.SessionView{Name: name, Incarnation: incarnation, Status: "ready", HerdrReceivedAt: received,
 			Herdr: &pb.HerdrState{Status: "ready", Version: "0.9.0", Protocol: 18, Sequence: 1, ObservedAt: stamp,
-				Workspaces: []*pb.HerdrEntity{{Id: "w1", AgentStatus: "working"}},
-				Tabs:       []*pb.HerdrEntity{{Id: "t1", WorkspaceId: "w1", AgentStatus: "working"}},
-				Panes:      []*pb.HerdrEntity{{Id: "p1", WorkspaceId: "w1", TabId: "t1", AgentStatus: "working"}},
-				Agents:     []*pb.HerdrEntity{{Id: "p1", WorkspaceId: "w1", TabId: "t1", AgentStatus: "working"}}}}
+				Workspaces: []*pb.HerdrEntity{{Id: "w1", AgentStatus: "working", DisplayName: "API project", Directory: `C:\src\demo`}},
+				Tabs:       []*pb.HerdrEntity{{Id: "t1", WorkspaceId: "w1", AgentStatus: "working", DisplayName: "Tests"}},
+				Panes:      []*pb.HerdrEntity{{Id: "p1", WorkspaceId: "w1", TabId: "t1", AgentStatus: "working", DisplayName: "Shell"}},
+				Agents:     []*pb.HerdrEntity{{Id: "p1", WorkspaceId: "w1", TabId: "t1", AgentStatus: "working", DisplayName: "Reviewer", Directory: `C:\src\demo\tests`}}}}
 	}
-	list := &pb.NodeList{Nodes: []*pb.NodeView{{InstanceId: "node", TailscaleStableId: "peer",
+	list := &pb.NodeList{Nodes: []*pb.NodeView{{InstanceId: "node", TailscaleStableId: "peer", Hostname: "laptop",
 		Connected: true, LastSeen: stamp, Stale: true, Herdr: &pb.HerdrState{Status: "unavailable", ErrorCode: "connection_failed"},
 		SessionsReady: true, SessionsReceivedAt: stamp,
 		Sessions: []*pb.SessionView{session("first", strings.Repeat("a", 64), stamp), session("second", strings.Repeat("b", 64), nil)},
@@ -55,6 +55,11 @@ const rows = model.projectAgents(snapshot.nodes);
 assert.equal(snapshot.nodes.length, 1);
 assert.equal(rows.length, 2);
 assert.deepEqual(rows.map(row => row.node.session_name), ["first", "second"]);
+assert.equal(rows[0].agent.display_name, "Reviewer");
+assert.equal(rows[0].agent.directory, "C:\\src\\demo\\tests");
+assert.equal(rows[0].node.hostname, "laptop");
+assert.equal(model.projectAgents(snapshot.nodes, "API project").length, 2);
+assert.equal(model.projectAgents(snapshot.nodes, "C:\\src\\demo").length, 2);
 assert.equal(model.summary(state, now).live.workspaces, 1);
 assert.equal(model.summary(state, now).known.workspaces, 2);
 const missing = model.sessionContexts(snapshot.nodes[0]).find(row => row.session_name === "second");

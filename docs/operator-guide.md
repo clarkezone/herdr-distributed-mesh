@@ -87,6 +87,21 @@ herdr-mesh status
 These commands reuse the existing connection. You can run another command while
 watching output or using the dashboard.
 
+The dashboard shows configured workspace/tab/pane/agent names, with stable IDs
+secondary or as fallbacks. It shows workspace checkout paths and reported
+pane/agent working directories; directories belong to the execution computer.
+For ordinary workspaces without checkout metadata, a **Reported directories**
+list shows distinct directories from contained panes and agents; it does not
+guess a workspace directory. Names and directories are searchable and refresh with snapshots.
+Automatic terminal titles, prompts, terminal contents, tokens, and provider
+session-file paths are not part of this inventory.
+
+Install the same updated build on the coordinator, execution nodes, and dashboard.
+Upgrade the coordinator before nodes: older coordinators reject unknown inventory
+fields. Older nodes shown by a new dashboard keep their ID-only fallback until
+upgraded. Restart the mesh processes to use the new build; restarting only the
+browser cannot add fields an older daemon does not send.
+
 ## 4. Register an existing project
 
 Prepare an existing Git checkout on each computer where you want to run work.
@@ -129,6 +144,12 @@ An agent name stays bound to its original launch, including after stop. Repeatin
 the same start is a retry, not a new launch. Once the previous outcome is known,
 choose a fresh name for a genuinely new run.
 
+Here `smoke` is the mesh control name chosen by `agent start`; `laptop` is the
+mesh node label chosen with `init --name` or `join --name`, not the Windows
+hostname. Neither is a workspace, tab, or Herdr session name. Renaming a TUI
+display label does not rename the original mesh control name. Agents started
+directly in the TUI do not automatically receive one of these mesh control names.
+
 An accepted prompt is not proof the provider completed the task. Check the
 actual response. Provider sign-in and permission prompts are not approved
 automatically.
@@ -138,6 +159,13 @@ automatically.
 Do not delete identity directories to make setup run again. Existing managed
 configuration is checked rather than silently overwritten; older independently
 running roles need an explicit migration decision.
+
+There is currently no managed `deinit`/uninstall command or public daemon-stop
+command. `agent stop` stops an agent, not the daemon. Complete removal is not
+just deleting a database: it also involves the per-user startup registration,
+the computer's Tailscale device, and any mesh-created tailnet policy entries.
+Do not delete live managed state or remove shared/preexisting tailnet rules.
+The advanced per-role maintenance commands are not a managed uninstall path.
 
 For MCP, configure your MCP client to run:
 

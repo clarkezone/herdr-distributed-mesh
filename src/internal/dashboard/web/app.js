@@ -1,6 +1,7 @@
 import {
   initialState, acceptSnapshot, rejectSnapshot, freshness, nodeFreshness, summary,
-  projectAgents, projectWorkspaces, projectNodes, sessionContexts, entityProject, countLabel, ageLabel, fetchSnapshot, createPoller,
+  projectAgents, projectWorkspaces, projectNodes, sessionContexts, entityProject, entityLabel, entityWorkspace,
+  entityTab, entityDirectory, agentDisplayName, workspaceDirectories, countLabel, ageLabel, fetchSnapshot, createPoller,
 } from "/model.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -25,6 +26,52 @@ function keyed(element, key) {
 }
 function identifier(value, fallback = "Not supplied") {
   return el("span", "identifier", value || fallback);
+}
+function identity(entity, id = entity?.id ?? "", fallback = "Not supplied") {
+  const label = entityLabel(entity, id, fallback);
+  const result = el("span", "entity-identity");
+  const primary = el("bdi", entity?.display_name ? "entity-name" : "identifier", label.primary);
+  result.append(primary);
+  if (label.secondary) result.append(el("bdi", "identifier secondary-id", `ID: ${label.secondary}`));
+  return result;
+}
+function nodeIdentity(node) {
+  return identity({ display_name: node.hostname }, node.instance_id);
+}
+function agentIdentity(agent, pane) {
+  return identity({ ...agent, display_name: agentDisplayName(agent, pane) });
+}
+function directory(node, entity) {
+  const value = entityDirectory(node, entity);
+  const result = el("span", "entity-directory");
+  result.dataset.directorySource = value.source;
+  const label = value.source === "workspace" ? "Workspace directory (fallback)" : "Reported directory";
+  result.append(el("span", "muted", value.source === "unknown" ? "Directory not reported" : label));
+  if (value.directory) result.append(el("bdi", "directory-path", value.directory));
+  return result;
+}
+function workspaceDirectorySummary(node, workspace) {
+  const result = el("div", "workspace-directories");
+  result.append(directory(node, workspace.entity));
+  const reported = workspace.entity?.directory ? [] : workspaceDirectories(workspace);
+  if (reported.length) {
+    result.append(el("h4", "", "Reported directories"),
+      el("p", "muted", "Reported by contained panes and agents; not a workspace directory."));
+    const list = el("ul", "directory-list");
+    for (const path of reported) {
+      const item = keyed(el("li"), ["directory", path]);
+      item.append(el("bdi", "directory-path", path));
+      list.append(item);
+    }
+    result.append(list);
+  }
+  return result;
+}
+function entityReference(entity, id, kind) {
+  const result = el("span", "entity-identity");
+  result.append(identity(entity, id, `${kind} not supplied`));
+  if (!entity && id) result.append(badge(`Unresolved ${kind.toLowerCase()} · missing from snapshot`, "stale"));
+  return result;
 }
 function badge(label, status) {
   return el("span", `badge status-${badgeClasses.has(status) ? status : "unknown"}`, label);
@@ -141,24 +188,26 @@ function renderConnection(now) {
   $("refresh-button").setAttribute("aria-disabled", String(state.refreshing));
 }
 
-const tableLabels = ["Agent (pane ID) / status", "Node", "Session", "Project", "Provider", "Readiness", "Workspace", "Tab", "Pane", "Focus", "Data freshness"];
+const tableLabels = ["Agent / status", "Workspace", "Tab", "Directory", "Node", "Session", "Project", "Provider", "Readiness", "Pane", "Focus", "Data freshness"];
 function agentRow({ node, agent, pane }, now) {
   const row = keyed(el("tr"), [node.instance_id, node.session_name, node.session_incarnation, agent.workspace_id, agent.tab_id, agent.id]);
   row.dataset.stale = String(!nodeFreshness(node, state, now).live);
   row.dataset.agentStatus = agent.agent_status;
-  const identity = el("div", "agent-cell");
-  identity.append(identifier(agent.id), badge(agent.agent_status, agent.agent_status));
+  const agentCell = el("div", "agent-cell");
+  agentCell.append(agentIdentity(agent, pane), badge(agent.agent_status, agent.agent_status));
   const paneReference = el("div", "freshness-cell");
   paneReference.dataset.paneState = pane ? "resolved" : "missing";
-  paneReference.append(identifier(agent.id, "Empty pane reference"));
-  if (!pane) paneReference.append(badge("Unresolved pane · missing from snapshot", "stale"));
+  paneReference.append(entityReference(pane, agent.id, "Pane"));
+  if (!pane && !agent.id) paneReference.append(badge("Unresolved pane · missing from snapshot", "stale"));
   const project = entityProject(node, agent);
   const readiness = agent.interactive_ready === null ? "Not reported" : agent.interactive_ready ? "Ready" : "Not ready";
   const session = identifier(node.session_label ?? node.session_name);
   session.title = node.session_incarnation ? `Incarnation: ${node.session_incarnation}` : "Legacy default socket; incarnation not reported";
-  const values = [identity, identifier(node.instance_id), session, identifier(project, "Unmapped"),
+  const values = [agentCell,
+    entityReference(entityWorkspace(node, agent), agent.workspace_id, "Workspace"),
+    entityReference(entityTab(node, agent), agent.tab_id, "Tab"),
+    directory(node, agent), nodeIdentity(node), session, identifier(project, "Unmapped"),
     identifier(agent.provider, "Unknown"), badge(readiness, agent.interactive_ready ? "ready" : "unknown"),
-    identifier(agent.workspace_id), identifier(agent.tab_id),
     paneReference, focusBadge(agent), freshnessCell(node, now)];
   values.forEach((value, i) => {
     const cell = el("td");
@@ -169,26 +218,27 @@ function agentRow({ node, agent, pane }, now) {
   return row;
 }
 
-function entityRow(entity, kind) {
+function entityRow(node, entity, kind, pane = null) {
   const row = keyed(el("li", "tree-row"), [kind, entity.workspace_id, entity.tab_id, entity.id]);
-  row.append(el("span", "tree-label", kind), identifier(entity.id));
+  row.append(el("span", "tree-label", kind), kind === "Agent" ? agentIdentity(entity, pane) : identity(entity), directory(node, entity));
   if (kind === "Agent") row.append(badge(entity.agent_status, entity.agent_status));
   if (entity.focused) row.append(focusBadge(entity));
   return row;
 }
-function treeChildren(group) {
+function treeChildren(node, group, workspaceId) {
   return group.paneGroups.map((pane) => {
     const item = keyed(el("li"), ["pane", pane.id]);
     item.dataset.paneState = pane.entity ? "resolved" : "missing";
     const heading = el("div", "tree-row");
     heading.append(el("span", "tree-label", pane.entity ? "Pane" : "Unresolved pane reference"),
-      identifier(pane.id, "Empty pane reference"));
+      identity(pane.entity, pane.id, "Empty pane reference"),
+      directory(node, pane.entity ?? { workspace_id: workspaceId }));
     if (!pane.entity) heading.append(badge("Missing from snapshot", "stale"));
     if (pane.entity?.focused) heading.append(focusBadge(pane.entity));
     item.append(heading);
     if (pane.agents.length) {
       const agents = el("ul", "tree");
-      agents.append(...pane.agents.map((agent) => entityRow(agent, "Agent")));
+      agents.append(...pane.agents.map((agent) => entityRow(node, agent, "Agent", pane.entity)));
       item.append(agents);
     }
     return item;
@@ -199,13 +249,14 @@ function workspaceCard({ node, workspace: ws }, now) {
   card.dataset.stale = String(!nodeFreshness(node, state, now).live);
   const header = el("div", "card-heading");
   const heading = el("h3");
-  heading.append(el("span", "eyebrow", ws.entity ? "Workspace" : "Unresolved workspace reference"), identifier(ws.id, "Workspace not supplied"));
+  heading.append(el("span", "eyebrow", ws.entity ? "Workspace" : "Unresolved workspace reference"),
+    identity(ws.entity, ws.id, "Workspace not supplied"));
   const badges = el("div", "badges");
   if (ws.entity?.focused) badges.append(focusBadge(ws.entity));
   badges.append(freshnessBadge(node, now));
   header.append(heading, badges);
   const origin = el("div", "tree-row");
-  origin.append(el("span", "tree-label", "Node"), identifier(node.instance_id),
+  origin.append(el("span", "tree-label", "Node"), nodeIdentity(node),
     el("span", "tree-label", "Session"), identifier(node.session_label ?? node.session_name),
     el("span", "tree-label", "Project"), identifier(ws.entity?.project_id, "Unmapped"), age(node.herdr_received_at, now));
   const tree = el("ul", "tree");
@@ -214,10 +265,11 @@ function workspaceCard({ node, workspace: ws }, now) {
     const details = el("details");
     details.open = true;
     const title = el("summary");
-    title.append(el("span", "tree-label", tab.entity ? "Tab" : "Unresolved tab reference"), identifier(tab.id));
+    title.append(el("span", "tree-label", tab.entity ? "Tab" : "Unresolved tab reference"),
+      identity(tab.entity, tab.id), directory(node, tab.entity ?? { workspace_id: ws.id }));
     if (tab.entity?.focused) title.append(document.createTextNode(" · Focused"));
     const children = el("ul", "tree");
-    children.append(...treeChildren(tab));
+    children.append(...treeChildren(node, tab, ws.id));
     if (!children.children.length) children.append(el("li", "tree-empty", "No panes or agents reported in this tab."));
     details.append(title, children);
     item.append(details);
@@ -227,12 +279,12 @@ function workspaceCard({ node, workspace: ws }, now) {
     const unassigned = keyed(el("li"), ["unassigned"]);
     unassigned.append(el("span", "tree-label", "Tab not supplied"));
     const children = el("ul", "tree");
-    children.append(...treeChildren(ws));
+    children.append(...treeChildren(node, ws, ws.id));
     unassigned.append(children);
     tree.append(unassigned);
   }
   if (!tree.children.length) tree.append(el("li", "tree-empty", "No tabs, panes, or agents reported in this workspace."));
-  card.append(header, origin, tree);
+  card.append(header, workspaceDirectorySummary(node, ws), origin, tree);
   return card;
 }
 
@@ -241,7 +293,7 @@ function nodeCard(node, now) {
   card.dataset.stale = String(!nodeFreshness(node, state, now).live);
   const header = el("div", "card-heading");
   const heading = el("h3");
-  heading.append(el("span", "eyebrow", "Node"), identifier(node.instance_id));
+  heading.append(el("span", "eyebrow", "Node"), nodeIdentity(node));
   const badges = el("div", "badges");
   const globallyLive = freshness(state, now) === "live";
   badges.append(badge(`${globallyLive ? "" : "Last known: "}${node.connected ? "connected" : "disconnected"}`,
@@ -289,9 +341,9 @@ function renderInventory(now) {
   const rows = projections[currentView]();
   const phase = freshness(state, now);
   const descriptions = {
-    agents: "Agent IDs are matched within the same node, session incarnation, workspace, and tab. Missing panes stay visible. Project/provider/readiness are reported metadata, never inferred from names; unknown values remain explicit.",
-    workspaces: "Workspace → tab → pane → agent identifiers. Missing pane references remain visible. Filters select whole matching workspaces; sibling context stays visible. Expand or collapse tabs with the keyboard.",
-    nodes: "Connectivity and Herdr readiness are separate. Filters select nodes containing matching identifiers and agent statuses.",
+    agents: "Configured names lead; unnamed agents use their resolved pane label. IDs remain visible and are matched only within the same node, session incarnation, workspace, and tab. Workspace directory fallbacks are not reported agent working directories. Project/provider/readiness are never inferred from names.",
+    workspaces: "Workspace → tab → pane → agent names and IDs. Without a workspace directory, cards list distinct directories reported by contained panes and agents, not a guessed workspace path. Missing references stay visible. Filters select whole workspaces with sibling context. Expand or collapse tabs with the keyboard.",
+    nodes: "Managed node names lead; instance IDs remain visible. Connectivity and Herdr readiness are separate. Search includes names, directories, identifiers, and descendant inventory.",
   };
   text("view-description", descriptions[currentView]);
   text("result-count", state.snapshot ? `${countLabel(rows.length, currentView.slice(0, -1))} shown${phase === "stale" ? " · not live" : ""}` : "No snapshot yet");
@@ -312,7 +364,7 @@ function renderInventory(now) {
     } else if (filters.search.trim() || filters.status !== "all" || filters.session.trim() ||
       filters.project.trim() || filters.provider.trim() || filters.readiness !== "all") {
       title = "No matching inventory";
-      detail = "Try another identifier or clear the filters. Fleet pulse above always describes the unfiltered fleet.";
+      detail = "Try another name, directory, or identifier, or clear the filters. Fleet pulse above always describes the unfiltered fleet.";
     } else {
       title = `No ${currentView} reported`;
       detail = "Inspect Nodes for connectivity and Herdr readiness. Inventory appears when a node reports it.";

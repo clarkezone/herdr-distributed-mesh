@@ -329,8 +329,8 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, `Herdr distributed mesh
 
 Connect each computer once:
-  herdr-mesh init --tailnet <tailnet> --name <computer-name>
-  herdr-mesh join --server <coordinator-full-magic-dns-name> --name <computer-name>
+  herdr-mesh init --tailnet <tailnet> --name <node-name>
+  herdr-mesh join --server <coordinator-full-magic-dns-name> --name <node-name>
 
 Use the saved mesh connection:
   herdr-mesh nodes
@@ -338,10 +338,15 @@ Use the saved mesh connection:
   herdr-mesh doctor
   herdr-mesh dashboard
   herdr-mesh mcp
-  herdr-mesh project add <project> --node <computer-name> --path <existing-checkout>
-  herdr-mesh agent start <name> --node <computer-name> --project <project> --prompt <task>
-  herdr-mesh agent follow <name> --node <computer-name>
-  herdr-mesh agent stop <name> --node <computer-name>
+  herdr-mesh project add <project-name> --node <node-name> --path <existing-checkout>
+  herdr-mesh agent start <agent-name> --node <node-name> --project <project-name> --prompt <task>
+  herdr-mesh agent follow <agent-name> --node <node-name>
+  herdr-mesh agent stop <agent-name> --node <node-name>
+
+<node-name> is the mesh label chosen with init/join --name, not the Windows hostname.
+<agent-name> is the name chosen with agent start, not a workspace, tab or session name.
+Example: herdr-mesh agent stop smoke --node laptop
+Stopping an agent does not stop the mesh daemon.
 
 Use --help on a command for options.
   herdr-mesh version

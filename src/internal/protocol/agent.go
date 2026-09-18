@@ -76,7 +76,8 @@ func validAgentStatus(value string) bool {
 func ValidateAgentView(value *pb.AgentView) error {
 	if value == nil || len(value.ProtoReflect().GetUnknown()) != 0 || ValidateAgentTarget(value.Target, true) != nil ||
 		!commandToken.MatchString(value.WorkspaceId) || !commandToken.MatchString(value.TabId) ||
-		!commandToken.MatchString(value.Provider) || !validAgentStatus(value.Status) {
+		!commandToken.MatchString(value.Provider) || !validAgentStatus(value.Status) ||
+		!ValidDisplayMetadata(value.DisplayName, value.Directory) {
 		return errors.New("invalid agent projection")
 	}
 	return nil

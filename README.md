@@ -105,7 +105,12 @@ statuses, provider/readiness metadata, and workspace/tab/pane inventory. It
 refreshes automatically and supports project/provider/readiness filtering.
 Loading, an empty fleet, unavailable nodes, and failed server queries
 are distinct states; previously displayed data is marked not-live on failure.
-Names, paths, custom metadata, and terminal contents remain excluded.
+Configured names and reported working/checkout directories are displayed and
+searchable, with IDs secondary or as fallbacks. Workspace/tab labels remain
+visible for agents that have no configured name of their own. Automatic terminal
+titles, custom metadata, provider session-file paths, and terminal contents remain
+excluded. Upgrade the coordinator before nodes, then restart the dashboard to
+receive the new fields; older nodes retain ID-only fallbacks.
 In the current projection, an agent's identifier is its pane ID; the dashboard
 links it to the matching pane within the same node, Herdr session/incarnation,
 workspace, and tab. Optional metadata requires a node that reports it; unknown
@@ -129,6 +134,15 @@ Dashboard checks (frontend tests use only Node's built-in test runner):
 go test ./src/internal/dashboard ./src/internal/app
 node --test src\internal\dashboard\web\model.test.mjs
 ```
+
+For an isolated browser check, set `HERDR_MESH_DASHBOARD_FIXTURE=127.0.0.1:18787`
+in a disposable shell and run `go test ./src/internal/dashboard -run
+^TestDisplayBrowserFixture$ -v -count=1 -timeout=6m`. It serves synthetic names
+and directories through the production dashboard for five minutes, without
+connecting to a daemon or tailnet. Clear the variable afterward.
+The separately opt-in `HERDR_MESH_DISPLAY_LIVE=1` test
+`TestLiveDisplayMetadata` reads an existing native Herdr snapshot without
+modifying sessions and reports counts only, never names, paths or raw snapshots.
 
 ## Herdr connection and observation
 
@@ -182,9 +196,13 @@ time, and a `stale` flag. Status is `disabled`, `waiting`, `ready`, or
 
 Only validated entity IDs, workspace/tab relationships, focus flags, agent status,
 named-session names/incarnations, project/provider IDs, optional readiness,
-terminal IDs, and opaque provider-session IDs are forwarded. Titles, labels,
-paths, terminal output, agent names, provider session-file references,
-and custom tokens are excluded on the node. The server also validates the
+terminal IDs, and opaque provider-session IDs are forwarded. Display metadata
+adds configured workspace/tab/pane labels and agent names (at most 256 UTF-8
+bytes), plus reported working/checkout directories (at most 4096 UTF-8 bytes).
+These are display-only, never identity or authorization selectors. Foreground
+working directories take precedence over launch cwd when reported. Automatic
+terminal titles, terminal output, provider session-file references, repository
+internals and custom tokens are excluded on the node. The server also validates the
 projection and rejects unknown protobuf fields. This is not a complete layout
 or terminal mirror. Explicit agent queries and typed input commands use separate
 RPCs; terminal text is never included in these fleet observations.
@@ -578,9 +596,10 @@ Identical registration is idempotent; changed paths advance an internal
 generation. New mutations require the current generation; already admitted
 operations keep their original binding or are rejected before effects.
 Workspace/worktree admission also requires a fresh ready Herdr baseline.
-Only explicit project registration/get/list output exposes configuration paths.
-Ordinary fleet observations, dashboard output, command results, and audit details
-remain path-free. Keep these inspection outputs and node-local paths out of shared
+Project registration/get/list exposes configuration paths. Fleet observations,
+dashboard output, and agent-query results also expose allowlisted display names
+and reported working/checkout directories; mutation receipts and audit details
+remain bounded and sanitized. Keep these inspection outputs and node-local paths out of shared
 AI Core memory, logs intended for sharing, and committed files.
 
 ### Legacy policy migration

@@ -3616,7 +3616,8 @@ func (x *ServerInfo) GetCapabilities() []string {
 	return nil
 }
 
-// Read-only allowlisted identity/agent metadata. No terminal text, titles, or paths.
+// Read-only identity and display metadata. No terminal text, automatic titles,
+// provider session-file paths, or arbitrary native metadata.
 type HerdrEntity struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -3629,8 +3630,12 @@ type HerdrEntity struct {
 	TerminalId        string                 `protobuf:"bytes,8,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
 	ProviderSessionId string                 `protobuf:"bytes,9,opt,name=provider_session_id,json=providerSessionId,proto3" json:"provider_session_id,omitempty"`
 	ProjectId         string                 `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Display only; never an identity or command selector.
+	DisplayName string `protobuf:"bytes,11,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// Reported foreground/cwd, or workspace checkout path. Never controller-local.
+	Directory     string `protobuf:"bytes,12,opt,name=directory,proto3" json:"directory,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HerdrEntity) Reset() {
@@ -3729,6 +3734,20 @@ func (x *HerdrEntity) GetProviderSessionId() string {
 func (x *HerdrEntity) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *HerdrEntity) GetDirectory() string {
+	if x != nil {
+		return x.Directory
 	}
 	return ""
 }
@@ -4148,6 +4167,8 @@ type AgentView struct {
 	LaunchPending    bool                   `protobuf:"varint,7,opt,name=launch_pending,json=launchPending,proto3" json:"launch_pending,omitempty"`
 	Revision         uint64                 `protobuf:"varint,8,opt,name=revision,proto3" json:"revision,omitempty"`
 	StateChangeSeq   uint64                 `protobuf:"varint,9,opt,name=state_change_seq,json=stateChangeSeq,proto3" json:"state_change_seq,omitempty"`
+	DisplayName      string                 `protobuf:"bytes,10,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Directory        string                 `protobuf:"bytes,11,opt,name=directory,proto3" json:"directory,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -4243,6 +4264,20 @@ func (x *AgentView) GetStateChangeSeq() uint64 {
 		return x.StateChangeSeq
 	}
 	return 0
+}
+
+func (x *AgentView) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AgentView) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
 }
 
 type AgentQueryRequest struct {
@@ -4945,7 +4980,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"instanceId\x125\n" +
 	"\x16implementation_version\x18\x02 \x01(\tR\x15implementationVersion\x127\n" +
 	"\bprotocol\x18\x03 \x01(\v2\x1b.agentflow.v1.ProtocolRangeR\bprotocol\x12\"\n" +
-	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\xe8\x02\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\xa9\x03\n" +
 	"\vHerdrEntity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
@@ -4959,7 +4994,9 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x13provider_session_id\x18\t \x01(\tR\x11providerSessionId\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\n" +
-	" \x01(\tR\tprojectIdB\x14\n" +
+	" \x01(\tR\tprojectId\x12!\n" +
+	"\fdisplay_name\x18\v \x01(\tR\vdisplayName\x12\x1c\n" +
+	"\tdirectory\x18\f \x01(\tR\tdirectoryB\x14\n" +
 	"\x12_interactive_ready\"\xa0\x03\n" +
 	"\n" +
 	"HerdrState\x12\x16\n" +
@@ -5006,7 +5043,7 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"terminalId\x12(\n" +
 	"\x10agent_session_id\x18\x03 \x01(\tR\x0eagentSessionId\x12!\n" +
 	"\fsession_name\x18\x04 \x01(\tR\vsessionName\x12/\n" +
-	"\x13session_incarnation\x18\x05 \x01(\tR\x12sessionIncarnation\"\xc6\x02\n" +
+	"\x13session_incarnation\x18\x05 \x01(\tR\x12sessionIncarnation\"\x87\x03\n" +
 	"\tAgentView\x121\n" +
 	"\x06target\x18\x01 \x01(\v2\x19.agentflow.v1.AgentTargetR\x06target\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x15\n" +
@@ -5016,7 +5053,10 @@ const file_agentflow_v1_control_proto_rawDesc = "" +
 	"\x11interactive_ready\x18\x06 \x01(\bR\x10interactiveReady\x12%\n" +
 	"\x0elaunch_pending\x18\a \x01(\bR\rlaunchPending\x12\x1a\n" +
 	"\brevision\x18\b \x01(\x04R\brevision\x12(\n" +
-	"\x10state_change_seq\x18\t \x01(\x04R\x0estateChangeSeq\"\xed\x01\n" +
+	"\x10state_change_seq\x18\t \x01(\x04R\x0estateChangeSeq\x12!\n" +
+	"\fdisplay_name\x18\n" +
+	" \x01(\tR\vdisplayName\x12\x1c\n" +
+	"\tdirectory\x18\v \x01(\tR\tdirectory\"\xed\x01\n" +
 	"\x11AgentQueryRequest\x12(\n" +
 	"\x10node_instance_id\x18\x01 \x01(\tR\x0enodeInstanceId\x120\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1c.agentflow.v1.AgentQueryKindR\x04kind\x121\n" +

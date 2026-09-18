@@ -25,6 +25,15 @@ const timestamp = (value) => value === null || (typeof value === "string" && /^\
 const strings = (value, keys) => keys.every((key) => typeof value[key] === "string");
 const order = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const ordered = (items) => [...items].sort((a, b) => order(a.id, b.id) || order(a.workspace_id, b.workspace_id) || order(a.tab_id, b.tab_id));
+const utf8 = new TextEncoder();
+
+function optionalText(value, key, limit, invalid) {
+  if (!Object.hasOwn(value, key)) return "";
+  const text = value[key];
+  if (typeof text !== "string" || /[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(text) ||
+    utf8.encode(text).length > limit) invalid();
+  return text;
+}
 
 export function agentStatus(value) {
   return AGENT_STATUSES.includes(value) ? value : "unknown";
@@ -46,6 +55,8 @@ function parseHerdr(h, invalid) {
       if (entity.interactive_ready !== undefined && entity.interactive_ready !== null &&
         typeof entity.interactive_ready !== "boolean") invalid();
       return { id: entity.id, workspace_id: entity.workspace_id, tab_id: entity.tab_id,
+        display_name: optionalText(entity, "display_name", 256, invalid),
+        directory: optionalText(entity, "directory", 4096, invalid),
         focused: entity.focused, agent_status: agentStatus(entity.agent_status),
         project_id: entity.project_id ?? "", provider: entity.provider ?? "",
         interactive_ready: entity.interactive_ready ?? null };
@@ -89,7 +100,7 @@ export function parseSnapshot(body) {
           ? session.herdr_received_at : node.sessions_received_at ?? null,
         stale: session.stale ?? node.sessions_ready === false };
     }).sort((a, b) => order(a.name, b.name));
-    return { ...node, herdr, sessions };
+    return { ...node, hostname: optionalText(node, "hostname", 256, invalid), herdr, sessions };
   }).sort((a, b) => order(a.instance_id, b.instance_id));
   return { nodes };
 }
@@ -170,15 +181,41 @@ export function summary(state, now) {
 }
 
 const includes = (value, query) => value.toLowerCase().includes(query);
+export function entityLabel(entity, id = entity?.id ?? "", fallback = "Not supplied") {
+  return { primary: entity?.display_name || id || fallback, secondary: entity?.display_name ? id : "" };
+}
+
+export function entityWorkspace(node, entity) {
+  return entity?.workspace_id ? node.herdr.workspaces.find((ws) => ws.id === entity.workspace_id) ?? null : null;
+}
+
+export function entityTab(node, entity) {
+  return entity?.workspace_id && entity.tab_id ? node.herdr.tabs.find((tab) =>
+    tab.workspace_id === entity.workspace_id && tab.id === entity.tab_id) ?? null : null;
+}
+
+export function entityDirectory(node, entity) {
+  if (entity?.directory) return { directory: entity.directory, source: "reported" };
+  const directory = entityWorkspace(node, entity)?.directory;
+  return directory ? { directory, source: "workspace" } : { directory: "", source: "unknown" };
+}
+
 export function entityProject(node, entity) {
   return entity.project_id || node.herdr.workspaces.find((ws) => ws.id === entity.workspace_id)?.project_id || "";
 }
 function entityMatch(node, entity, query) {
-  return [node.instance_id, node.session_label ?? node.session_name ?? "Configured default", entity.id, entity.workspace_id,
-    entity.tab_id, entityProject(node, entity), entity.provider ?? ""].some((value) => includes(value, query));
+  const parents = [entityWorkspace(node, entity), entityTab(node, entity)];
+  return [node.instance_id, node.hostname ?? "", node.session_label ?? node.session_name ?? "Configured default",
+    entity.id, entity.workspace_id, entity.tab_id, entityProject(node, entity), entity.provider ?? "",
+    ...[entity, ...parents].flatMap((item) => [item?.display_name ?? "", item?.directory ?? ""])]
+    .some((value) => includes(value, query));
 }
 
 const paneKey = (entity) => JSON.stringify([entity.workspace_id, entity.tab_id, entity.id]);
+
+export function agentDisplayName(agent, pane) {
+  return agent.display_name || (pane && paneKey(pane) === paneKey(agent) ? pane.display_name : "") || "";
+}
 
 function matchesFilters(node, entity, filters) {
   const project = entityProject(node, entity);
@@ -195,9 +232,10 @@ export function projectAgents(nodes, search = "", status = "all", filters = {}) 
   return nodes.flatMap(sessionContexts).flatMap((node) => {
     const panes = new Map(node.herdr.panes.map((pane) => [paneKey(pane), pane]));
     return node.herdr.agents
-      .filter((agent) => (status === "all" || agent.agent_status === status) && entityMatch(node, agent, query) &&
-        matchesFilters(node, agent, filters))
-      .map((agent) => ({ node, agent, pane: panes.get(paneKey(agent)) ?? null }));
+      .map((agent) => ({ node, agent, pane: panes.get(paneKey(agent)) ?? null }))
+      .filter(({ agent, pane }) => (status === "all" || agent.agent_status === status) &&
+        (entityMatch(node, agent, query) || includes(agentDisplayName(agent, pane), query)) &&
+        matchesFilters(node, agent, filters));
   });
 }
 
@@ -237,13 +275,21 @@ export function topology(node) {
         .map((tab) => ({ ...tab, paneGroups: paneGroups(tab) })) }));
 }
 
+export function workspaceDirectories(workspace) {
+  const entities = [...workspace.panes, ...workspace.agents,
+    ...workspace.tabs.flatMap((tab) => [...tab.panes, ...tab.agents])];
+  return [...new Set(entities.map((entity) => entity.directory).filter(Boolean))].sort(order);
+}
+
 export function projectWorkspaces(nodes, search = "", status = "all", filters = {}) {
   const query = search.trim().toLowerCase();
   return nodes.flatMap(sessionContexts).flatMap((node) => topology(node).filter((ws) => {
     const entities = [...ws.agents, ...ws.panes, ...ws.tabs.flatMap((tab) => [...tab.agents, ...tab.panes])];
     const agents = [...ws.agents, ...ws.tabs.flatMap((tab) => tab.agents)];
-    const matchesQuery = [node.instance_id, node.session_name, ws.id, ws.entity?.project_id ?? "",
-      ...ws.tabs.map((tab) => tab.id)].some((id) => includes(id, query)) ||
+    const matchesQuery = [node.instance_id, node.hostname ?? "", node.session_label ?? node.session_name ?? "", ws.id, ws.entity?.project_id ?? "",
+      ws.entity?.display_name ?? "", ws.entity?.directory ?? "",
+      ...ws.tabs.flatMap((tab) => [tab.id, tab.entity?.display_name ?? "", tab.entity?.directory ?? ""])]
+      .some((value) => includes(value, query)) ||
       entities.some((entity) => entityMatch(node, entity, query));
     const agentFilter = status !== "all" || filters.provider?.trim() || (filters.readiness && filters.readiness !== "all");
     return matchesQuery && (agentFilter ?
@@ -256,7 +302,8 @@ export function projectNodes(nodes, search = "", status = "all", filters = {}) {
   const query = search.trim().toLowerCase();
   return nodes.filter((node) => sessionContexts(node).some((session) => {
     if (filters.session?.trim() && session.session_name !== filters.session.trim()) return false;
-    const queryMatch = includes(node.instance_id, query) || includes(session.session_name, query) ||
+    const queryMatch = includes(node.instance_id, query) || includes(node.hostname ?? "", query) ||
+      includes(session.session_label ?? session.session_name ?? "", query) ||
       ["workspaces", "tabs", "panes", "agents"].some((kind) => session.herdr[kind].some((entity) => entityMatch(session, entity, query)));
     if (!queryMatch) return false;
     if (status !== "all" || filters.provider?.trim() || (filters.readiness && filters.readiness !== "all")) {

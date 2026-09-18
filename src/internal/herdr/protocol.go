@@ -333,6 +333,10 @@ func sanitizeSnapshotWithProjects(raw json.RawMessage, resolver ProjectResolver)
 			if err != nil {
 				return nil, err
 			}
+			entity.DisplayName, entity.Directory, err = displayMetadata(entry, collection.name)
+			if err != nil {
+				return nil, err
+			}
 			if _, duplicate := seen[entity.Id]; duplicate {
 				return nil, apiError("invalid_snapshot")
 			}

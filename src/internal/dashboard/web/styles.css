@@ -83,6 +83,16 @@ tbody tr { background: #131c29; }
 tbody tr:hover { background: #192637; }
 tbody tr[data-stale="true"] { background: #201e24; }
 .identifier { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; color: #dae5f2; line-height: 1.6; }
+.entity-identity, .entity-directory { display: inline-grid; gap: 3px; min-width: 0; max-width: 100%; vertical-align: top; }
+.entity-name { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; white-space: pre-wrap; }
+.secondary-id { color: var(--muted); font-size: 11px; font-weight: 400; }
+.entity-directory { font-weight: 400; }
+.directory-path { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.workspace-directories { margin-bottom: 14px; min-width: 0; }
+.workspace-directories h4 { font-size: 12px; margin: 10px 0 4px; }
+.workspace-directories p { margin: 0 0 6px; }
+.directory-list { display: grid; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.directory-list li { min-width: 0; }
 .agent-cell { display: grid; gap: 8px; justify-items: start; }
 .badge { display: inline-flex; align-items: center; border: 1px solid #536376; border-radius: 5px; padding: 3px 7px; font-size: 11px; font-weight: 600; line-height: 1.45; color: #cbd8e8; background: #263143; }
 .status-working { color: #b8d5ff; border-color: #436695; background: #1c3455; }
@@ -109,6 +119,8 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .tree-label { color: var(--muted); font-size: 11px; }
 .tree details > summary { cursor: pointer; padding: 5px 0; font-size: 12px; }
 .tree details > summary .identifier { margin-left: 8px; }
+.tree details > summary .entity-identity { margin: 0 8px; }
+.tree details > summary .entity-identity .identifier { margin-left: 0; }
 .tree-empty { color: var(--muted); font-size: 12px; }
 .empty-state { padding: 58px 20px; text-align: center; border: 1px dashed #42546b; border-top: 0; border-radius: 0 0 9px 9px; background: #101925; }
 .empty-state h3 { font-size: 20px; margin-bottom: 8px; }

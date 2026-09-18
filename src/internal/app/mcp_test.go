@@ -137,6 +137,7 @@ func mcpObject(t *testing.T, value any) map[string]any {
 }
 
 func TestMCPNetworkFlagsAndEarlyValidation(t *testing.T) {
+	isolatedManagedConfig(t)
 	var out, diagnostics bytes.Buffer
 	config, err := parseMCPFlags([]string{"-server", "coordinator:50052"}, IO{Out: &out, Err: &diagnostics})
 	if err != nil {

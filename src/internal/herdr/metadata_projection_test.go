@@ -43,8 +43,8 @@ func metadataSnapshot(t *testing.T, root string) json.RawMessage {
 	return data
 }
 
-func TestSnapshotProjectsUseExplicitRepositoryIdentityAndStayPrivate(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "PRIVATE-repository")
+func TestSnapshotProjectsUseExplicitRepositoryIdentityAndAllowDisplayDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "repository")
 	calls := 0
 	state, err := sanitizeSnapshotWithProjects(metadataSnapshot(t, root), projectResolverFunc(func(path string) (string, error) {
 		calls++
@@ -67,6 +67,9 @@ func TestSnapshotProjectsUseExplicitRepositoryIdentityAndStayPrivate(t *testing.
 	}
 	if state.Agents[1].ProviderSessionId != "" || state.Agents[1].InteractiveReady != nil {
 		t.Fatal("private path or absent readiness was invented")
+	}
+	if state.Workspaces[0].Directory != root || state.Agents[0].Directory != root || state.Agents[1].Directory != "" {
+		t.Fatal("display directories lost or inferred from a private session-file path")
 	}
 	data, err := protojson.Marshal(state)
 	if err != nil || strings.Contains(string(data), "PRIVATE") || strings.Contains(string(data), "repo_root") ||

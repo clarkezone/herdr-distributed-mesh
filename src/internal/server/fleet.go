@@ -11,6 +11,7 @@ import (
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -445,6 +446,7 @@ func validateHerdrState(state *agentflowv1.HerdrState) error {
 				(entity.TerminalId != "" && !safeIdentifier.MatchString(entity.TerminalId)) ||
 				(entity.ProviderSessionId != "" && !safeIdentifier.MatchString(entity.ProviderSessionId)) ||
 				(entity.ProjectId != "" && !safeIdentifier.MatchString(entity.ProjectId)) ||
+				!protocol.ValidDisplayMetadata(entity.DisplayName, entity.Directory) ||
 				len(entity.ProtoReflect().GetUnknown()) != 0 {
 				return bad
 			}

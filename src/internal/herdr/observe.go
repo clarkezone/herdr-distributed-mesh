@@ -1,6 +1,6 @@
 // Package herdr provides allowlisted local observation and explicitly bound
-// workspace ensure. Observe is read-only and exposes only validated identifiers,
-// focus flags, agent statuses, and version information, never raw event payloads.
+// workspace ensure. Observe exposes validated identities, configured labels,
+// directories and agent status, never terminal contents or raw event payloads.
 package herdr
 
 import (

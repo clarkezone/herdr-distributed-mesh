@@ -11,13 +11,20 @@ import (
 	"testing"
 )
 
-func TestManagedHelpDoesNotCreateStateOrRequireEnrollment(t *testing.T) {
+func isolatedManagedConfig(t *testing.T) string {
+	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("APPDATA", root)
 	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("HOME", root)
+	return root
+}
+
+func TestManagedHelpDoesNotCreateStateOrRequireEnrollment(t *testing.T) {
+	root := isolatedManagedConfig(t)
 	t.Setenv("TAILSCALE_API_TOKEN", "")
 	t.Setenv("TS_AUTHKEY", "")
 	ctx, cancel := context.WithCancel(context.Background())

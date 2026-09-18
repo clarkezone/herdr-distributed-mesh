@@ -28,7 +28,7 @@ func agentFixture() map[string]any {
 		"agent_session": map[string]any{
 			"kind": "id", "value": "12345678-1234-1234-1234-123456789abc", "agent": "copilot", "source": "PRIVATE-source",
 		},
-		"name": "PRIVATE-name", "title": "PRIVATE-title", "cwd": `C:\PRIVATE-checkout`,
+		"name": "Review helper", "title": "PRIVATE-title", "cwd": `C:\src\demo`,
 		"terminal_title": "PRIVATE-terminal", "tokens": map[string]any{"secret": "PRIVATE-token"},
 	}
 }
@@ -166,7 +166,8 @@ func TestAgentGetActualShapeAndAllowlist(t *testing.T) {
 	}
 	if result.Agent.Provider != "copilot" || result.Agent.Target.TerminalId != "terminal:1" ||
 		result.Agent.Target.AgentSessionId != "12345678-1234-1234-1234-123456789abc" ||
-		!result.Agent.InteractiveReady || result.Agent.Revision != 9 || result.Agent.StateChangeSeq != 4 {
+		!result.Agent.InteractiveReady || result.Agent.Revision != 9 || result.Agent.StateChangeSeq != 4 ||
+		result.Agent.DisplayName != "Review helper" || result.Agent.Directory != `C:\src\demo` {
 		t.Fatal("approved agent metadata was not preserved")
 	}
 	raw, err := protojson.Marshal(result)

@@ -1,10 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
+import * as model from "./model.mjs";
 import {
   STALE_AFTER_MS, ERROR_MESSAGES, DashboardError, agentStatus, parseSnapshot,
   initialState, acceptSnapshot, rejectSnapshot, freshness, nodeFreshness, summary,
-  projectAgents, projectWorkspaces, projectNodes, sessionContexts, topology, countLabel, ageLabel, fetchSnapshot, createPoller,
+  projectAgents, projectWorkspaces, projectNodes, sessionContexts, topology, entityLabel, entityWorkspace,
+  entityTab, entityDirectory, agentDisplayName, workspaceDirectories, countLabel, ageLabel, fetchSnapshot, createPoller,
 } from "./model.mjs";
 
 const now = Date.parse("2026-09-15T17:00:00Z");
@@ -198,6 +201,281 @@ function multiSessionNode() {
     status: "ready", error_code: "", herdr: paneAgentNode().herdr }));
   return value;
 }
+
+test("absent and empty names, directories, and hostname preserve legacy IDs and unknown metadata", () => {
+  for (const supplied of [false, true]) {
+    const value = paneAgentNode();
+    if (supplied) value.hostname = "";
+    for (const kind of ["workspaces", "tabs", "panes", "agents"]) {
+      if (supplied) Object.assign(value.herdr[kind][0], { display_name: "", directory: "" });
+      Object.assign(value.herdr[kind][0], { title: "Do not use terminal titles", prompt: "Do not use prompts" });
+    }
+    const parsed = snapshot([value]).nodes[0];
+    assert.equal(parsed.hostname, "");
+    for (const kind of ["workspaces", "tabs", "panes", "agents"]) {
+      const item = parsed.herdr[kind][0];
+      assert.equal(item.display_name, "");
+      assert.equal(item.directory, "");
+      assert.deepEqual(entityLabel(item), { primary: item.id, secondary: "" });
+      assert.deepEqual(entityDirectory(parsed, item), { directory: "", source: "unknown" });
+      assert.equal(item.title, undefined);
+      assert.equal(item.prompt, undefined);
+    }
+    assert.equal(projectAgents([parsed])[0].pane.id, "w1:p1");
+  }
+});
+
+test("optional display metadata rejects malformed types, all C0/C1 controls, and lone surrogates", () => {
+  const invalidValues = [null, undefined, 17, false, {}, [], "\ud800", "\udfff",
+    ...Array.from({ length: 32 }, (_, i) => `prefix${String.fromCharCode(i)}suffix`),
+    ...Array.from({ length: 33 }, (_, i) => `prefix${String.fromCharCode(127 + i)}suffix`)];
+  for (const kind of ["workspaces", "tabs", "panes", "agents"]) {
+    for (const field of ["display_name", "directory"]) {
+      for (const invalid of invalidValues) {
+        const value = paneAgentNode();
+        value.herdr[kind][0][field] = invalid;
+        assert.throws(() => snapshot([value]), { code: "invalid_response" }, `${kind}.${field}: ${JSON.stringify(invalid)}`);
+      }
+    }
+  }
+  for (const hostname of invalidValues) {
+    assert.throws(() => snapshot([node("node-1", { hostname })]), { code: "invalid_response" });
+  }
+  const sessions = multiSessionNode();
+  sessions.sessions[1].herdr.tabs[0].directory = "bad\npath";
+  assert.throws(() => snapshot([sessions]), { code: "invalid_response" });
+});
+
+test("name and directory limits measure UTF-8 bytes, with exact boundaries accepted", () => {
+  for (const kind of ["workspaces", "tabs", "panes", "agents"]) {
+    for (const [field, limit] of [["display_name", 256], ["directory", 4096]]) {
+      for (const unit of ["a", "\u00e9", "\u754c", "\ud83d\ude80"]) {
+        const width = Buffer.byteLength(unit, "utf8");
+        const boundary = unit.repeat(Math.floor(limit / width)) + "a".repeat(limit % width);
+        assert.equal(Buffer.byteLength(boundary, "utf8"), limit);
+        const value = paneAgentNode();
+        value.herdr[kind][0][field] = boundary;
+        assert.equal(snapshot([value]).nodes[0].herdr[kind][0][field], boundary);
+        value.herdr[kind][0][field] += "a";
+        assert.throws(() => snapshot([value]), { code: "invalid_response" }, `${kind}.${field}`);
+      }
+    }
+  }
+  assert.equal(snapshot([node("n", { hostname: "a".repeat(256) })]).nodes[0].hostname.length, 256);
+  assert.throws(() => snapshot([node("n", { hostname: "a".repeat(257) })]), { code: "invalid_response" });
+});
+
+function namedNode(id = "node-1") {
+  const value = paneAgentNode(id);
+  value.hostname = "Build machine";
+  const names = { workspaces: "Workspace Atlas", tabs: "Review tab", panes: "Shell pane", agents: "Coding agent" };
+  for (const [kind, display_name] of Object.entries(names)) {
+    Object.assign(value.herdr[kind][0], { display_name, directory: `C:\\Repos\\${kind}\\project` });
+  }
+  return value;
+}
+
+test("display labels prefer configured literal Unicode names with IDs secondary, never inferred titles", () => {
+  assert.deepEqual(entityLabel({ id: "p1", display_name: "\u958b\u767a \ud83d\ude80 <img src=x>" }),
+    { primary: "\u958b\u767a \ud83d\ude80 <img src=x>", secondary: "p1" });
+  assert.deepEqual(entityLabel({ id: "p1", title: "Ignored", prompt: "Ignored" }), { primary: "p1", secondary: "" });
+  assert.deepEqual(entityLabel(null, "orphan"), { primary: "orphan", secondary: "" });
+  assert.deepEqual(entityLabel(null, "", "Missing"), { primary: "Missing", secondary: "" });
+  assert.deepEqual(entityLabel(undefined), { primary: "Not supplied", secondary: "" });
+});
+
+test("agent display names prefer their own name then an exactly scoped pane label, never provider or terminal text", () => {
+  const pane = entity("p1", { display_name: "Scoped pane" });
+  const agent = entity("p1", { display_name: "Own name", provider: "copilot", title: "Terminal", prompt: "Prompt" });
+  assert.equal(agentDisplayName(agent, pane), "Own name");
+  for (const display_name of ["", undefined]) {
+    agent.display_name = display_name;
+    assert.equal(agentDisplayName(agent, pane), "Scoped pane");
+    assert.equal(agentDisplayName(agent, null), "");
+    assert.equal(agentDisplayName(agent, { ...pane, display_name: "", title: "Terminal", prompt: "Prompt" }), "");
+    for (const field of ["id", "workspace_id", "tab_id"]) {
+      assert.equal(agentDisplayName(agent, { ...pane, [field]: "other" }), "", field);
+    }
+  }
+});
+
+test("pane fallback labels are searchable without borrowing from other nodes, sessions, workspaces, or tabs", () => {
+  const value = multiSessionNode();
+  for (const session of value.sessions) {
+    session.herdr = namedNode().herdr;
+    session.herdr.agents[0].display_name = "";
+  }
+  value.sessions[0].herdr.panes = [];
+  const otherNode = namedNode("node-2");
+  otherNode.herdr.agents[0].display_name = "";
+  otherNode.herdr.panes[0].display_name = "Other machine pane";
+  const nodes = snapshot([value, otherNode]).nodes;
+  assert.deepEqual(projectAgents(nodes).map(({ agent, pane }) => agentDisplayName(agent, pane)),
+    ["", "Shell pane", "Other machine pane"]);
+  assert.deepEqual(projectAgents(nodes, " SHELL PANE ").map(({ node }) => [node.instance_id, node.session_name]),
+    [["node-1", "dev-b"]]);
+  assert.equal(projectAgents(nodes, "Shell pane", "blocked").length, 0);
+  assert.equal(projectAgents(nodes, "Shell pane", "all", { session: "dev-a" }).length, 0);
+  assert.equal(projectAgents(nodes, "Shell pane", "all", { provider: "copilot" }).length, 0);
+  for (const project of [projectWorkspaces, projectNodes]) assert.equal(project(nodes, "Shell pane").length, 1);
+  for (const field of ["workspace_id", "tab_id"]) {
+    const mismatched = namedNode();
+    mismatched.herdr.agents[0].display_name = "";
+    mismatched.herdr.panes[0][field] = "other";
+    const parsed = snapshot([mismatched]).nodes;
+    assert.equal(projectAgents(parsed, "Shell pane").length, 0, field);
+    assert.equal(agentDisplayName(projectAgents(parsed)[0].agent, projectAgents(parsed)[0].pane), "");
+  }
+});
+
+test("name and path search finds agents by their metadata, node name, and containing workspace or tab", () => {
+  const nodes = snapshot([namedNode()]).nodes;
+  for (const query of ["coding AGENT", "Workspace ATLAS", "Review TAB", "BUILD MACHINE",
+    "c:\\repos\\agents", "C:\\Repos\\workspaces", "C:\\Repos\\tabs", "w1:p1", "node-1"]) {
+    assert.equal(projectAgents(nodes, `  ${query}  `, "working").length, 1, query);
+    assert.equal(projectAgents(nodes, query, "blocked").length, 0, query);
+    assert.equal(projectWorkspaces(nodes, query).length, 1, query);
+    assert.equal(projectNodes(nodes, query).length, 1, query);
+  }
+  for (const query of ["Shell pane", "C:\\Repos\\panes"]) {
+    assert.equal(projectWorkspaces(nodes, query).length, 1);
+    assert.equal(projectNodes(nodes, query).length, 1);
+  }
+  assert.equal(projectAgents(nodes, "absent label").length, 0);
+  const empty = namedNode();
+  empty.herdr.agents = [];
+  empty.herdr.panes = [];
+  for (const query of ["Review tab", "C:\\Repos\\tabs", "Workspace Atlas", "C:\\Repos\\workspaces"]) {
+    assert.equal(projectWorkspaces(snapshot([empty]).nodes, query).length, 1, "empty named containers remain searchable");
+    assert.equal(projectNodes(snapshot([empty]).nodes, query).length, 1);
+  }
+  empty.herdr.tabs = [];
+  empty.herdr.workspaces = [];
+  assert.equal(projectNodes(snapshot([empty]).nodes, "Build machine").length, 1);
+});
+
+test("directories distinguish reported values, scoped workspace fallback, and unknown orphan data", () => {
+  const value = namedNode();
+  value.herdr.workspaces.push(entity("w2", { display_name: "Workspace Atlas", directory: "C:\\Other" }));
+  value.herdr.tabs.push(entity("w1:t1", { workspace_id: "w2", display_name: "Other tab", directory: "C:\\OtherTab" }));
+  value.herdr.agents.push(entity("orphan", { workspace_id: "missing", tab_id: "w1:t1" }));
+  const parsed = snapshot([value]).nodes[0];
+  const agent = parsed.herdr.agents.find((item) => item.id === "w1:p1");
+  assert.deepEqual(entityDirectory(parsed, agent), { directory: "C:\\Repos\\agents\\project", source: "reported" });
+  agent.directory = "";
+  assert.deepEqual(entityDirectory(parsed, agent), { directory: "C:\\Repos\\workspaces\\project", source: "workspace" });
+  assert.equal(entityWorkspace(parsed, agent).id, "w1");
+  assert.equal(entityTab(parsed, agent).display_name, "Review tab");
+  assert.equal(projectAgents([parsed], "Other tab").length, 0);
+  assert.equal(projectAgents([parsed], "C:\\Other").length, 0);
+  const orphan = parsed.herdr.agents.find((item) => item.id === "orphan");
+  assert.equal(entityWorkspace(parsed, orphan), null);
+  assert.equal(entityTab(parsed, orphan), null);
+  assert.deepEqual(entityDirectory(parsed, orphan), { directory: "", source: "unknown" });
+  orphan.directory = "C:\\Orphan";
+  assert.deepEqual(entityDirectory(parsed, orphan), { directory: "C:\\Orphan", source: "reported" });
+  assert.equal(projectAgents([parsed], "C:\\Orphan")[0].agent.id, "orphan");
+  assert.equal(projectWorkspaces([parsed], "C:\\Orphan")[0].workspace.entity, null);
+  parsed.herdr.workspaces.find((item) => item.id === "w1").directory = "";
+  assert.deepEqual(entityDirectory(parsed, agent), { directory: "", source: "unknown" }, "tab/pane paths are not agent cwd fallbacks");
+  parsed.herdr.workspaces.push(entity("", { directory: "C:\\Unassigned" }));
+  assert.deepEqual(entityDirectory(parsed, { workspace_id: "" }), { directory: "", source: "unknown" });
+  assert.deepEqual(entityDirectory(parsed, null), { directory: "", source: "unknown" });
+});
+
+function containedDirectoryNode() {
+  const value = namedNode();
+  delete value.herdr.workspaces[0].directory;
+  value.herdr.panes[0].display_name = "";
+  value.herdr.agents[0].display_name = "";
+  value.herdr.panes[0].directory = "C:\\Shared";
+  value.herdr.agents[0].directory = "C:\\Shared";
+  value.herdr.panes.push(entity("p2", { workspace_id: "w1", tab_id: "", directory: "C:\\Unassigned" }),
+    entity("p3", { workspace_id: "w1", tab_id: "w1:t1", directory: "" }),
+    entity("p4", { workspace_id: "w2", directory: "C:\\OtherWorkspace" }));
+  value.herdr.agents.push(entity("orphan", { workspace_id: "w1", tab_id: "missing-tab", directory: "C:\\AgentOnly" }),
+    entity("missing-ws", { workspace_id: "missing-ws", directory: "C:\\MissingWorkspace" }));
+  value.herdr.workspaces.push(entity("w2", { display_name: "Workspace Atlas" }), entity("empty-workspace"));
+  return value;
+}
+
+test("workspace reported directories are distinct scoped pane and agent paths, including unassigned and orphan references", () => {
+  const parsed = snapshot([containedDirectoryNode()]).nodes[0];
+  const groups = topology(parsed);
+  const workspace = groups.find((item) => item.id === "w1");
+  const before = structuredClone(workspace);
+  assert.deepEqual(workspaceDirectories(workspace), ["C:\\AgentOnly", "C:\\Shared", "C:\\Unassigned"]);
+  assert.deepEqual(workspace, before, "directory aggregation must not mutate inventory or invent a workspace path");
+  assert.equal(workspace.entity.directory, "");
+  assert.deepEqual(workspaceDirectories(groups.find((item) => item.id === "w2")), ["C:\\OtherWorkspace"]);
+  assert.deepEqual(workspaceDirectories(groups.find((item) => item.id === "missing-ws")), ["C:\\MissingWorkspace"]);
+  assert.deepEqual(workspaceDirectories(groups.find((item) => item.id === "empty-workspace")), []);
+  for (const query of ["C:\\AgentOnly", "C:\\Shared", "C:\\Unassigned"]) {
+    assert.deepEqual(projectWorkspaces([parsed], query).map(({ workspace }) => workspace.id), ["w1"]);
+  }
+});
+
+test("workspace directory aggregation cannot cross sessions or nodes reusing workspace IDs and labels", () => {
+  const value = multiSessionNode();
+  for (const [index, session] of value.sessions.entries()) {
+    session.herdr = namedNode().herdr;
+    session.herdr.workspaces[0].directory = "";
+    session.herdr.agents[0].directory = "";
+    session.herdr.panes[0].directory = `C:\\Session${index}`;
+  }
+  const other = namedNode("other-node");
+  other.herdr.workspaces[0].directory = "";
+  other.herdr.agents[0].directory = "";
+  other.herdr.panes[0].directory = "C:\\OtherNode";
+  const workspaces = projectWorkspaces(snapshot([value, other]).nodes);
+  assert.deepEqual(workspaces.map(({ workspace }) => workspaceDirectories(workspace)),
+    [["C:\\Session0"], ["C:\\Session1"], ["C:\\OtherNode"]]);
+});
+
+test("metadata lookup and inherited search never borrow across nodes or sessions with duplicate names and IDs", () => {
+  const first = multiSessionNode();
+  first.sessions[0].herdr = namedNode().herdr;
+  first.sessions[1].herdr = namedNode().herdr;
+  first.sessions[0].herdr.workspaces[0].directory = "C:\\OnlySessionA";
+  first.sessions[1].herdr.workspaces = [];
+  first.sessions[1].herdr.tabs = [];
+  for (const session of first.sessions) session.herdr.agents[0].directory = "";
+  const second = namedNode("node-2");
+  second.herdr.workspaces[0].directory = "C:\\OnlyNode2";
+  second.herdr.agents[0].directory = "";
+  const nodes = snapshot([first, second]).nodes;
+  const rows = projectAgents(nodes);
+  assert.deepEqual(rows.map(({ node, agent }) => entityDirectory(node, agent)), [
+    { directory: "C:\\OnlySessionA", source: "workspace" },
+    { directory: "", source: "unknown" },
+    { directory: "C:\\OnlyNode2", source: "workspace" },
+  ]);
+  assert.equal(entityTab(rows[1].node, rows[1].agent), null);
+  assert.deepEqual(projectAgents(nodes, "C:\\OnlySessionA").map(({ node }) => node.session_name), ["dev-a"]);
+  assert.deepEqual(projectAgents(nodes, "C:\\OnlyNode2").map(({ node }) => node.instance_id), ["node-2"]);
+  assert.equal(projectAgents(nodes, "Review tab").length, 2);
+  assert.equal(projectAgents(nodes, "Coding agent").length, 3, "duplicate labels do not merge agents");
+});
+
+test("duplicate configured names and renames preserve ID-based topology, order, and pane associations", () => {
+  const value = namedNode();
+  for (const kind of ["workspaces", "tabs", "panes", "agents"]) {
+    const original = value.herdr[kind][0];
+    value.herdr[kind].push({ ...original, id: kind === "workspaces" ? "w2" : kind === "tabs" ? "w2:t1" : "w2:p1",
+      workspace_id: "w2", tab_id: "w2:t1" });
+  }
+  const before = snapshot([value]).nodes;
+  const structure = (nodes) => projectAgents(nodes).map(({ node, agent, pane }) =>
+    [node.instance_id, node.session_name, node.session_incarnation, agent.workspace_id, agent.tab_id, agent.id, pane.id]);
+  for (const kind of ["workspaces", "tabs", "panes", "agents"]) value.herdr[kind][0].display_name = "Renamed";
+  const after = snapshot([value]).nodes;
+  assert.deepEqual(structure(after), structure(before));
+  assert.deepEqual(topology(after[0]).map((ws) => [ws.id, ws.tabs[0].id, ws.tabs[0].paneGroups[0].id]),
+    [["w1", "w1:t1", "w1:p1"], ["w2", "w2:t1", "w2:p1"]]);
+  assert.equal(projectAgents(after, "Coding agent")[0].agent.workspace_id, "w2");
+  assert.equal(projectAgents(after, "Renamed")[0].agent.workspace_id, "w1");
+  assert.equal(projectAgents(after).length, 2);
+});
 
 test("named sessions isolate reused pane IDs without requiring a ready default socket", () => {
   const value = multiSessionNode();
@@ -507,6 +785,176 @@ test("poller recovers from failure; pausing does not interrupt manual refresh", 
   assert.equal(loads, 3);
 });
 
+async function renderHarness() {
+  class Element {
+    constructor(tagName) {
+      this.tagName = tagName.toUpperCase();
+      this.children = [];
+      this.dataset = {};
+      this.className = "";
+    }
+    append(...children) { this.children.push(...children); }
+    set textContent(value) { this.children = [{ textContent: String(value) }]; }
+    get textContent() { return this.children.map((child) => child.textContent).join(""); }
+  }
+  const app = await readFile(new URL("./app.js", import.meta.url), "utf8");
+  const context = vm.createContext({ ...model, document: {
+    createElement: (tag) => new Element(tag),
+    createTextNode: (textContent) => ({ textContent }),
+  } });
+  vm.runInContext(app.slice(app.indexOf("const $"), app.indexOf("const poller =")), context);
+  return vm.runInContext("({ agentRow, workspaceCard, nodeCard, setState(value) { state = value; } })", context);
+}
+const descendants = (element) => [element, ...(element.children ?? []).flatMap(descendants)];
+const tableCell = (row, label) => row.children.find((cell) => cell.dataset.label === label);
+
+test("browser rows and topology render names first, secondary IDs, literal Unicode, and explicit directory sources", async () => {
+  const ui = await renderHarness();
+  const value = namedNode();
+  const literal = "\u958b\u767a \ud83d\ude80 <img src=x onerror=alert(1)>";
+  value.herdr.agents[0].display_name = literal;
+  value.herdr.agents[0].directory = "";
+  const state = success([value]);
+  ui.setState(state);
+  const row = ui.agentRow(projectAgents(state.snapshot.nodes)[0], now);
+  const agentIdentity = row.children[0].children[0].children[0];
+  assert.equal(agentIdentity.children[0].textContent, literal);
+  assert.equal(agentIdentity.children[1].textContent, "ID: w1:p1");
+  assert.equal(tableCell(row, "Directory").textContent, "Workspace directory (fallback)C:\\Repos\\workspaces\\project");
+  assert.equal(tableCell(row, "Directory").children[0].dataset.directorySource, "workspace");
+  for (const label of ["Build machine", "Workspace Atlas", "Review tab", "Shell pane"]) assert.ok(row.textContent.includes(label));
+  assert.equal(row.children.length, 12);
+  const card = ui.workspaceCard(projectWorkspaces(state.snapshot.nodes)[0], now);
+  for (const label of ["Workspace Atlas", "Review tab", "Shell pane", literal, "ID: w1", "ID: w1:t1", "ID: w1:p1",
+    "Reported directory", "Workspace directory (fallback)", "C:\\Repos\\panes\\project"]) {
+    assert.ok(card.textContent.includes(label), label);
+  }
+  const nodeCard = ui.nodeCard(state.snapshot.nodes[0], now);
+  assert.ok(nodeCard.textContent.includes("Build machineID: node-1"));
+  const names = descendants(card).filter((item) => item.className === "entity-name");
+  assert.ok(names.some((item) => item.tagName === "BDI" && item.textContent === literal));
+  assert.ok(descendants(card).every((item) => item.tagName !== "IMG"));
+  assert.ok(descendants(card).filter((item) => item.className === "directory-path").every((item) => item.tagName === "BDI"));
+  const keys = (element) => descendants(element).filter((item) => item.dataset?.key).map((item) => item.dataset.key);
+  value.hostname = "Renamed node";
+  for (const kind of ["workspaces", "tabs", "panes", "agents"]) value.herdr[kind][0].display_name = "Renamed";
+  const renamed = success([value]);
+  ui.setState(renamed);
+  assert.deepEqual(keys(ui.agentRow(projectAgents(renamed.snapshot.nodes)[0], now)), keys(row));
+  assert.deepEqual(keys(ui.workspaceCard(projectWorkspaces(renamed.snapshot.nodes)[0], now)), keys(card));
+  assert.deepEqual(keys(ui.nodeCard(renamed.snapshot.nodes[0], now)), keys(nodeCard));
+});
+
+test("browser orphan references and absent directories stay explicit without fabricated names or cwd", async () => {
+  const ui = await renderHarness();
+  const value = namedNode();
+  value.herdr.workspaces = [];
+  value.herdr.tabs = [];
+  value.herdr.panes = [];
+  value.herdr.agents[0].display_name = "";
+  value.herdr.agents[0].directory = "";
+  const state = success([value]);
+  ui.setState(state);
+  const row = ui.agentRow(projectAgents(state.snapshot.nodes)[0], now);
+  assert.equal(row.children[0].children[0].children[0].textContent, "w1:p1");
+  assert.equal(tableCell(row, "Directory").textContent, "Directory not reported");
+  for (const kind of ["workspace", "tab", "pane"]) assert.ok(row.textContent.includes(`Unresolved ${kind}`));
+  const card = ui.workspaceCard(projectWorkspaces(state.snapshot.nodes)[0], now);
+  assert.ok(card.textContent.includes("Unresolved workspace reference"));
+  assert.ok(card.textContent.includes("Unresolved tab reference"));
+  assert.ok(card.textContent.includes("Unresolved pane reference"));
+  assert.ok(card.textContent.includes("Directory not reported"));
+  assert.ok(!card.textContent.includes("Workspace directory (fallback)"));
+  value.herdr.agents[0].directory = "C:\\ReportedAgent";
+  const reported = success([value]);
+  ui.setState(reported);
+  const reportedRow = ui.agentRow(projectAgents(reported.snapshot.nodes)[0], now);
+  assert.equal(tableCell(reportedRow, "Directory").textContent, "Reported directoryC:\\ReportedAgent");
+  assert.equal(tableCell(reportedRow, "Directory").children[0].dataset.directorySource, "reported");
+});
+
+test("browser agent table and topology use scoped pane labels as fallback while retaining IDs and directory provenance", async () => {
+  const ui = await renderHarness();
+  const value = namedNode();
+  const literal = "\u958b\u767a <img src=x>";
+  value.herdr.panes[0].display_name = literal;
+  value.herdr.agents[0].directory = "";
+  value.herdr.workspaces[0].directory = "";
+  let previousKey;
+  for (const ownName of [undefined, "", "Own name"]) {
+    if (ownName === undefined) delete value.herdr.agents[0].display_name;
+    else value.herdr.agents[0].display_name = ownName;
+    const state = success([value]);
+    ui.setState(state);
+    const row = ui.agentRow(projectAgents(state.snapshot.nodes)[0], now);
+    const label = row.children[0].children[0].children[0];
+    assert.equal(label.children[0].textContent, ownName || literal);
+    assert.equal(label.children[0].className, "entity-name");
+    assert.equal(label.children[1].textContent, "ID: w1:p1");
+    assert.equal(tableCell(row, "Directory").textContent, "Directory not reported", "pane name fallback does not copy its cwd");
+    if (previousKey) assert.equal(row.dataset.key, previousKey);
+    previousKey = row.dataset.key;
+    const card = ui.workspaceCard(projectWorkspaces(state.snapshot.nodes)[0], now);
+    const agent = descendants(card).find((item) => item.dataset?.key &&
+      JSON.parse(item.dataset.key)[0] === "Agent");
+    assert.equal(agent.children[1].children[0].textContent, ownName || literal);
+    assert.equal(agent.children[1].children[1].textContent, "ID: w1:p1");
+    assert.ok(descendants(card).every((item) => item.tagName !== "IMG"));
+  }
+});
+
+test("workspace cards expose contained reported directories outside collapsed tabs without guessing a workspace cwd", async () => {
+  const ui = await renderHarness();
+  const value = containedDirectoryNode();
+  const state = success([value]);
+  ui.setState(state);
+  const groups = projectWorkspaces(state.snapshot.nodes);
+  const card = ui.workspaceCard(groups.find(({ workspace }) => workspace.id === "w1"), now);
+  const summary = card.children[1];
+  assert.equal(summary.className, "workspace-directories");
+  assert.ok(summary.textContent.includes("Directory not reported"));
+  assert.ok(summary.textContent.includes("Reported directories"));
+  assert.ok(summary.textContent.includes("Reported by contained panes and agents; not a workspace directory."));
+  assert.ok(!summary.textContent.includes("Workspace directory (fallback)"));
+  const paths = descendants(summary).filter((item) => item.className === "directory-path");
+  assert.deepEqual(paths.map((item) => item.textContent), ["C:\\AgentOnly", "C:\\Shared", "C:\\Unassigned"]);
+  assert.ok(descendants(summary).every((item) => item.tagName !== "DETAILS"));
+  const orphan = ui.workspaceCard(groups.find(({ workspace }) => workspace.id === "missing-ws"), now);
+  assert.ok(orphan.children[1].textContent.includes("C:\\MissingWorkspace"));
+  const empty = ui.workspaceCard(groups.find(({ workspace }) => workspace.id === "empty-workspace"), now);
+  assert.equal(empty.children[1].textContent, "Directory not reported");
+  value.herdr.workspaces[0].directory = "C:\\ExplicitCheckout";
+  const reported = success([value]);
+  ui.setState(reported);
+  const direct = ui.workspaceCard(projectWorkspaces(reported.snapshot.nodes).find(({ workspace }) => workspace.id === "w1"), now);
+  assert.equal(direct.children[1].textContent, "Reported directoryC:\\ExplicitCheckout");
+  assert.equal(direct.dataset.key, card.dataset.key);
+});
+
+test("unnamed agents prominently show workspace and tab labels and their reported directory beside stable IDs", async () => {
+  const ui = await renderHarness();
+  const value = containedDirectoryNode();
+  const state = success([value]);
+  ui.setState(state);
+  const row = ui.agentRow(projectAgents(state.snapshot.nodes).find(({ agent }) => agent.id === "w1:p1"), now);
+  assert.deepEqual(row.children.slice(0, 4).map((cell) => cell.dataset.label), ["Agent / status", "Workspace", "Tab", "Directory"]);
+  assert.equal(row.children[0].children[0].children[0].textContent, "w1:p1");
+  assert.equal(row.children[1].children[0].children[0].children[0].textContent, "Workspace Atlas");
+  assert.equal(row.children[2].children[0].children[0].children[0].textContent, "Review tab");
+  assert.equal(row.children[3].textContent, "Reported directoryC:\\Shared");
+  assert.equal(row.children[3].children[0].dataset.directorySource, "reported");
+  const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  assert.deepEqual([...html.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((match) => match[1]),
+    row.children.map((cell) => cell.dataset.label));
+  value.herdr.agents[0].display_name = "Configured agent";
+  value.herdr.panes[0].display_name = "Configured pane";
+  const named = success([value]);
+  ui.setState(named);
+  const namedRow = ui.agentRow(projectAgents(named.snapshot.nodes).find(({ agent }) => agent.id === "w1:p1"), now);
+  assert.equal(namedRow.children[0].children[0].children[0].children[0].textContent, "Configured agent");
+  assert.equal(namedRow.dataset.key, row.dataset.key);
+});
+
 test("static assets have no inline execution, styles, HTML injection, or external dependencies", async () => {
   const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.js", import.meta.url), "utf8");
@@ -518,4 +966,7 @@ test("static assets have no inline execution, styles, HTML injection, or externa
   assert.match(html, /aria-live="polite"/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /max-width: 600px/);
+  assert.match(css, /\.directory-path\s*\{[^}]*overflow-wrap: anywhere/);
+  assert.match(html, /Search names, directories, or IDs/);
+  assert.match(html, /<th scope="col">Directory<\/th>/);
 });

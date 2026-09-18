@@ -212,6 +212,11 @@ func parseAgentInfo(raw json.RawMessage) (*pb.AgentView, error) {
 	}
 	// An absent/null provider is not sufficient authority for input delivery.
 	view := &pb.AgentView{Target: &pb.AgentTarget{}, Provider: "unknown"}
+	var err error
+	view.DisplayName, view.Directory, err = displayMetadata(info, "agents")
+	if err != nil {
+		return nil, ErrAgentUnavailable
+	}
 	var focused bool
 	for _, field := range []struct {
 		key string

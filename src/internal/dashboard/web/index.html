@@ -47,7 +47,7 @@
           <button type="button" id="view-nodes" data-view="nodes" aria-pressed="false">Nodes</button>
         </div>
         <div class="filters">
-          <label class="search-field">Search identifiers<input id="search-input" type="search" placeholder="Node, session, project, provider, workspace…" autocomplete="off" spellcheck="false"></label>
+          <label class="search-field">Search names, directories, or IDs<input id="search-input" type="search" placeholder="Agent, workspace, tab, node, directory…" autocomplete="off" spellcheck="false"></label>
           <label>Session<input id="session-filter" type="search" placeholder="All sessions" autocomplete="off" spellcheck="false"></label>
           <label>Project<input id="project-filter" type="search" placeholder="All projects" autocomplete="off" spellcheck="false"></label>
           <label>Provider<input id="provider-filter" type="search" placeholder="All providers" autocomplete="off" spellcheck="false"></label>
@@ -71,10 +71,10 @@
       <p id="view-description" class="view-description"></p>
       <div id="empty-state" class="empty-state" hidden><h3 id="empty-title"></h3><p id="empty-description"></p></div>
       <div id="agents-view" class="view-panel">
-        <div class="table-scroll" role="region" aria-label="Agent inventory, scroll horizontally for all identifiers" tabindex="0">
+        <div class="table-scroll" role="region" aria-label="Agent inventory, scroll horizontally for names, directories, and identifiers" tabindex="0">
           <table>
-            <caption class="sr-only">Agents, session-qualified identifiers, project, provider, readiness, focus, and snapshot freshness</caption>
-            <thead><tr><th scope="col">Agent (pane ID) / status</th><th scope="col">Node</th><th scope="col">Session</th><th scope="col">Project</th><th scope="col">Provider</th><th scope="col">Readiness</th><th scope="col">Workspace</th><th scope="col">Tab</th><th scope="col">Pane</th><th scope="col">Focus</th><th scope="col">Data freshness</th></tr></thead>
+            <caption class="sr-only">Agent, workspace and tab names, reported or workspace fallback directories, session-qualified identifiers, project, provider, readiness, focus, and snapshot freshness</caption>
+            <thead><tr><th scope="col">Agent / status</th><th scope="col">Workspace</th><th scope="col">Tab</th><th scope="col">Directory</th><th scope="col">Node</th><th scope="col">Session</th><th scope="col">Project</th><th scope="col">Provider</th><th scope="col">Readiness</th><th scope="col">Pane</th><th scope="col">Focus</th><th scope="col">Data freshness</th></tr></thead>
             <tbody id="agents-body"></tbody>
           </table>
         </div>
@@ -82,7 +82,7 @@
       <div id="workspaces-view" class="view-panel" hidden><div id="workspace-list" class="card-list"></div></div>
       <div id="nodes-view" class="view-panel" hidden><div id="node-list" class="node-grid"></div></div>
     </section>
-    <footer><strong>Observe, never control.</strong> This dashboard cannot change remote work. Only operational identifiers, provider, readiness and status are shown; paths, prompts and terminal output are excluded. Pane IDs are scoped by node and Herdr session incarnation; missing panes are labeled unresolved. An observed done/idle state is not proof of task success.</footer>
+    <footer><strong>Observe, never control.</strong> This dashboard cannot change remote work. Configured names and reported directories are shown alongside operational IDs, provider, readiness and status; prompts and terminal output are excluded. Unnamed agents use their scoped pane label when available. A workspace directory fallback is context, not a reported agent working directory. Pane IDs are scoped by node and Herdr session incarnation; missing references are labeled unresolved. An observed done/idle state is not proof of task success.</footer>
     <noscript><p class="noscript">JavaScript is required to fetch mesh status. This page does not contain a live snapshot.</p></noscript>
   </main>
 </body>

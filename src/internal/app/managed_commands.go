@@ -118,12 +118,13 @@ func parseManaged(args []string, streams IO) (managedArgs, error) {
 	flags.SetOutput(streams.Err)
 	flags.BoolVar(&a.json, "json", false, "write JSON")
 	flags.DurationVar(&a.timeout, "timeout", 2*time.Minute, "bounded operation/follow budget; cancellation never relaunches")
-	flags.StringVar(&a.node, "node", "", "unambiguous logical node name or exact node ID")
+	flags.StringVar(&a.node, "node", "", "mesh node label set by init/join --name (see herdr-mesh nodes); exact node ID also accepted")
 	flags.StringVar(&a.project, "project", "", "registered project name")
 	flags.StringVar(&a.path, "path", "", "existing checkout path on the selected node; never creates a worktree")
 	flags.StringVar(&a.session, "session", "main", "named Herdr session")
 	flags.StringVar(&a.provider, "provider", "copilot", "agent provider")
 	flags.StringVar(&a.prompt, "prompt", "", "initial agent prompt")
+	flags.Usage = func() { printManagedUsage(flags, a) }
 	if err := flags.Parse(rest); err != nil {
 		return a, err
 	}
@@ -131,11 +132,11 @@ func parseManaged(args []string, streams IO) (managedArgs, error) {
 		return a, errors.New("unexpected arguments or timeout outside (0,24h]")
 	}
 	if a.root == "project" && (a.verb != "add" || a.name == "" || a.node == "" || a.path == "") {
-		return a, errors.New("usage: project add NAME --node NODE --path EXISTING_CHECKOUT")
+		return a, errors.New("usage: project add <project-name> --node <node-name> --path <existing-checkout>")
 	}
 	if a.root == "agent" {
 		if a.name == "" || a.node == "" || (a.verb != "start" && a.verb != "follow" && a.verb != "stop") {
-			return a, errors.New("usage: agent start|follow|stop NAME --node NODE [--project PROJECT]")
+			return a, errors.New("usage: agent start|follow|stop <agent-name> --node <node-name>; use --help for the selected command")
 		}
 		if !protocol.ValidIdempotencyKey(a.name) || !protocol.SupportedLifecycleProvider(a.provider) ||
 			protocol.ValidateSessionEnsure(&pb.SessionEnsure{Name: a.session}) != nil {
@@ -146,6 +147,55 @@ func parseManaged(args []string, streams IO) (managedArgs, error) {
 		}
 	}
 	return a, nil
+}
+
+func printManagedUsage(flags *flag.FlagSet, a managedArgs) {
+	output := flags.Output()
+	options := []string{"json", "timeout"}
+	switch a.root {
+	case "agent":
+		if a.verb != "start" && a.verb != "follow" && a.verb != "stop" {
+			fmt.Fprintln(output, "Usage: herdr-mesh agent <start|follow|stop> <agent-name> --node <node-name>")
+		} else {
+			fmt.Fprintf(output, "Usage: herdr-mesh agent %s <agent-name> --node <node-name>", a.verb)
+			if a.verb == "start" {
+				fmt.Fprint(output, " --project <project-name> --prompt <task>")
+			}
+			fmt.Fprintln(output, " [options]")
+		}
+		fmt.Fprintln(output, "\n<agent-name> is the name chosen with agent start, not a workspace, tab or Herdr session.")
+		fmt.Fprintln(output, "Follow/stop use that original mesh name; renaming a TUI label does not change it.")
+		fmt.Fprintln(output, "Agents started directly in the TUI do not automatically have a mesh control name.")
+		fmt.Fprintln(output, "<node-name> is the mesh label assigned by init/join --name, not the Windows hostname.")
+		options = append(options, "node", "session")
+		switch a.verb {
+		case "start":
+			fmt.Fprintln(output, "\nExample: herdr-mesh agent start smoke --node laptop --project demo --prompt \"Say hello\"")
+			options = append(options, "project", "prompt", "provider", "path")
+		case "follow":
+			fmt.Fprintln(output, "\nExample: herdr-mesh agent follow smoke --node laptop")
+			fmt.Fprintln(output, "Canceling follow stops watching, not the agent.")
+		case "stop":
+			fmt.Fprintln(output, "\nExample: herdr-mesh agent stop smoke --node laptop")
+			fmt.Fprintln(output, "Stops that agent's pane/terminal, not the mesh daemon, session, workspace or other agents.")
+		}
+	case "project":
+		fmt.Fprintln(output, "Usage: herdr-mesh project add <project-name> --node <node-name> --path <existing-checkout> [options]")
+		fmt.Fprintln(output, "\nChoose a central project name. The checkout path is on the selected node.")
+		fmt.Fprintln(output, "Example: herdr-mesh project add demo --node laptop --path C:\\src\\demo")
+		options = append(options, "node", "path")
+	default:
+		fmt.Fprintf(output, "Usage: herdr-mesh %s [options]\n", a.root)
+	}
+	visible := flag.NewFlagSet(flags.Name(), flag.ContinueOnError)
+	visible.SetOutput(output)
+	for _, name := range options {
+		option := flags.Lookup(name)
+		visible.Var(option.Value, option.Name, option.Usage)
+		visible.Lookup(name).DefValue = option.DefValue
+	}
+	fmt.Fprintln(output, "\nOptions:")
+	visible.PrintDefaults()
 }
 
 func managedOptions(client pb.FleetClient, a managedArgs, out io.Writer) control.Options {

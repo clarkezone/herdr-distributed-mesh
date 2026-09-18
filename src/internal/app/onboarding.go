@@ -24,7 +24,7 @@ func runOnboardingWith(ctx context.Context, command string, args []string, strea
 	options := onboard.Options{Coordinator: command == "init", HerdrExecutable: "herdr"}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&options.Name, "name", "", "unique portable name for this computer (required)")
+	flags.StringVar(&options.Name, "name", "", "unique mesh node label, e.g. laptop; used by --node, not the Windows hostname (required)")
 	flags.StringVar(&options.HerdrExecutable, "herdr", "herdr", "existing Herdr executable (default: herdr from PATH)")
 	if options.Coordinator {
 		flags.StringVar(&options.Tailnet, "tailnet", "", "Tailscale tailnet (required); policy API token is prompted once, hidden")

@@ -376,10 +376,10 @@ func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
 	const snapshot = `{
 		"version":"0.7.5-preview","protocol":18,
 		"focused_workspace_id":"ws:1","focused_tab_id":"tab:1","focused_pane_id":"pane:1",
-		"workspaces":[{"workspace_id":"ws:1","focused":true,"agent_status":"working","active_tab_id":"tab:1","label":"PRIVATE","number":1,"pane_count":1,"tab_count":1}],
-		"tabs":[{"tab_id":"tab:1","workspace_id":"ws:1","focused":true,"agent_status":"working","label":"PRIVATE","number":1,"pane_count":1}],
-		"panes":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"copilot","agent_session":{"kind":"path","value":"PRIVATE","agent":"copilot","source":"fixture"},"cwd":"PRIVATE","revision":1,"scroll":{},"terminal_id":"terminal:1","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
-		"agents":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"copilot","agent_session":{"kind":"path","value":"PRIVATE","agent":"copilot","source":"fixture"},"cwd":"PRIVATE","revision":1,"state_change_seq":1,"terminal_id":"terminal:1","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
+		"workspaces":[{"workspace_id":"ws:1","focused":true,"agent_status":"working","active_tab_id":"tab:1","label":"Demo","number":1,"pane_count":1,"tab_count":1}],
+		"tabs":[{"tab_id":"tab:1","workspace_id":"ws:1","focused":true,"agent_status":"working","label":"Tests","number":1,"pane_count":1}],
+		"panes":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"copilot","agent_session":{"kind":"path","value":"PRIVATE","agent":"copilot","source":"fixture"},"cwd":"/src/demo","revision":1,"scroll":{},"terminal_id":"terminal:1","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
+		"agents":[{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"working","agent":"copilot","agent_session":{"kind":"path","value":"PRIVATE","agent":"copilot","source":"fixture"},"cwd":"/src/demo","revision":1,"state_change_seq":1,"terminal_id":"terminal:1","terminal_title":"PRIVATE","terminal_title_stripped":"PRIVATE"}],
 		"layouts":[{"workspace_id":"ws:1","tab_id":"tab:1","focused_pane_id":"pane:1","area":{},"panes":[],"splits":[],"zoomed":false}]
 	}`
 	steps := []step{
@@ -423,6 +423,10 @@ func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
 		wire, err := proto.Marshal(state)
 		if err != nil || strings.Contains(string(wire), "PRIVATE") {
 			t.Error("installed-shape fixture failed redaction")
+		}
+		if state.Workspaces[0].DisplayName != "Demo" || state.Tabs[0].DisplayName != "Tests" ||
+			state.Panes[0].Directory != "/src/demo" || state.Agents[0].Directory != "/src/demo" {
+			t.Error("installed-shape configured labels and directories were lost")
 		}
 		if calls == 2 {
 			return stopEmission

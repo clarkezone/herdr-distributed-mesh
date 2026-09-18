@@ -20,7 +20,7 @@ func TestSnapshotRedactionAllowlist(t *testing.T) {
 		"focused_workspace_id":"workspace:1","focused_tab_id":"tab-1","focused_pane_id":null,
 		"title":"PRIVATE","token":"PRIVATE",
 		"workspaces":[{"workspace_id":"workspace:1","focused":true,"agent_status":"idle","title":"PRIVATE","cwd":"PRIVATE","metadata":{"token":"PRIVATE"}}],
-		"tabs":[{"tab_id":"tab-1","workspace_id":"workspace:1","focused":false,"agent_status":"blocked","label":"PRIVATE"}],
+		"tabs":[{"tab_id":"tab-1","workspace_id":"workspace:1","focused":false,"agent_status":"blocked","label":"Build tools"}],
 		"panes":[{"pane_id":"pane_1","workspace_id":"workspace:1","tab_id":"tab-1","focused":true,"agent_status":"done","terminal_text":"PRIVATE"}],
 		"agents":[{"pane_id":"pane_1","workspace_id":"workspace:1","tab_id":"tab-1","focused":false,"agent_status":"PRIVATE_NEW_ENUM","token":"PRIVATE"}],
 		"layouts":[{"workspace_id":"workspace:1","tree":{"secret":"PRIVATE"}}]
@@ -32,7 +32,7 @@ func TestSnapshotRedactionAllowlist(t *testing.T) {
 	want := &agentflowv1.HerdrState{
 		Status: "ready", Version: "0.7.5-preview", Protocol: 18,
 		Workspaces: []*agentflowv1.HerdrEntity{{Id: "workspace:1", Focused: true, AgentStatus: "idle"}},
-		Tabs:       []*agentflowv1.HerdrEntity{{Id: "tab-1", WorkspaceId: "workspace:1", AgentStatus: "blocked"}},
+		Tabs:       []*agentflowv1.HerdrEntity{{Id: "tab-1", WorkspaceId: "workspace:1", AgentStatus: "blocked", DisplayName: "Build tools"}},
 		Panes:      []*agentflowv1.HerdrEntity{{Id: "pane_1", WorkspaceId: "workspace:1", TabId: "tab-1", Focused: true, AgentStatus: "done"}},
 		Agents:     []*agentflowv1.HerdrEntity{{Id: "pane_1", WorkspaceId: "workspace:1", TabId: "tab-1", AgentStatus: "unknown"}},
 	}

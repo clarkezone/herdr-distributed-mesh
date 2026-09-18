@@ -9,7 +9,6 @@ import (
 
 func TestDashboardRejectsUnsafeConfiguration(t *testing.T) {
 	for _, args := range [][]string{
-		{"dashboard"},
 		{"dashboard", "-server", "server:50052", "-listen", "0.0.0.0:8787"},
 		{"dashboard", "-server", "server:50052", "-listen", "localhost:8787"},
 		{"dashboard", "-server", "server:50052", "unexpected"},
@@ -17,6 +16,14 @@ func TestDashboardRejectsUnsafeConfiguration(t *testing.T) {
 		if err := Run(context.Background(), args, IO{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}); err == nil {
 			t.Fatalf("accepted invalid configuration: %v", args)
 		}
+	}
+}
+
+func TestDashboardRequiresManagedConfigurationWithoutServer(t *testing.T) {
+	isolatedManagedConfig(t)
+	err := Run(context.Background(), []string{"dashboard"}, IO{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), "run init or join first") {
+		t.Fatalf("expected missing managed configuration: %v", err)
 	}
 }
 
