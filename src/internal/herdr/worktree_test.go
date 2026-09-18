@@ -169,7 +169,7 @@ func worktreeDial(t *testing.T, f worktreeFixture, steps ...step) dialFunc {
 			defer peer.Close()
 			peer.SetDeadline(time.Now().Add(15 * time.Second))
 			var request testRequest
-			if err := json.NewDecoder(peer).Decode(&request); err != nil {
+			if err := readTestFrame(peer, &request); err != nil {
 				t.Errorf("decode request: %v", err)
 				return
 			}

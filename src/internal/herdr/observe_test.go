@@ -94,7 +94,7 @@ func (s *pipeScript) dial(ctx context.Context, address string) (net.Conn, error)
 		defer peer.Close()
 		peer.SetDeadline(time.Now().Add(5 * time.Second))
 		var raw object
-		if err := json.NewDecoder(peer).Decode(&raw); err != nil {
+		if err := readTestFrame(peer, &raw); err != nil {
 			s.t.Errorf("reading test request: %v", err)
 			return
 		}

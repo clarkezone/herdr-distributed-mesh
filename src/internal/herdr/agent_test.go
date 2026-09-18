@@ -142,7 +142,7 @@ func agentDial(t *testing.T, steps ...step) dialFunc {
 			defer peer.Close()
 			peer.SetDeadline(time.Now().Add(5 * time.Second))
 			var request testRequest
-			if err := json.NewDecoder(peer).Decode(&request); err != nil {
+			if err := readTestFrame(peer, &request); err != nil {
 				t.Errorf("request decode failed: %v", err)
 				return
 			}

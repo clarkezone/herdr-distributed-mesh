@@ -134,7 +134,7 @@ func workspaceDial(t *testing.T, binding projects.Binding, steps ...step) dialFu
 			defer peer.Close()
 			peer.SetDeadline(time.Now().Add(5 * time.Second))
 			var request testRequest
-			if err := json.NewDecoder(peer).Decode(&request); err != nil {
+			if err := readTestFrame(peer, &request); err != nil {
 				t.Errorf("read request: %v", err)
 				return
 			}
