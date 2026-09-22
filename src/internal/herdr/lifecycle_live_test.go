@@ -28,7 +28,7 @@ import (
 //	$env:HERDR_MESH_LIFECYCLE_LIVE='1'
 //	go test ./src/internal/herdr -run '^TestLiveAgentLifecycle$' -count=1 -v -timeout=5m
 //
-// Requires native protocol-18 Herdr, Git and preauthenticated Copilot. Never
+// Requires a supported native Herdr, Git and preauthenticated Copilot. Never
 // installs, authenticates, attaches a frontend, or retries a mutation. A random
 // named session and scratch Git checkout isolate all effects. The private,
 // fsynced stage journal is removed with the test's temporary directory.

@@ -24,7 +24,7 @@ func TestGeneratedSessionJSONMatchesDashboardModel(t *testing.T) {
 	stamp := timestamppb.New(now)
 	session := func(name, incarnation string, received *timestamppb.Timestamp) *pb.SessionView {
 		return &pb.SessionView{Name: name, Incarnation: incarnation, Status: "ready", HerdrReceivedAt: received,
-			Herdr: &pb.HerdrState{Status: "ready", Version: "0.9.0", Protocol: 18, Sequence: 1, ObservedAt: stamp,
+			Herdr: &pb.HerdrState{Status: "ready", Version: "0.9.1", Protocol: 22, Sequence: 1, ObservedAt: stamp,
 				Workspaces: []*pb.HerdrEntity{{Id: "w1", AgentStatus: "working", DisplayName: "API project", Directory: `C:\src\demo`}},
 				Tabs:       []*pb.HerdrEntity{{Id: "t1", WorkspaceId: "w1", AgentStatus: "working", DisplayName: "Tests"}},
 				Panes:      []*pb.HerdrEntity{{Id: "p1", WorkspaceId: "w1", TabId: "t1", AgentStatus: "working", DisplayName: "Shell"}},
@@ -34,7 +34,9 @@ func TestGeneratedSessionJSONMatchesDashboardModel(t *testing.T) {
 		Connected: true, LastSeen: stamp, Stale: true, Herdr: &pb.HerdrState{Status: "unavailable", ErrorCode: "connection_failed"},
 		SessionsReady: true, SessionsReceivedAt: stamp,
 		Sessions: []*pb.SessionView{session("first", strings.Repeat("a", 64), stamp), session("second", strings.Repeat("b", 64), nil)},
-	}}}
+	}, {InstanceId: "node-unavailable", TailscaleStableId: "peer-unavailable", Connected: true, LastSeen: stamp,
+		Herdr: &pb.HerdrState{Status: "disabled"}, SessionsReady: true, SessionsReceivedAt: stamp,
+		SessionsErrorCode: "session_unavailable"}}}
 	data, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(list)
 	if err != nil {
 		t.Fatal(err)
@@ -52,12 +54,13 @@ const now = Number(process.argv[2]);
 const snapshot = model.parseSnapshot(JSON.parse(readFileSync(0, "utf8")));
 const state = model.acceptSnapshot(model.initialState(), snapshot, now);
 const rows = model.projectAgents(snapshot.nodes);
-assert.equal(snapshot.nodes.length, 1);
+assert.equal(snapshot.nodes.length, 2);
 assert.equal(rows.length, 2);
 assert.deepEqual(rows.map(row => row.node.session_name), ["first", "second"]);
 assert.equal(rows[0].agent.display_name, "Reviewer");
 assert.equal(rows[0].agent.directory, "C:\\src\\demo\\tests");
 assert.equal(rows[0].node.hostname, "laptop");
+assert.equal(rows[0].node.herdr.protocol, 22);
 assert.equal(model.projectAgents(snapshot.nodes, "API project").length, 2);
 assert.equal(model.projectAgents(snapshot.nodes, "C:\\src\\demo").length, 2);
 assert.equal(model.summary(state, now).live.workspaces, 1);
@@ -65,6 +68,11 @@ assert.equal(model.summary(state, now).known.workspaces, 2);
 const missing = model.sessionContexts(snapshot.nodes[0]).find(row => row.session_name === "second");
 assert.equal(missing.herdr_received_at, null);
 assert.equal(model.nodeFreshness(missing, state, now).live, false);
+const unavailable = snapshot.nodes.find(node => node.instance_id === "node-unavailable");
+assert.equal(unavailable.sessions_error_code, "session_unavailable");
+assert.equal(model.nodeFreshness(unavailable, state, now).reason, "Not live · Herdr session discovery failed");
+assert.deepEqual(model.sessionContexts(unavailable), []);
+assert.equal(model.projectNodes(snapshot.nodes).length, 2);
 `
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrcompat"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 )
 
@@ -55,7 +56,7 @@ func ensureWorkspace(ctx context.Context, config Config, binding projects.Bindin
 		return nil, ErrWorkspaceUnavailable
 	}
 	_, protocol, err := versionProtocol(pong)
-	if err != nil || protocol != supportedProtocol || ctx.Err() != nil {
+	if err != nil || !herdrcompat.SupportsProtocol(int64(protocol)) || ctx.Err() != nil {
 		return nil, ErrWorkspaceUnavailable
 	}
 	list, err := o.rpc(ctx, "workspace.list", "workspace_list")

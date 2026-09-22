@@ -496,6 +496,44 @@ test("named sessions isolate reused pane IDs without requiring a ready default s
   assert.equal(projectNodes(state.snapshot.nodes, "dev-b").length, 1);
 });
 
+test("empty managed session inventories expose discovery state instead of a disabled default socket", () => {
+  const cases = [
+    [{ sessions_received_at: null }, "Not live · waiting for Herdr session discovery"],
+    [{}, "Not live · no Herdr sessions reported"],
+    [{ sessions_error_code: "session_unavailable" }, "Not live · Herdr session discovery failed"],
+    [{ sessions_error_code: "unsupported_protocol" }, "Not live · Herdr session discovery failed"],
+    [{ sessions_ready: false }, "Not live · Herdr session manager unavailable"],
+    [{ sessions_received_at: iso(-30_000) }, "Stale · Herdr session discovery over 30s old"],
+    [{ sessions_received_at: iso(30_000) }, "Not live · clock mismatch"],
+  ];
+  for (const [extra, reason] of cases) {
+    const value = multiSessionNode();
+    value.herdr.status = "disabled";
+    Object.assign(value, { sessions: [], sessions_ready: true, sessions_received_at: iso() }, extra);
+    const state = success([value]);
+    const parsed = state.snapshot.nodes[0];
+    assert.deepEqual(nodeFreshness(parsed, state, now), { live: false, reason });
+    assert.deepEqual(sessionContexts(parsed), [], "do not invent a default session");
+    assert.equal(projectNodes(state.snapshot.nodes).length, 1, "keep the failed physical node visible");
+    assert.equal(projectNodes(state.snapshot.nodes, value.instance_id).length, 1);
+    assert.equal(projectNodes(state.snapshot.nodes, "", "working").length, 0);
+    assert.equal(projectNodes(state.snapshot.nodes, "", "all", { session: "default" }).length, 0);
+    assert.equal(summary(state, now).live.workspaces, 0);
+    assert.equal(nodeFreshness(parsed, rejectSnapshot(state, new DashboardError("busy")), now).reason,
+      "Not live · retained snapshot");
+    assert.equal(nodeFreshness({ ...parsed, connected: false }, state, now).reason, "Not live · node disconnected");
+  }
+});
+
+test("transport-only nodes still report disabled Herdr without inventing session discovery", () => {
+  const value = multiSessionNode();
+  value.herdr.status = "disabled";
+  Object.assign(value, { sessions: [], sessions_ready: false, sessions_received_at: null, sessions_error_code: "" });
+  const state = success([value]);
+  assert.equal(nodeFreshness(state.snapshot.nodes[0], state, now).reason, "Not live · Herdr disabled");
+  assert.equal(sessionContexts(state.snapshot.nodes[0]).length, 1);
+});
+
 test("literal default never replaces an unidentified configured endpoint", () => {
   const value = paneAgentNode();
   value.sessions_ready = true;
@@ -568,6 +606,9 @@ test("session parsing rejects duplicate identities, malformed metadata and exces
     (n) => { n.sessions[0].status = "invented"; },
     (n) => { n.sessions[0].incarnation = {}; },
     (n) => { n.sessions_received_at = "yesterday"; },
+    (n) => { n.sessions_error_code = {}; },
+    (n) => { n.sessions_error_code = "error\nprivate output"; },
+    (n) => { n.sessions_error_code = "x".repeat(129); },
     (n) => { n.sessions[0].herdr.agents[0].provider = "<script>"; },
     (n) => { n.sessions[0].herdr.agents[0].interactive_ready = "yes"; },
     (n) => { n.sessions = Array.from({ length: 65 }, (_, i) => ({ ...n.sessions[0], name: `dev-${i}` })); },
@@ -807,6 +848,21 @@ async function renderHarness() {
 }
 const descendants = (element) => [element, ...(element.children ?? []).flatMap(descendants)];
 const tableCell = (row, label) => row.children.find((cell) => cell.dataset.label === label);
+
+test("node cards show managed discovery errors without misleading disabled or protocol-zero metadata", async () => {
+  const ui = await renderHarness();
+  const value = multiSessionNode();
+  value.herdr.status = "disabled";
+  value.sessions = [];
+  value.sessions_error_code = "session_unavailable";
+  const state = success([value]);
+  ui.setState(state);
+  const card = ui.nodeCard(state.snapshot.nodes[0], now);
+  assert.match(card.textContent, /Herdr session discovery failed/);
+  assert.match(card.textContent, /Session discovery errorsession_unavailable/);
+  assert.match(card.textContent, /Session discovery received/);
+  assert.doesNotMatch(card.textContent, /Default Herdr disabled|Configured default|Not supplied \/ 0/);
+});
 
 test("browser rows and topology render names first, secondary IDs, literal Unicode, and explicit directory sources", async () => {
   const ui = await renderHarness();

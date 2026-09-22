@@ -76,7 +76,7 @@ func queryAgent(ctx context.Context, config Config, query *pb.AgentQueryRequest,
 		if err != nil {
 			return nil, agentFailure(ctx, ErrAgentUnavailable)
 		}
-		// Protocol 18 WAIT returns the same agent_info response as GET.
+		// Native WAIT returns the same agent_info response as GET.
 		observed, err := parseAgentInfo(waited["agent"])
 		if err != nil {
 			return nil, agentFailure(ctx, ErrAgentUnavailable)

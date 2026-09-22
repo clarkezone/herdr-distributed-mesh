@@ -167,16 +167,16 @@ func TestSnapshotIDsMustBeUniqueWithinEachGroup(t *testing.T) {
 	}
 }
 
-func TestSnapshotOnlySupportsProtocol18(t *testing.T) {
-	for _, protocol := range []uint32{1, 17, 18, 19, ^uint32(0)} {
+func TestSnapshotOnlySupportsVerifiedProtocols(t *testing.T) {
+	for _, protocol := range []uint32{1, 17, 18, 19, 20, 21, 22, 23, ^uint32(0)} {
 		t.Run(fmt.Sprint(protocol), func(t *testing.T) {
 			var snapshot object
 			json.Unmarshal(snapshotJSON("ws:1"), &snapshot)
 			snapshot["protocol"], _ = json.Marshal(protocol)
 			raw, _ := json.Marshal(snapshot)
 			state, err := sanitizeSnapshot(raw)
-			if protocol == 18 {
-				if err != nil || state == nil || state.Protocol != 18 {
+			if protocol == 18 || protocol == 20 || protocol == 22 {
+				if err != nil || state == nil || state.Protocol != protocol {
 					t.Errorf("supported snapshot rejected: %v", err)
 				}
 			} else if state != nil || err == nil || category(err) != "unsupported_protocol" {

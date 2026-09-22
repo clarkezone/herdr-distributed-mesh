@@ -50,7 +50,7 @@ func (f *fakeRunner) run(ctx context.Context, args ...string) ([]byte, error) {
 		status = "running"
 	}
 	return json.Marshal(map[string]any{"status": status, "running": f.running,
-		"protocol": protocol, "compatible": protocol == 18, "socket": "local-marker", "session": name})
+		"protocol": protocol, "compatible": true, "socket": "local-marker", "session": name})
 }
 
 func (f *fakeRunner) start(args ...string) (<-chan error, error) {
@@ -169,9 +169,10 @@ func TestEnsureDiscoveryFailureNeverStarts(t *testing.T) {
 func TestUnsupportedAndMissingIdentity(t *testing.T) {
 	f := &fakeRunner{running: true, protocol: 19}
 	m := testManager(t, f)
-	if _, err := m.Ensure(context.Background(), "dev-a"); !errors.Is(err, ErrUnsupported) {
-		t.Fatalf("unsupported = %v", err)
+	if session, err := m.Ensure(context.Background(), "dev-a"); !errors.Is(err, ErrUnsupported) || session.Protocol != 19 {
+		t.Fatalf("unsupported protocol must be retained for diagnostics: %+v, %v", session, err)
 	}
+
 	f.protocol = 18
 	m.identity = func(string) (string, error) { return "", errors.New("marker missing") }
 	if _, err := m.Ensure(context.Background(), "dev-a"); !errors.Is(err, ErrIdentity) {
@@ -179,6 +180,27 @@ func TestUnsupportedAndMissingIdentity(t *testing.T) {
 	}
 	if f.starts != 0 {
 		t.Fatal("started over unsupported/unidentified server")
+	}
+}
+
+func TestDiscoveryDiagnosticCategoriesExcludeNativeOutput(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code string
+	}{
+		{ErrUnsupported, "unsupported_protocol"},
+		{ErrIdentity, "incarnation_unavailable"},
+		{ErrInvalidResponse, "invalid_discovery_response"},
+		{ErrCapacity, "session_capacity"},
+		{ErrOutputLimit, "discovery_output_limit"},
+		{ErrUnavailable, "discovery_unavailable"},
+	} {
+		if got := ErrorCode(fmt.Errorf("%w: PRIVATE native output", tc.err)); got != tc.code {
+			t.Errorf("got %q, want %q", got, tc.code)
+		}
+	}
+	if ErrorCode(nil) != "" {
+		t.Fatal("successful discovery should have no error category")
 	}
 }
 

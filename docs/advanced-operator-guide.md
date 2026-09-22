@@ -227,7 +227,7 @@ semantic task completion.
 Lifecycle pinning requires a native session incarnation, normally available
 through a node configured with `-herdr-executable`. Legacy raw Windows pipes
 without incarnation markers retain existing-agent query/control compatibility,
-but cannot support durable lifecycle pinning. Native protocol 18 also lacks an
+but cannot support durable lifecycle pinning. Supported native protocols also lack an
 atomic expected-terminal check-and-mutate operation: the adapter rechecks before
 effects, but a final race with another trusted local client remains.
 

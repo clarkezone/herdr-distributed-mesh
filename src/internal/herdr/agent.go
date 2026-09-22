@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrcompat"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 )
 
@@ -26,7 +27,7 @@ var (
 // acknowledgement means input was delivered, not that a task completed. Any
 // failure after attempting delivery is indeterminate and must not be retried.
 //
-// Protocol 18 has no expected-terminal compare-and-swap: verification cannot
+// Supported native protocols have no expected-terminal CAS: verification cannot
 // atomically prevent replacement by another local client during delivery.
 // Provider session identity is pinned only when specified by the caller.
 // Copilot interrupt delivers two Esc keys in one request. Its acknowledgement
@@ -148,7 +149,7 @@ func agentObserver(ctx context.Context, config Config, dial dialFunc) (*observer
 	if err != nil {
 		return nil, agentFailure(ctx, ErrAgentUnavailable)
 	}
-	if version != supportedProtocol {
+	if !herdrcompat.SupportsProtocol(int64(version)) {
 		return nil, agentFailure(ctx, ErrAgentUnsupported)
 	}
 	return o, nil

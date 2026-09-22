@@ -1,6 +1,6 @@
 import {
   initialState, acceptSnapshot, rejectSnapshot, freshness, nodeFreshness, summary,
-  projectAgents, projectWorkspaces, projectNodes, sessionContexts, entityProject, entityLabel, entityWorkspace,
+  projectAgents, projectWorkspaces, projectNodes, sessionContexts, hasSessionDiscovery, entityProject, entityLabel, entityWorkspace,
   entityTab, entityDirectory, agentDisplayName, workspaceDirectories, countLabel, ageLabel, fetchSnapshot, createPoller,
 } from "/model.mjs";
 
@@ -298,18 +298,27 @@ function nodeCard(node, now) {
   const globallyLive = freshness(state, now) === "live";
   badges.append(badge(`${globallyLive ? "" : "Last known: "}${node.connected ? "connected" : "disconnected"}`,
     globallyLive ? node.connected ? "connected" : "disconnected" : "stale"));
-  badges.append(badge(`Default Herdr ${node.herdr.status}`, globallyLive ? node.herdr.status : "stale"));
+  const discovery = hasSessionDiscovery(node);
+  if (node.herdr.status !== "disabled" || !discovery) {
+    badges.append(badge(`Default Herdr ${node.herdr.status}`, globallyLive ? node.herdr.status : "stale"));
+  }
   header.append(heading, badges);
   const metadata = el("dl", "node-metadata");
   const fields = [
     ["Stable ID", identifier(node.tailscale_stable_id)],
     ["Last seen", age(node.last_seen, now)],
+  ];
+  if (discovery) fields.push(
+    ["Session discovery received", age(node.sessions_received_at, now)],
+    ["Session discovery error", identifier(node.sessions_error_code, "None reported")],
+  );
+  if (node.herdr.status !== "disabled" || !discovery) fields.push(
     ["Snapshot received", age(node.herdr_received_at, now)],
     ["Herdr observed", age(node.herdr.observed_at, now)],
-    ["Version / protocol", identifier(`${node.herdr.version || "Not supplied"} / ${node.herdr.protocol}`)],
+    ["Version / protocol", identifier(`${node.herdr.version || "Not supplied"} / ${node.herdr.protocol || "Not supplied"}`)],
     ["Sequence", identifier(node.herdr.sequence)],
     ["Herdr error code", identifier(node.herdr.error_code, "None reported")],
-  ];
+  );
   for (const [label, value] of fields) {
     const detail = el("dd");
     detail.append(value);

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrcompat"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -45,7 +46,7 @@ type observer struct {
 // are logged and emitted using fixed categories, then retried until cancellation.
 // Ready states exceeding 256 KiB serialized (including sequence and timestamp)
 // are rejected and reported as unavailable, without transmitting their entities.
-// Both ping and every snapshot must report the supported local protocol 18;
+// Both ping and every snapshot must report a verified native protocol;
 // other positive protocols produce unavailable with unsupported_protocol.
 // Invalid configuration returns without dialing. Cancellation returns ctx.Err().
 // emit is called synchronously and must return promptly (or honor ctx itself);
@@ -129,7 +130,7 @@ func (o *observer) session(ctx context.Context, publish func(*agentflowv1.HerdrS
 	if err != nil {
 		return apiError("invalid_response")
 	}
-	if protocol != supportedProtocol {
+	if !herdrcompat.SupportsProtocol(int64(protocol)) {
 		return apiError("unsupported_protocol")
 	}
 

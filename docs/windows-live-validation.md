@@ -36,7 +36,7 @@ key and payload unchanged for an exact retry. Never increment a suffix to bypass
 an unknown outcome.
 
 Install the same release's single executable on `PATH` on both hosts. Herdr
-(native protocol 18), Git, a supported provider such as Copilot, and provider
+(native protocol 18, 20 or 22), Git, a supported provider such as Copilot, and provider
 authentication must already be available to the node account. Use disposable
 checkouts and prepared test accounts/hosts. If their default mesh role state is
 already in use, explicitly select a separate private `-state-dir` and retain it
@@ -280,7 +280,7 @@ This runbook records required procedures, not a claim they have passed.
 
 Raw Windows pipes without native incarnation markers retain legacy query/control
 but cannot lifecycle-pin; the normal `-herdr-executable` path supports native
-session management. Protocol 18 lacks atomic expected-terminal CAS, so a final
+session management. Supported protocols lack atomic expected-terminal CAS, so a final
 race with another trusted local client remains despite immediate checks.
 Provider startup/status and interrupt behavior are provider-specific; readiness
 is not task success. Real other-platform runtime acceptance and signing are

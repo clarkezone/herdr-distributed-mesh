@@ -105,7 +105,7 @@ type StopAgentRequest struct {
 	Handle LifecycleHandle
 }
 
-// SupportedLifecycleProvider is the canonical protocol-18 agent.start allowlist.
+// SupportedLifecycleProvider is the verified native agent.start allowlist.
 // Support is not evidence of installation, authentication, or headless readiness.
 func SupportedLifecycleProvider(provider string) bool {
 	return protocol.SupportedLifecycleProvider(provider)
@@ -113,7 +113,7 @@ func SupportedLifecycleProvider(provider string) bool {
 
 // StartAgent creates one dedicated tab/root pane with focus:false, then asks
 // Herdr to start its canonical provider, then freshly observes interactive
-// readiness within the startup budget. Protocol 18 can acknowledge agent_started
+// readiness within the startup budget. Native APIs can acknowledge agent_started
 // with an unknown provider and launch_pending=true before detection completes.
 // It never reuses an existing pane or cleans up partial artifacts. Native
 // agent.start verifies the interactive shell prompt; pane metadata alone cannot
@@ -123,7 +123,7 @@ func SupportedLifecycleProvider(provider string) bool {
 // CheckSession runs after intent persistence, around refreshed preconditions,
 // and after each effect. No persistence hook separates those fresh checks from
 // mutation IPC. The caller owns the expected session incarnation.
-// Protocol 18 has no expected-terminal CAS. All identity checks have a trusted
+// Supported protocols have no expected-terminal CAS. All identity checks have a trusted
 // local-client race between observation and mutation, including last-pane checks.
 func StartAgent(ctx context.Context, config Config, request StartAgentRequest, hook LifecycleHook) (LifecycleResult, error) {
 	return startAgent(ctx, config, request, hook, dialLocal)

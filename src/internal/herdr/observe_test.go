@@ -369,7 +369,15 @@ func TestUnsupportedProtocolsInvalidateAndRetry(t *testing.T) {
 	}
 }
 
-func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
+func TestVerifiedProtocolsSnakeCaseEventReconciles(t *testing.T) {
+	for _, protocol := range []int{18, 20, 22} {
+		t.Run(fmt.Sprint(protocol), func(t *testing.T) {
+			testNativeSnakeCaseEventReconciles(t, protocol)
+		})
+	}
+}
+
+func testNativeSnakeCaseEventReconciles(t *testing.T, protocol int) {
 	// Synthetic values with the field names/types observed in installed Herdr
 	// 0.7.5-preview. No live session values are retained in this fixture.
 	const event = `{"event":"pane_updated","data":{"type":"pane_updated","pane":{"pane_id":"pane:1","workspace_id":"ws:1","tab_id":"tab:1","focused":true,"agent_status":"blocked","terminal_title":"PRIVATE"}}}`
@@ -384,7 +392,7 @@ func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
 	}`
 	steps := []step{
 		{"ping", func(conn net.Conn, request testRequest) {
-			reply(conn, request, map[string]any{"type": "pong", "version": "0.7.5-preview", "protocol": 18, "capabilities": map[string]any{}})
+			reply(conn, request, map[string]any{"type": "pong", "version": "0.7.5-preview", "protocol": protocol, "capabilities": map[string]any{}})
 			expectClosed(t, conn)
 		}},
 		{"events.subscribe", func(conn net.Conn, request testRequest) {
@@ -397,6 +405,7 @@ func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
 	for _, status := range []string{"working", "done"} {
 		steps = append(steps, step{"session.snapshot", func(conn net.Conn, request testRequest) {
 			raw := strings.ReplaceAll(snapshot, `"agent_status":"working"`, `"agent_status":"`+status+`"`)
+			raw = strings.Replace(raw, `"protocol":18`, fmt.Sprintf(`"protocol":%d`, protocol), 1)
 			reply(conn, request, map[string]any{"type": "session_snapshot", "snapshot": json.RawMessage(raw)})
 			expectClosed(t, conn)
 		}})
@@ -408,6 +417,9 @@ func TestInstalledProtocol18SnakeCaseEventReconciles(t *testing.T) {
 	err := observe(ctx, testConfig(), func(state *agentflowv1.HerdrState) error {
 		calls++
 		checkState(t, state, uint64(calls), "ready")
+		if state.Protocol != uint32(protocol) {
+			t.Errorf("wrong native protocol: %d", state.Protocol)
+		}
 		if state.Status != "ready" {
 			return stopEmission
 		}

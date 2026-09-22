@@ -222,7 +222,13 @@ projection and rejects unknown protobuf fields. This is not a complete layout
 or terminal mirror. Explicit agent queries and typed input commands use separate
 RPCs; terminal text is never included in these fleet observations.
 
-Herdr protocol 18 is the initial supported local contract. The observer waits for
+Herdr native JSON API protocols **18, 20 and 22** are explicitly supported, including
+Herdr **0.8.2** (protocol 20) and **0.9.1** (protocol 22). Discovery, observation and mutation adapters share
+one allowlist; unverified versions, including 19 and 21, remain rejected. Native CLI
+`compatible: true` is necessary for managed session discovery but is not a
+substitute for this adapter check. Mesh protocol 1 is unrelated.
+
+The observer waits for
 subscription acknowledgement before taking its baseline. Events trigger
 coalesced, rate-limited authoritative snapshots; a five-second refresh also
 covers status changes and missed events. There is no global snapshot cursor, so
@@ -232,9 +238,56 @@ not a lossless event log.
 
 The contract is checked against `herdr api schema --json` and the
 [Herdr Socket API documentation](https://herdr.dev/docs/socket-api/).
-Protocol 18 subscription selectors are dotted (`pane.updated`), but streamed
+Supported subscription selectors are dotted (`pane.updated`), but streamed
 event discriminators are snake_case (`pane_updated`). Unsupported Herdr
 protocol versions report `unavailable` until the adapter is updated.
+
+Compatibility was checked against the official
+[protocol-18 preview](https://github.com/herdrdev/herdr/tree/44b3adb125524ea9a55739eee3776f922f2115ad)
+and releases [v0.8.2](https://github.com/herdrdev/herdr/tree/9eb521456ac0d19d3ab3d9d7cea3cca10baa8a4c)
+and [v0.9.1](https://github.com/herdrdev/herdr/tree/065ef9d6a531c49fb8bee7e818ef837065b21ee9)
+source contracts (`src/api/schema`, `src/cli/status.rs`, `src/session.rs`,
+`src/ipc.rs`), plus the official Windows 0.8.2/0.9.1 offline schemas and isolated
+read-only discovery commands. The intervening native protocol bumps affect
+binary terminal transport; this adapter uses the verified JSON API subset.
+Fixtures exercise all three protocols across session discovery, snapshots/events,
+workspace/worktree operations and agent lifecycle/control. This is not a claim
+of live two-machine acceptance on every native release. Keep terminal/session
+identity checks, readiness polling, and no-retry-on-uncertain-mutation behavior:
+none provides expected-terminal compare-and-swap.
+
+Herdr 0.9.1's endpoint generation and `endpoint_compatible` are separate
+client-shell contracts, not a new handshake or compatibility gate for this
+JSON adapter. Subscription history is not replayed; the adapter subscribes
+before taking an authoritative baseline snapshot. Delayed prompt acknowledgements
+still do not establish task completion; cancellation after submission remains
+indeterminate and never triggers a retry. The mesh does not escalate a refused
+pane close to workspace-group close. It also leaves `trust_repository` omitted:
+Git ownership checks remain enforced, with no implicit `safe.directory` override.
+
+### Native discovery diagnostics
+
+If a joined node is connected but Herdr is not live, collect these read-only
+diagnostics on the affected Windows computer. `herdr` here is the installed
+native prerequisite, not another mesh executable:
+
+```powershell
+herdr-mesh version
+Get-Command herdr | Select-Object -ExpandProperty Source
+herdr --version
+herdr session list --json
+herdr status server --json
+Get-Content "$env:APPDATA\herdr-mesh\managed\daemon.log" -Tail 200
+```
+
+For a named session, also use `herdr --session main status server --json`,
+replacing `main` with its actual name. The default session omits `--session`.
+An updated executable is not proof that an already-running Herdr server has
+upgraded: inspect its reported version, protocol and compatibility. Do not
+reset enrollment or destroy state. Remove sign-in URLs, credentials and private
+paths before sharing diagnostics.
+
+### Fleet limits and recovery
 
 Fleet state is capped at 128 nodes, 256 KiB per projected state, 4,096 entities
 per state, and 2 MiB total projected payload. Limits fail explicitly, not by

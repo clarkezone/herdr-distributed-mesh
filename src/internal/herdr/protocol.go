@@ -15,14 +15,14 @@ import (
 	"unicode/utf8"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrcompat"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	supportedProtocol = 18
-	maxFrameBytes     = 2 * 1024 * 1024
-	maxEntities       = 4096
-	maxStateBytes     = 256 * 1024
+	maxFrameBytes = 2 * 1024 * 1024
+	maxEntities   = 4096
+	maxStateBytes = 256 * 1024
 )
 
 type apiError string
@@ -71,7 +71,7 @@ func validateEvent(event object) error {
 		return apiError("invalid_response")
 	}
 	for _, sub := range topologySubscriptions() {
-		// Protocol 18 uses dotted subscription selectors but snake_case
+		// Supported protocols use dotted subscription selectors but snake_case
 		// discriminators in emitted event envelopes.
 		if kind == strings.ReplaceAll(sub.Type, ".", "_") {
 			return nil
@@ -286,7 +286,7 @@ func sanitizeSnapshotWithProjects(raw json.RawMessage, resolver ProjectResolver)
 	if err != nil {
 		return nil, err
 	}
-	if protocol != supportedProtocol {
+	if !herdrcompat.SupportsProtocol(int64(protocol)) {
 		return nil, apiError("unsupported_protocol")
 	}
 	state := &agentflowv1.HerdrState{Status: "ready", Version: version, Protocol: protocol}

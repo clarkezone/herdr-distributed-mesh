@@ -11,13 +11,14 @@ import (
 	"unicode/utf8"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrcompat"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/projects"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
 	"google.golang.org/protobuf/proto"
 )
 
 // CreateWorktree creates only an explicitly authorized new linked worktree via
-// protocol-18 Herdr. Git subprocesses are bounded, read-only pre/postconditions.
+// Herdr's supported JSON API. Git subprocesses are bounded, read-only pre/postconditions.
 // Callers must serialize mutations and journal every attempted create: any
 // unconfirmed effect is indeterminate, never retried, rolled back, or deleted.
 // Filesystem/IPC checks are not atomic against other trusted local processes.
@@ -73,7 +74,7 @@ func createWorktree(ctx context.Context, config Config, binding projects.Binding
 	if err != nil {
 		return nil, ErrWorkspaceUnavailable
 	}
-	if _, version, err := versionProtocol(pong); err != nil || version != supportedProtocol {
+	if _, version, err := versionProtocol(pong); err != nil || !herdrcompat.SupportsProtocol(int64(version)) {
 		return nil, ErrWorkspaceUnavailable
 	}
 	_, _, cleanup, list, err := o.request(ctx, "worktree.list", "worktree_list", struct {
@@ -191,7 +192,7 @@ func optionalWorktreeString(value object, key string, into *string) error {
 }
 
 // The adapter accepts the exact short branch or Git's refs/heads/<branch>
-// spelling in protocol-18 metadata, not suffixes or other ref types.
+// spelling in native metadata, not suffixes or other ref types.
 func worktreeBranchMatches(actual, requested string) bool {
 	return actual == requested || actual == "refs/heads/"+requested
 }

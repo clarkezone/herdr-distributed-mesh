@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"log"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -234,6 +235,7 @@ func (h *commandHandler) observeSessions(ctx context.Context, publish func(*pb.S
 	defer expiryTicker.Stop()
 	var sequence uint64
 	var inventoryError string
+	diagnostics := sessionDiagnostics{logf: log.Printf}
 	emit := func() error {
 		expireSessionSnapshots(views, observed, time.Now())
 		sequence++
@@ -267,6 +269,10 @@ func (h *commandHandler) observeSessions(ctx context.Context, publish func(*pb.S
 				}
 			}
 		case result := <-discovery:
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			diagnostics.update(result.sessions, result.err)
 			inventoryError = ""
 			if result.err != nil || len(result.sessions) > herdrsession.MaxSessions {
 				inventoryError = sessionError(result.err)

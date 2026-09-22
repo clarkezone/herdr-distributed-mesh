@@ -100,7 +100,8 @@ export function parseSnapshot(body) {
           ? session.herdr_received_at : node.sessions_received_at ?? null,
         stale: session.stale ?? node.sessions_ready === false };
     }).sort((a, b) => order(a.name, b.name));
-    return { ...node, hostname: optionalText(node, "hostname", 256, invalid), herdr, sessions };
+    return { ...node, hostname: optionalText(node, "hostname", 256, invalid),
+      sessions_error_code: optionalText(node, "sessions_error_code", 128, invalid), herdr, sessions };
   }).sort((a, b) => order(a.instance_id, b.instance_id));
   return { nodes };
 }
@@ -124,12 +125,19 @@ export function freshness(state, now) {
 }
 
 export function nodeFreshness(node, state, now) {
-  if (!node.session_context && !node.session_name && node.sessions?.length) {
-    const states = sessionContexts(node).map((session) => nodeFreshness(session, state, now));
-    return states.find((value) => value.live) ?? states[0];
-  }
   if (freshness(state, now) !== "live") return { live: false, reason: "Not live · retained snapshot" };
   if (!node.connected) return { live: false, reason: "Not live · node disconnected" };
+  if (!node.session_context && !node.session_name && hasSessionDiscovery(node)) {
+    if (node.sessions_error_code) return { live: false, reason: "Not live · Herdr session discovery failed" };
+    const states = sessionContexts(node).map((session) => nodeFreshness(session, state, now));
+    if (states.length) return states.find((value) => value.live) ?? states[0];
+    if (node.sessions_ready === false) return { live: false, reason: "Not live · Herdr session manager unavailable" };
+    const received = Date.parse(node.sessions_received_at);
+    if (!Number.isFinite(received)) return { live: false, reason: "Not live · waiting for Herdr session discovery" };
+    if (now - received >= STALE_AFTER_MS) return { live: false, reason: "Stale · Herdr session discovery over 30s old" };
+    if (received - now >= STALE_AFTER_MS) return { live: false, reason: "Not live · clock mismatch" };
+    return { live: false, reason: "Not live · no Herdr sessions reported" };
+  }
   if (node.session_status && node.session_status !== "ready") return { live: false, reason: `Not live · session ${node.session_status}` };
   if (node.herdr.status !== "ready") return { live: false, reason: `Not live · Herdr ${node.herdr.status}` };
   if (node.stale) return { live: false, reason: "Stale · reported by server" };
@@ -138,6 +146,10 @@ export function nodeFreshness(node, state, now) {
   if (now - received >= STALE_AFTER_MS) return { live: false, reason: "Stale · snapshot over 30s old" };
   if (received - now >= STALE_AFTER_MS) return { live: false, reason: "Not live · clock mismatch" };
   return { live: true, reason: "Fresh snapshot" };
+}
+
+export function hasSessionDiscovery(node) {
+  return Boolean(node.sessions_ready || node.sessions_received_at || node.sessions_error_code || node.sessions?.length);
 }
 
 // Physical nodes remain unique. These views isolate overlapping entity IDs and
@@ -149,7 +161,7 @@ export function sessionContexts(node) {
     session_incarnation: session.incarnation, session_status: session.status,
     session_error_code: session.error_code, herdr: session.herdr,
     herdr_received_at: session.herdr_received_at, stale: session.stale }));
-  if (node.herdr.status !== "disabled" || sessions.length === 0) {
+  if (node.herdr.status !== "disabled" || !hasSessionDiscovery(node)) {
     contexts.unshift({ ...node, session_context: true, session_name: "", session_label: "Configured default", session_incarnation: "",
       session_status: node.herdr.status === "ready" ? "ready" : "unknown", session_error_code: node.herdr.error_code });
   }
@@ -300,18 +312,21 @@ export function projectWorkspaces(nodes, search = "", status = "all", filters = 
 
 export function projectNodes(nodes, search = "", status = "all", filters = {}) {
   const query = search.trim().toLowerCase();
-  return nodes.filter((node) => sessionContexts(node).some((session) => {
-    if (filters.session?.trim() && session.session_name !== filters.session.trim()) return false;
-    const queryMatch = includes(node.instance_id, query) || includes(node.hostname ?? "", query) ||
-      includes(session.session_label ?? session.session_name ?? "", query) ||
-      ["workspaces", "tabs", "panes", "agents"].some((kind) => session.herdr[kind].some((entity) => entityMatch(session, entity, query)));
-    if (!queryMatch) return false;
-    if (status !== "all" || filters.provider?.trim() || (filters.readiness && filters.readiness !== "all")) {
-      return session.herdr.agents.some((agent) => (status === "all" || agent.agent_status === status) && matchesFilters(session, agent, filters));
-    }
-    return !filters.project?.trim() || session.herdr.workspaces.some((ws) =>
-      matchesFilters(session, { ...ws, workspace_id: ws.id }, filters));
-  }));
+  return nodes.filter((node) => {
+    const contexts = sessionContexts(node);
+    return (contexts.length ? contexts : [node]).some((session) => {
+      if (filters.session?.trim() && session.session_name !== filters.session.trim()) return false;
+      const queryMatch = includes(node.instance_id, query) || includes(node.hostname ?? "", query) ||
+        includes(session.session_label ?? session.session_name ?? "", query) ||
+        ["workspaces", "tabs", "panes", "agents"].some((kind) => session.herdr[kind].some((entity) => entityMatch(session, entity, query)));
+      if (!queryMatch) return false;
+      if (status !== "all" || filters.provider?.trim() || (filters.readiness && filters.readiness !== "all")) {
+        return session.herdr.agents.some((agent) => (status === "all" || agent.agent_status === status) && matchesFilters(session, agent, filters));
+      }
+      return !filters.project?.trim() || session.herdr.workspaces.some((ws) =>
+        matchesFilters(session, { ...ws, workspace_id: ws.id }, filters));
+    });
+  });
 }
 
 export function countLabel(count, singular) {

@@ -14,6 +14,10 @@ On both computers, install the same build of `herdr-mesh.exe`, plus Herdr and Gi
 on PATH. Install and sign in to the provider you want to use; the default is
 Copilot. A Herdr terminal window does not need to be open.
 
+Use a mesh build supporting your installed Herdr's native protocol. This build
+supports protocols **18, 20 and 22**, including **Herdr 0.8.2 and 0.9.1**. Other native protocol
+versions are rejected rather than assumed compatible.
+
 You need a Tailscale account and permission to configure its private network.
 Tailscale calls that network a **tailnet**. Use its name instead of `example.com`
 below. A separate system Tailscale installation is not required for the embedded
@@ -101,6 +105,30 @@ Upgrade the coordinator before nodes: older coordinators reject unknown inventor
 fields. Older nodes shown by a new dashboard keep their ID-only fallback until
 upgraded. Restart the mesh processes to use the new build; restarting only the
 browser cannot add fields an older daemon does not send.
+
+### Connected, but Herdr is not live
+
+**Connected** confirms the mesh connection, not successful Herdr discovery.
+The node card distinguishes waiting for discovery, a discovery failure, no
+reported sessions, and an unsupported session. It shows the discovery error
+separately rather than treating a failed discovery as **Herdr disabled**.
+
+For the read-only native/runtime commands and logs to collect on the affected
+computer, see [Native discovery diagnostics](../README.md#native-discovery-diagnostics).
+These are support diagnostics, not an additional mesh entrypoint or setup step.
+
+The daemon logs discovery failures and session-state changes, including the
+native protocol number, without repeating unchanged failures on every poll.
+`invalid_discovery_response` means the native discovery JSON was not accepted;
+`discovery_unavailable` means discovery could not run successfully.
+`unsupported_protocol` is a native Herdr compatibility problem: mesh protocol
+`1` in registration messages is a different protocol. Native `compatible: true`
+only confirms that Herdr's own CLI understands its server.
+
+Do not destroy mesh or Tailscale state to troubleshoot these errors. Reconnect
+messages alone do not explain a native discovery failure. Before sharing logs,
+remove browser sign-in URLs, credentials, and any private paths you do not want
+to disclose; do not send managed databases or tsnet state.
 
 ## 4. Register an existing project
 

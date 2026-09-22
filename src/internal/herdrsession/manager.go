@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/herdrcompat"
 )
 
 const (
@@ -66,6 +68,7 @@ type Session struct {
 	Status      string `json:"status"`
 	Incarnation string `json:"incarnation,omitempty"`
 	ErrorCode   string `json:"error_code,omitempty"`
+	Protocol    int    `json:"protocol,omitempty"`
 	SocketPath  string `json:"-"`
 }
 
@@ -195,7 +198,8 @@ func (m *Manager) status(ctx context.Context, name string) (Session, error) {
 	if status.Status != "running" || status.Protocol == nil || status.Compatible == nil {
 		return s, ErrInvalidResponse
 	}
-	if *status.Protocol != 18 || !*status.Compatible {
+	s.Protocol = *status.Protocol
+	if !herdrcompat.SupportsProtocol(int64(*status.Protocol)) || !*status.Compatible {
 		s.Status, s.ErrorCode = "unsupported", "unsupported_protocol"
 		return s, ErrUnsupported
 	}
@@ -248,7 +252,7 @@ func (m *Manager) list(ctx context.Context) ([]Session, error) {
 			return nil, ctx.Err()
 		}
 		if err != nil {
-			s.ErrorCode = errorCode(err)
+			s.ErrorCode = ErrorCode(err)
 		}
 		sessions = append(sessions, s)
 	}
@@ -264,7 +268,7 @@ func (m *Manager) list(ctx context.Context) ([]Session, error) {
 			return nil, ctx.Err()
 		}
 		if err != nil {
-			s.ErrorCode = errorCode(err)
+			s.ErrorCode = ErrorCode(err)
 		}
 		sessions = append(sessions, s)
 	}
@@ -272,14 +276,21 @@ func (m *Manager) list(ctx context.Context) ([]Session, error) {
 	return sessions, nil
 }
 
-func errorCode(err error) string {
+// ErrorCode returns a fixed diagnostic category, never native process output.
+func ErrorCode(err error) string {
 	switch {
+	case err == nil:
+		return ""
 	case errors.Is(err, ErrUnsupported):
 		return "unsupported_protocol"
 	case errors.Is(err, ErrIdentity):
 		return "incarnation_unavailable"
 	case errors.Is(err, ErrInvalidResponse):
 		return "invalid_discovery_response"
+	case errors.Is(err, ErrCapacity):
+		return "session_capacity"
+	case errors.Is(err, ErrOutputLimit):
+		return "discovery_output_limit"
 	default:
 		return "discovery_unavailable"
 	}
