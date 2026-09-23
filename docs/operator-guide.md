@@ -38,7 +38,7 @@ Do not store or sync tsnet state to multiple computers: each computer must enrol
 its own identity. A OneDrive copy of the executable is a delivery artifact;
 copy it into a local, non-synced installation directory before running it.
 
-Normal startup accepts parent-directory links, including Herdr's installer-managed
+Normal startup and policy preview/apply accept parent-directory links, including Herdr's installer-managed
 `bin` junction. The state directory itself and its private files must remain
 ordinary directories/files. Destructive cleanup and journal maintenance retain
 stricter path checks; use a physical (non-aliased) state path for those operations.

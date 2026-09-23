@@ -98,6 +98,8 @@ func (e *Error) Error() string {
 		message += "; PowerShell is required (pwsh on PATH, or Windows PowerShell on Windows)"
 	case "prerequisite_version":
 		message += "; PowerShell 7.3 or newer is required on Linux/macOS"
+	case "output_unavailable":
+		message += "; cannot create, lock, or secure the policy output directory; use a writable ordinary directory with private permissions"
 	case "token_missing", "token_kind", "token_rejected":
 		message += "; provide a current tskey-api- access token through the configured environment variable, not an enrollment key"
 	}

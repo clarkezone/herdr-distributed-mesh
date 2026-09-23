@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,8 +21,7 @@ func testOptions(t *testing.T) Options {
 	t.Helper()
 	o := DefaultOptions()
 	o.Tailnet = "example.com"
-	// macOS temp roots can traverse /var -> /private/var. Production deliberately
-	// rejects linked output ancestors, so success fixtures must use physical paths.
+	// Keep the base fixture stable; linked installations have dedicated coverage.
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +208,75 @@ func TestPolicyOnlyApplyFencedToReviewedPolicy(t *testing.T) {
 
 func TestSetupEmbeddedWorkflowWithMockedPowerShellAPI(t *testing.T) {
 	testEmbeddedWorkflow(t, func(path string) string { return path })
+}
+
+func TestSetupPreviewAndApplyThroughLinkedInstallation(t *testing.T) {
+	requirePowerShell(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := filepath.Join(root, "release")
+	if err := os.Mkdir(installation, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "bin")
+	if runtime.GOOS == "windows" {
+		if output, err := exec.Command(os.Getenv("ComSpec"), "/d", "/c", "mklink", "/J", alias, installation).CombinedOutput(); err != nil {
+			t.Fatalf("create installation junction: %v: %s", err, output)
+		}
+	} else if err := os.Symlink(installation, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, policyOnly := range []bool{false, true} {
+		for _, apply := range []bool{false, true} {
+			o := testOptions(t)
+			o.Apply, o.PolicyOnly = apply, policyOnly
+			operation, err := os.MkdirTemp(alias, "policy-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			o.OutputDirectory = filepath.Join(operation, "artifacts")
+			if apply {
+				hash := sha256.Sum256([]byte(`{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`))
+				o.ExpectedPolicySHA256 = hex.EncodeToString(hash[:])
+			}
+			report, err := runWithToken(context.Background(), o, "tskey-api-fake-fixture", mockedSetupHost)
+			if err != nil {
+				t.Fatalf("policyOnly=%v apply=%v: %v", policyOnly, apply, err)
+			}
+			expectedKeys := 0
+			if apply && !policyOnly {
+				expectedKeys = 3 * o.KeysPerRole
+			}
+			if report.Mode != testReport(o).Mode || report.KeysCreated != expectedKeys {
+				t.Fatalf("incorrect report: %+v", report)
+			}
+			entries, err := os.ReadDir(o.OutputDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				data, err := os.ReadFile(filepath.Join(o.OutputDirectory, entry.Name()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(data), "tskey-api-") || (policyOnly && strings.Contains(entry.Name(), "-key")) {
+					t.Fatal("API token persisted or policy-only setup created key artifacts")
+				}
+			}
+			if _, err := os.Stat(report.PolicyBackup); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	o := testOptions(t)
+	o.OutputDirectory = alias
+	_, err = run(context.Background(), o, mockedSetupHost)
+	var setupError *Error
+	if !errors.As(err, &setupError) || setupError.Code != "output_unavailable" {
+		t.Fatalf("linked output directory itself accepted: %v", err)
+	}
 }
 
 func requirePowerShell(t *testing.T) {

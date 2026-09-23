@@ -51,7 +51,7 @@ func TestSetupCreatesPrivateUnixArtifacts(t *testing.T) {
 	}
 }
 
-func TestSetupRejectsLinkedOutputAncestor(t *testing.T) {
+func TestSetupRejectsLinkedOutputDirectory(t *testing.T) {
 	requirePowerShell(t)
 	o := testOptions(t)
 	root := filepath.Dir(o.OutputDirectory)
@@ -59,7 +59,7 @@ func TestSetupRejectsLinkedOutputAncestor(t *testing.T) {
 	if err := os.Symlink(root, link); err != nil {
 		t.Fatal(err)
 	}
-	o.OutputDirectory = filepath.Join(link, "output")
+	o.OutputDirectory = link
 	_, err := run(context.Background(), o, mockedSetupHost)
 	var setupError *Error
 	if !errors.As(err, &setupError) || setupError.Code != "output_unavailable" {

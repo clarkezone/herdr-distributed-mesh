@@ -83,15 +83,12 @@ function Assert-PrivateDirectory {
 
 function Assert-SafeOutputPath {
     param([string]$Path)
-    $current = [IO.Path]::GetFullPath($Path)
-    while ($current) {
-        if (Test-Path -LiteralPath $current) {
-            $item = Get-Item -LiteralPath $current -Force
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                Stop-Setup 'output_unavailable'
-            }
+    if (Test-Path -LiteralPath $Path) {
+        $item = Get-Item -LiteralPath $Path -Force
+        if (-not $item.PSIsContainer -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Stop-Setup 'output_unavailable'
         }
-        $current = [IO.Path]::GetDirectoryName($current)
     }
 }
 
