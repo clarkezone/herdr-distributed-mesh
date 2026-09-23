@@ -37,6 +37,7 @@ type DestroyState struct {
 	RemovePolicy  bool
 	DeviceRemoved bool
 	PolicyRemoved bool
+	LocalOnly     bool `json:",omitempty"`
 }
 
 func LoadForCleanup(dir string) (Config, error) {
@@ -212,15 +213,29 @@ func RetainIdentity(dir string, identity ManagedIdentity) error {
 func ReadDestroyState(dir string) (DestroyState, error) {
 	var value DestroyState
 	err := readJSON(filepath.Join(dir, "destroy.json"), &value)
-	if err == nil && !deviceIDPattern.MatchString(value.Identity.DeviceID) {
-		err = errors.New("destroy record has no valid pinned device identity")
+	if err == nil {
+		err = validateDestroyState(value)
 	}
 	return value, err
 }
 
-func SaveDestroyState(dir string, value DestroyState) error {
+func validateDestroyState(value DestroyState) error {
+	if value.LocalOnly {
+		if value.Configuration.validate() != nil || value.Configuration.Coordinator ||
+			value.RemovePolicy || value.DeviceRemoved || value.PolicyRemoved || value.Identity != (ManagedIdentity{}) {
+			return errors.New("local-only destruction requires a valid client configuration and no remote cleanup claims")
+		}
+		return nil
+	}
 	if !deviceIDPattern.MatchString(value.Identity.DeviceID) {
 		return errors.New("destroy requires a pinned device identity")
+	}
+	return nil
+}
+
+func SaveDestroyState(dir string, value DestroyState) error {
+	if err := validateDestroyState(value); err != nil {
+		return err
 	}
 	return writePrivateJSON(dir, "destroy.json", value)
 }
@@ -233,6 +248,9 @@ func ResolveManagedIdentity(ctx context.Context, dir string) (ManagedIdentity, e
 		return ManagedIdentity{}, err
 	}
 	if record, err := ReadDestroyState(root); err == nil {
+		if record.LocalOnly {
+			return ManagedIdentity{}, errors.New("local-only client destruction has no remote cleanup identity")
+		}
 		return record.Identity, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return ManagedIdentity{}, err
@@ -296,11 +314,19 @@ func PurgeManaged(ctx context.Context, dir string) (result error) {
 	if err != nil {
 		return err
 	}
-	if _, err := LoadForCleanup(root); err != nil {
+	config, err := LoadForCleanup(root)
+	if err != nil {
 		return err
 	}
 	record, err := ReadDestroyState(root)
-	if err != nil || !record.DeviceRemoved || (record.RemovePolicy && !record.PolicyRemoved) {
+	if err != nil {
+		return err
+	}
+	if record.LocalOnly {
+		if config.Coordinator || config != record.Configuration {
+			return errors.New("local-only purge is restricted to its original client configuration")
+		}
+	} else if !record.DeviceRemoved || (record.RemovePolicy && !record.PolicyRemoved) {
 		return errors.New("local purge requires confirmed device removal and a durable destroy record")
 	}
 	var guards []*state.RoleStateLock

@@ -23,11 +23,11 @@ func runShutdownWith(ctx context.Context, args []string, streams IO, run func(co
 	flags := flag.NewFlagSet("shutdown", flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
 	var options onboard.ShutdownOptions
-	flags.BoolVar(&options.Destroy, "destroy", false, "also unregister this computer's Tailscale device and permanently delete managed local state")
+	flags.BoolVar(&options.Destroy, "destroy", false, "delete local mesh state; controllers also remove their Tailscale device using API authorization")
 	flags.BoolVar(&options.RemovePolicy, "remove-policy", false, "with --destroy, remove only provably owned and unused coordinator policy additions")
 	flags.BoolVar(&options.DryRun, "dry-run", false, "show the exact local target and requested actions without changing anything")
 	flags.BoolVar(&options.Yes, "yes", false, "explicitly skip typed destruction confirmation (automation only)")
-	flags.StringVar(&options.TokenEnv, "api-token-env", "", "optional environment variable holding a Tailscale API token; otherwise prompt privately")
+	flags.StringVar(&options.TokenEnv, "api-token-env", "", "controller only: environment variable holding a Tailscale API token; otherwise prompt privately")
 	timeout := flags.Duration("timeout", 2*time.Minute, "bounded shutdown/cleanup budget")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), `Usage: herdr-mesh shutdown [options]
@@ -40,11 +40,13 @@ Herdr sessions, provider agents, repositories and other computers are never dele
 
 Examples:
   herdr-mesh shutdown
+  herdr-mesh shutdown --destroy
   herdr-mesh shutdown --destroy --remove-policy --dry-run
   herdr-mesh shutdown --destroy --remove-policy
 
 Destruction requires typing the local mesh node label unless --yes is supplied.
-A Tailscale API token is required for destruction, not for ordinary shutdown.
+Client destruction needs no API token; its Tailscale admin-console entry may remain.
+Controller destruction requires an API token. Ordinary shutdown never does.
 Options:`)
 		flags.PrintDefaults()
 	}

@@ -292,16 +292,29 @@ To relocate an existing installation on the same computer, move the whole
 installation directory while stopped or select the existing state directory
 with the global override. Do not run two processes against the same state.
 
-For a clean start, preview the destructive scope, then apply:
+For a clean client installation, preview the scope, then apply:
+
+```powershell
+herdr-mesh shutdown --destroy --dry-run
+herdr-mesh shutdown --destroy
+```
+
+**Client destruction requires no API token and no connection to the controller.**
+It stops the client and deletes its local managed configuration, databases,
+journals and enrollment state. It does not log the device out of Tailscale,
+revoke its keys, or delete its admin-console entry. A tailnet administrator can
+remove the old device separately. The controller and shared policy are untouched.
+
+For controller destruction, optionally including owned policy removal:
 
 ```powershell
 herdr-mesh shutdown --destroy --remove-policy --dry-run
 herdr-mesh shutdown --destroy --remove-policy
 ```
 
-`--destroy` removes this computer's exact Tailscale device, then deletes its
-managed configuration, databases, journals and tsnet state. It does not delete
-the executable or anything outside the managed state
+On the controller, `--destroy` removes its exact Tailscale device, then deletes its
+managed configuration, databases, journals and tsnet state. Neither client nor
+controller destruction deletes the executable or anything outside the managed state
 directory. You must type the displayed **mesh node label** to confirm.
 `--yes` is an explicit confirmation bypass for controlled automation.
 
@@ -311,26 +324,35 @@ protection. Existing rules and unrelated changes are preserved. If ownership
 cannot be proved, or other devices depend on those additions, cleanup stops
 rather than removing shared access. Without this flag, tailnet policy is retained.
 
-Destruction needs a **Tailscale API access token**, prompted without echo; a
-device enrollment key is not sufficient. No token is required for ordinary
-shutdown. For automation, `--api-token-env` names a privately supplied environment
-variable, never an inline credential. Authorization and policy conflicts are
+Controller destruction needs a **Tailscale API access token**, prompted without echo;
+a device enrollment key is not sufficient. No token is required for ordinary
+shutdown or client destruction. For controller automation, `--api-token-env`
+names a privately supplied environment variable, never an inline credential.
+Authorization and policy conflicts are
 checked before teardown. A dry run performs no teardown and does not certify
 remote authorization.
 
-Local recovery data is retained when remote cleanup is incomplete or uncertain.
+Local recovery data is retained when stopping or purging a client fails, or when
+controller remote cleanup is incomplete or uncertain.
 Resume with the same flags; do not delete the retained destroy record or change
 identity to bypass an unknown result. A destroy intent prevents `init`/`join`/`start`
 from restarting the retiring installation. Once completed, run `init`/`join`
 normally to create a fresh identity. Destroying journals intentionally discards
 retry history; do not reuse old command receipts or retry old work afterward.
 
+An unfinished API-based client destruction from an older binary is not silently
+converted to local-only cleanup if device deletion is still unconfirmed. Resume
+that original destruction with the previous binary and a tailnet administrator.
+If its device deletion was already confirmed, the new client can finish the
+remaining local cleanup without requesting another token.
+
 New daemons shut down cooperatively on all supported platforms. The Windows
 legacy fallback uses a verified same-user, exact-command-line process stop,
 never a process-name or process-tree kill; unsupported or unverified fallback
 stops fail closed. Inspect any interrupted work before retrying it.
 Deleting only the local state folder does not unregister remote Tailscale
-devices or remove policy; use the guarded destroy flow for remote cleanup.
+devices or remove policy. Controller destruction performs guarded remote cleanup;
+client destruction deliberately does not.
 
 ## Existing installations and advanced operations
 

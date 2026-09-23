@@ -235,11 +235,16 @@ func TestLinkedInstallationCleanupStillRejectsLinkedDescendants(t *testing.T) {
 	if _, err := ReadPrivateArtifact(dir, filepath.Join(dir, "linked", "policy.json"), 1024); err == nil {
 		t.Fatal("accepted policy artifact through linked descendant")
 	}
-	if err := SaveDestroyState(dir, DestroyState{Identity: ManagedIdentity{DeviceID: "nPinned"}, DeviceRemoved: true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := PurgeManaged(context.Background(), dir); err == nil {
-		t.Fatal("accepted purge with linked descendant")
+	for _, record := range []DestroyState{
+		{Identity: ManagedIdentity{DeviceID: "nPinned"}, DeviceRemoved: true},
+		{Configuration: Config{Version: 1, Name: "test", Server: "server.tail.ts.net:50052"}, LocalOnly: true},
+	} {
+		if err := SaveDestroyState(dir, record); err != nil {
+			t.Fatal(err)
+		}
+		if err := PurgeManaged(context.Background(), dir); err == nil {
+			t.Fatalf("accepted purge with linked descendant (local-only=%v)", record.LocalOnly)
+		}
 	}
 	if _, err := Load(dir); err != nil {
 		t.Fatalf("purge started deleting before validating the tree: %v", err)

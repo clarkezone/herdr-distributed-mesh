@@ -5,10 +5,33 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/onboard"
 )
+
+func TestClientDestroyCLIWithoutInputOrCredentials(t *testing.T) {
+	root := filepath.Join(maintenanceAppTempDir(t), "client")
+	if err := meshlocal.Save(root, meshlocal.Config{Version: 1, Name: "laptop", Server: "controller.tail.ts.net:50052"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := Run(context.Background(), []string{"--state-dir", root, "shutdown", "--destroy", "--yes"},
+		IO{Out: &output, Err: &output}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("client state was not purged: %v", err)
+	}
+	if strings.Contains(output.String(), "Tailscale API token (hidden)") ||
+		!strings.Contains(output.String(), "device entry may remain") {
+		t.Fatalf("unexpected client output: %s", &output)
+	}
+}
 
 func TestShutdownFlagsAreExplicitAndHelpHasNoEffects(t *testing.T) {
 	for _, test := range []struct {
@@ -28,6 +51,7 @@ func TestShutdownFlagsAreExplicitAndHelpHasNoEffects(t *testing.T) {
 				if o != test.want {
 					t.Fatalf("unexpected shutdown scope: %+v", o)
 				}
+
 				if _, ok := ctx.Deadline(); !ok {
 					t.Fatal("unbounded shutdown")
 				}

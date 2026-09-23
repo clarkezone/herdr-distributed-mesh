@@ -24,15 +24,21 @@ func stopManaged(ctx context.Context, dir string, output io.Writer) error {
 		}
 		return meshlocal.RecordStopped(op, dir)
 	}
-	discovery, endDiscovery := context.WithTimeout(ctx, 5*time.Second)
-	identity, identityErr := meshlocal.ResolveManagedIdentity(discovery, dir)
-	endDiscovery()
-	if identityErr == nil {
-		if err := meshlocal.RetainIdentity(dir, identity); err != nil {
-			return fmt.Errorf("preserve legacy cleanup identity before shutdown: %w", err)
+	record, recordErr := meshlocal.ReadDestroyState(dir)
+	if recordErr != nil && !errors.Is(recordErr, os.ErrNotExist) {
+		return recordErr
+	}
+	if !record.LocalOnly {
+		discovery, endDiscovery := context.WithTimeout(ctx, 5*time.Second)
+		identity, identityErr := meshlocal.ResolveManagedIdentity(discovery, dir)
+		endDiscovery()
+		if identityErr == nil {
+			if err := meshlocal.RetainIdentity(dir, identity); err != nil {
+				return fmt.Errorf("preserve legacy cleanup identity before shutdown: %w", err)
+			}
+		} else {
+			fmt.Fprintln(output, "Warning: legacy device identity could not be captured; later remote cleanup may require the original daemon to be resumed. No identity was guessed.")
 		}
-	} else {
-		fmt.Fprintln(output, "Warning: legacy device identity could not be captured; later remote cleanup may require the original daemon to be resumed. No identity was guessed.")
 	}
 	fmt.Fprintln(output, "Legacy daemon: stopping only the verified managed process. Journals are preserved; inspect any in-flight command outcomes before retrying work.")
 	if err := StopLegacyDaemon(op, dir); err != nil {

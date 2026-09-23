@@ -116,9 +116,12 @@ override. The saved state does not depend on the previous executable location.
 For deliberate deinitialization and a clean start, use
 `herdr-mesh shutdown --destroy`; add `--remove-policy` on the coordinator to
 request removal of provably owned, unused policy additions. Preview with
-`--dry-run`. Destruction requires typed confirmation (or explicit `--yes`) and
-private Tailscale API authorization. Local identity/recovery data is retained
-until remote cleanup is confirmed. Herdr sessions, agents, repositories,
+`--dry-run`. Destruction requires typed confirmation (or explicit `--yes`).
+**Client destruction needs no API token:** it stops the client and deletes only
+its local mesh state. It does not revoke the Tailscale device or remove its
+admin-console entry; an administrator can remove that entry separately.
+Controller destruction still requires private Tailscale API authorization,
+retaining recovery data until remote cleanup is confirmed. Herdr sessions, agents, repositories,
 worktrees and other computers are not deleted. See the operator guide for
 partial-cleanup recovery and the distinction from `agent stop`.
 Deleting a local folder alone does not unregister remote Tailscale devices or

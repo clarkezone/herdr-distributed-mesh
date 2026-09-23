@@ -30,8 +30,9 @@ storage. A synced binary is a delivery artifact, not a live installation.
 There is no silent AppData migration or old startup-registration cleanup.
 For a clean start, shut down and destroy the old installation with its old
 version. The new version does not read, migrate, or delete old registration.
-Current managed destruction uses `shutdown --destroy`, with guarded remote
-cleanup and Tailscale API authorization; deleting a local folder alone does not
+Current managed destruction uses `shutdown --destroy`. Client destruction is
+local-only and needs no API token; controller destruction uses guarded remote
+cleanup and Tailscale API authorization. Deleting a local folder alone does not
 unregister remote devices or remove policy. Offline maintenance is not an
 alternative uninstall or remote cleanup path.
 

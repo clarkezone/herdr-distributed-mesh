@@ -69,6 +69,48 @@ func TestShutdownPinsRuntimeAndPreservesData(t *testing.T) {
 	}
 }
 
+func TestLocalClientDestroyStopsCooperativelyBeforePurge(t *testing.T) {
+	root := filepath.Join(canonicalTempDir(t), "client")
+	cfg := Config{Version: 1, Name: "laptop", Server: "controller.tail.ts.net:50052"}
+	if err := Save(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	guard, err := state.PrepareRoleState(context.Background(), root, "client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	join, err := startShutdownMonitor(ctx, root, cancel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer join()
+	if err := SaveDestroyState(root, DestroyState{Configuration: cfg, LocalOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { <-ctx.Done(); closed <- guard.Close() }()
+	request, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	if err := Shutdown(request, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStopped(request, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := PurgeManaged(request, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("client state remains: %v", err)
+	}
+}
+
 func TestShutdownLegacyAndTimeoutDoNotDestroyState(t *testing.T) {
 	root := teardownRoot(t)
 	guard, err := state.PrepareRoleState(context.Background(), root, "client")
@@ -115,6 +157,7 @@ func TestManagedPurgeRequiresRemoteReceiptAndExclusiveOwnership(t *testing.T) {
 	if err := SaveDestroyState(root, record); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := PurgeManaged(context.Background(), root); err == nil {
 		t.Fatal("purge without confirmed remote deletion")
 	}
@@ -147,6 +190,71 @@ func TestManagedPurgeRequiresRemoteReceiptAndExclusiveOwnership(t *testing.T) {
 	}
 	if _, err := os.Stat(outside); err != nil {
 		t.Fatal("purge affected sibling repository", err)
+	}
+}
+
+func TestLocalClientPurgeStillRequiresStoppedOriginalInstallation(t *testing.T) {
+	for _, scenario := range []string{"active", "different-client", "controller"} {
+		t.Run(scenario, func(t *testing.T) {
+			root := filepath.Join(canonicalTempDir(t), "managed")
+			cfg := Config{Version: 1, Name: "laptop", Server: "controller.tail.ts.net:50052"}
+			actual := cfg
+			if scenario == "controller" {
+				actual.Coordinator, actual.Tailnet = true, "example.com"
+			}
+			if scenario == "different-client" {
+				actual.Name = "other"
+			}
+			if err := Save(root, actual); err != nil {
+				t.Fatal(err)
+			}
+			if err := SaveDestroyState(root, DestroyState{Configuration: cfg, LocalOnly: true}); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "active" {
+				guard, err := state.PrepareRoleState(context.Background(), root, "client")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer guard.Close()
+			}
+			if err := PurgeManaged(context.Background(), root); err == nil {
+				t.Fatal("local purge bypassed ownership or configuration checks")
+			}
+			if got, err := Load(root); err != nil || got != actual {
+				t.Fatalf("refused purge altered configuration: %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestLocalDestroyRecordCannotClaimRemoteCleanup(t *testing.T) {
+	cfg := Config{Version: 1, Name: "laptop", Server: "controller.tail.ts.net:50052"}
+	root := teardownRoot(t)
+	if err := SaveDestroyState(root, DestroyState{Configuration: cfg, LocalOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveManagedIdentity(context.Background(), root); err == nil {
+		t.Fatal("local-only record supplied an empty remote identity")
+	}
+	for _, record := range []DestroyState{
+		{LocalOnly: true},
+		{Configuration: Config{Version: 1, Name: "desktop", Coordinator: true, Tailnet: "example.com"}, LocalOnly: true},
+		{Configuration: cfg, LocalOnly: true, RemovePolicy: true},
+		{Configuration: cfg, LocalOnly: true, DeviceRemoved: true},
+		{Configuration: cfg, LocalOnly: true, PolicyRemoved: true},
+		{Configuration: cfg, LocalOnly: true, Identity: ManagedIdentity{DeviceID: "nPinned"}},
+	} {
+		root := teardownRoot(t)
+		if err := SaveDestroyState(root, record); err == nil {
+			t.Fatalf("invalid local intent accepted: %+v", record)
+		}
+		if err := writePrivateJSON(root, "destroy.json", record); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadDestroyState(root); err == nil {
+			t.Fatalf("invalid retained local intent accepted: %+v", record)
+		}
 	}
 }
 

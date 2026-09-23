@@ -401,7 +401,8 @@ Stop or remove this computer's managed installation:
   herdr-mesh shutdown
   herdr-mesh shutdown --destroy --remove-policy --dry-run
   herdr-mesh shutdown --destroy --remove-policy
-Shutdown preserves state by default. --destroy requires confirmation and an API token.
+Shutdown preserves state by default. --destroy requires confirmation.
+Client destruction is local and token-free; controller destruction requires an API token.
 
 Use --help on a command for options.
 After setup, herdr-mesh help on the controller shows the join command.
