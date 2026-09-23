@@ -85,7 +85,7 @@ func runAgentLifecycle(ctx context.Context, verb string, args []string, streams 
 	}
 	op, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	options := control.Options{Output: streams.Out, JSON: *jsonOutput, ServerAddress: *server,
+	options := control.Options{Output: streams.Out, RetryOutput: streams.Err, JSON: *jsonOutput, ServerAddress: *server,
 		RequiredServerTag: *tag, Transport: network.config()}
 	if verb == "stop" {
 		stop := &pb.AgentStop{WorkspaceId: *workspace, TabId: tab, Provider: *provider,

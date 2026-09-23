@@ -5,11 +5,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 )
 
 type cleanupFixture struct {
@@ -86,6 +89,52 @@ func TestShutdownDestroyPreflightsBeforeEffectsAndPurgesLast(t *testing.T) {
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("managed state not removed", err)
+	}
+}
+
+func TestShutdownDestroyThroughLinkedInstallation(t *testing.T) {
+	root, d, f := shutdownFixture(t)
+	alias := filepath.Join(t.TempDir(), "installation")
+	if runtime.GOOS == "windows" {
+		if output, err := exec.Command(os.Getenv("ComSpec"), "/d", "/c", "mklink", "/J", alias, filepath.Dir(root)).CombinedOutput(); err != nil {
+			t.Fatalf("create installation junction: %v: %s", err, output)
+		}
+	} else if err := os.Symlink(filepath.Dir(root), alias); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(alias, filepath.Base(root))
+	d.Dir = func() (string, error) { return dir, nil }
+	apply := filepath.Join(dir, "policy-preview-test", "apply")
+	if err := os.MkdirAll(apply, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string]string{
+		filepath.Join(dir, "policy-complete"):           "completed",
+		filepath.Join(apply, "policy-before-test.json"): `{"grants":[]}`,
+		filepath.Join(apply, "policy-proposed.json"):    `{"grants":[]}`,
+	} {
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := state.ProtectPrivatePath(path, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remote := d.Remote
+	d.Remote = func(ctx context.Context, path string, cfg meshlocal.Config, identity meshlocal.ManagedIdentity, policy bool, token []byte) (RemoteCleanup, error) {
+		if _, _, err := readOwnedPolicy(path); err != nil {
+			return nil, err
+		}
+		return remote(ctx, path, cfg, identity, policy, token)
+	}
+	if err := Shutdown(context.Background(), ShutdownOptions{Destroy: true, RemovePolicy: true, Yes: true}, io.Discard, d); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.calls, []string{"preflight", "stop", "device", "policy", "purge"}) {
+		t.Fatal("unsafe teardown order", f.calls)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("physical state remains after linked shutdown: %v", err)
 	}
 }
 

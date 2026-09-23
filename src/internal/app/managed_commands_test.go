@@ -61,6 +61,69 @@ func TestManagedDefaultsAndHelpDoNotDial(t *testing.T) {
 	}
 }
 
+func TestManagedStartRejectsInvalidPromptBeforeSavingIntent(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"oversized":        strings.Repeat("x", protocol.MaxAgentPromptBytes+1),
+		"whitespace":       " \r\n\t",
+		"terminal-control": "hello\x1b[2J",
+		"invalid-utf8":     string([]byte{0xff}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := managedArgs{root: "agent", verb: "start", name: "smoke", node: "laptop",
+				project: "demo", session: "main", provider: "copilot", prompt: prompt}
+			dir := maintenanceAppTempDir(t)
+			calls := 0
+			client := &managedFleetFixture{mcpFleetFixture: &mcpFleetFixture{},
+				resolve: func(context.Context, *pb.ResolveNamedAgentRequest) (*pb.NamedAgentRecord, error) {
+					calls++
+					return nil, errors.New("unexpected service call")
+				}}
+			if err := managedStart(context.Background(), managedOptions(client, a, io.Discard), dir, "node-1", a); err == nil {
+				t.Fatal("invalid prompt accepted")
+			}
+			if calls != 0 {
+				t.Errorf("invalid prompt reached %d service calls", calls)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "managed-requests")); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("invalid prompt reserved durable intent: %v", err)
+			}
+			if _, err := parseManaged([]string{"agent", "start", "smoke", "--node", "laptop",
+				"--project", "demo", "--prompt", prompt}, IO{Err: io.Discard}); err == nil {
+				t.Error("invalid prompt accepted by command parser")
+			}
+		})
+	}
+	for _, prompt := range []string{"", strings.Repeat("x", protocol.MaxAgentPromptBytes), "hello\nworld"} {
+		if _, err := parseManaged([]string{"agent", "start", "smoke", "--node", "laptop",
+			"--project", "demo", "--prompt", prompt}, IO{Err: io.Discard}); err != nil {
+			t.Fatalf("valid optional prompt rejected: %v", err)
+		}
+	}
+}
+
+func TestManagedNodesUsesHeartbeatNotDefaultSessionFreshness(t *testing.T) {
+	nodes := &pb.NodeList{Nodes: []*pb.NodeView{
+		{InstanceId: "healthy-node", Hostname: "healthy", Connected: true, Stale: true,
+			LastSeen: timestamppb.Now(), Herdr: &pb.HerdrState{Status: "disabled"}, SessionsReady: true},
+		{InstanceId: "stale-node", Hostname: "stale", Connected: true,
+			LastSeen: timestamppb.New(time.Now().Add(-time.Minute))},
+		{InstanceId: "missing-node", Hostname: "missing", Connected: true},
+		{InstanceId: "offline-node", Hostname: "offline", Connected: false, LastSeen: timestamppb.Now()},
+	}}
+	client := &managedFleetFixture{mcpFleetFixture: &mcpFleetFixture{
+		nodes: func(context.Context) (*pb.NodeList, error) { return nodes, nil },
+	}}
+	var out bytes.Buffer
+	if err := executeManaged(context.Background(), client, "", managedArgs{root: "nodes"}, IO{Out: &out}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"healthy  Connected", "stale  Not reporting", "missing  Not reporting", "offline  Offline"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in %s", want, out.String())
+		}
+	}
+}
+
 func TestManagedNodeSelectionUniqueOfflineStaleAmbiguous(t *testing.T) {
 	node := &pb.NodeView{InstanceId: "node-1", Hostname: "laptop", Connected: true, LastSeen: timestamppb.Now()}
 	list := &pb.NodeList{Nodes: []*pb.NodeView{node}}

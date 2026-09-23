@@ -19,6 +19,21 @@ import (
 
 func samePath(a, b string) bool { return strings.EqualFold(a, b) }
 
+func rejectLinkedPath(path string) error {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	attributes, err := windows.GetFileAttributes(name)
+	if err != nil {
+		return err
+	}
+	if attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return errors.New("managed cleanup refuses linked state paths")
+	}
+	return nil
+}
+
 func replaceStatus(from, to string) error {
 	// Windows metadata readers and scanners can briefly deny replacement even
 	// though managed readers share delete access. Never truncate the old file.

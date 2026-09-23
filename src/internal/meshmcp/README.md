@@ -158,8 +158,9 @@ injected client and normalized request/receipt path as CLI operations. Returned
 `agent_lifecycle` JSON retains partial handles, four stage outcomes
 (`not_attempted`, `unknown`, `confirmed`), compact stage events, and observations.
 The application validates receipts through existing protocol validators without
-rewriting their semantic result. Failed, rejected, or indeterminate operation
-receipts remain structured tool errors. Confirmed prompt submission is only
+rewriting their semantic result. Failed, rejected, indeterminate, or
+coordinator-reported node-unavailable operation receipts remain structured tool
+errors, including when no native lifecycle stage was reached. Confirmed prompt submission is only
 acknowledgement, never agent task success.
 
 ## Bounds and result contract

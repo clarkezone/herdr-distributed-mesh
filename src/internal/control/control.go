@@ -20,10 +20,13 @@ import (
 )
 
 type Options struct {
-	FleetClient       agentflowv1.FleetClient
-	Diagnose          bool
-	JSON              bool
-	Output            io.Writer
+	FleetClient agentflowv1.FleetClient
+	Diagnose    bool
+	JSON        bool
+	Output      io.Writer
+	// RetryOutput optionally records CLI recovery identity before dispatch.
+	// Library/MCP callers leave it nil; command JSON is written only to Output.
+	RetryOutput       io.Writer
 	ServerAddress     string
 	RequiredServerTag string
 	Transport         transport.Config

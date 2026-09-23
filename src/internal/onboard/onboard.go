@@ -84,6 +84,14 @@ func (o Options) Normalize() (Options, error) {
 	if strings.ContainsAny(o.HerdrExecutable, "\x00\r\n") {
 		return o, errors.New("invalid Herdr executable")
 	}
+	if !filepath.IsAbs(o.HerdrExecutable) &&
+		(filepath.Base(o.HerdrExecutable) != o.HerdrExecutable || filepath.VolumeName(o.HerdrExecutable) != "") {
+		path, err := filepath.Abs(o.HerdrExecutable)
+		if err != nil {
+			return o, fmt.Errorf("resolve Herdr executable before background startup: %w", err)
+		}
+		o.HerdrExecutable = path
+	}
 	if o.Coordinator {
 		if o.Server != "" || len(o.Tailnet) > 253 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9@.-]*$`).MatchString(o.Tailnet) || strings.HasPrefix(o.Tailnet, "tskey-") {
 			return o, errors.New("init requires --tailnet with the actual Tailscale tailnet name")

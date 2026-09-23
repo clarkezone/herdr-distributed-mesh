@@ -140,7 +140,7 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 	}
 	op, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	options := control.Options{Output: streams.Out, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config()}
+	options := control.Options{Output: streams.Out, RetryOutput: streams.Err, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config()}
 	if follow {
 		return control.FollowAgent(op, options, query, pollInterval)
 	}

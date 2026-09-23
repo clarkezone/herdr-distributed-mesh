@@ -117,6 +117,98 @@ func TestProbeReplaysKnownResultAfterAbsoluteExpiry(t *testing.T) {
 	}
 }
 
+type canceledJournal struct {
+	commandJournal
+	operation string
+}
+
+func (j canceledJournal) operationContext(ctx context.Context, operation string) context.Context {
+	if operation == j.operation {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+		return ctx
+	}
+	return ctx
+}
+
+func (j canceledJournal) Claim(ctx context.Context, command *pb.Command) (*pb.CommandResult, bool, error) {
+	return j.commandJournal.Claim(j.operationContext(ctx, "claim"), command)
+}
+
+func (j canceledJournal) Complete(ctx context.Context, result *pb.CommandResult) error {
+	return j.commandJournal.Complete(j.operationContext(ctx, "complete"), result)
+}
+
+func (j canceledJournal) Acknowledge(ctx context.Context, id string, outcome pb.CommandStatus) error {
+	return j.commandJournal.Acknowledge(j.operationContext(ctx, "ack"), id, outcome)
+}
+
+func TestCertifiedJournalCancellationReconnectsWithoutRepeatingEffects(t *testing.T) {
+	for _, operation := range []string{"claim", "complete", "ack"} {
+		t.Run(operation, func(t *testing.T) {
+			journal := testJournal(t)
+			h := &commandHandler{nodeID: "test-node", journal: canceledJournal{journal, operation}}
+			executions := 0
+			h.execute = func() { executions++ }
+			command := probe()
+			result, err := h.handle(context.Background(), command, time.Now())
+			if operation == "ack" {
+				if err != nil || result.GetDetail() != "pong" {
+					t.Fatalf("probe did not complete before ACK cancellation: %v", err)
+				}
+				err = h.acknowledge(context.Background(), &pb.CommandAck{CommandId: command.CommandId, Status: result.Status})
+			}
+			if !errors.Is(err, context.Canceled) || isPermanentSessionError(err) {
+				t.Fatalf("certified no-commit cancellation permanently stopped the node: %v", err)
+			}
+			if operation == "claim" {
+				if executions != 0 {
+					t.Fatal("canceled claim executed an effect")
+				}
+				_, claimed, err := journal.Claim(context.Background(), command)
+				if err != nil || !claimed {
+					t.Fatalf("rolled-back claim left a false durable intent: %v", err)
+				}
+				return
+			}
+			if executions != 1 {
+				t.Fatalf("effect executed %d times", executions)
+			}
+			if err := journal.Recover(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			h.journal = journal
+			replay, err := h.handle(context.Background(), command, time.Now())
+			want := pb.CommandStatus_COMMAND_STATUS_INDETERMINATE
+			if operation == "ack" {
+				want = pb.CommandStatus_COMMAND_STATUS_SUCCEEDED
+			}
+			if err != nil || replay.GetStatus() != want || executions != 1 {
+				t.Fatalf("reconnect lost evidence or repeated execution: %v %v", replay, err)
+			}
+			pending, err := journal.PendingResults(context.Background())
+			if err != nil || len(pending) != 1 || !proto.Equal(pending[0], replay) {
+				t.Fatalf("canceled persistence lost pending result: %v %v", pending, err)
+			}
+		})
+	}
+}
+
+func TestUncertifiedJournalCancellationRemainsFatal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	certified := testJournal(t).Recover(ctx)
+	if !state.RetryableCancellation(certified) {
+		t.Fatal("fixture requires a certified no-commit cancellation")
+	}
+	for _, err := range []error{context.Canceled, context.DeadlineExceeded,
+		errors.Join(certified, errors.New("rollback failed"))} {
+		if !isPermanentSessionError(storageError("test", err)) {
+			t.Fatalf("uncertified storage failure became reconnectable: %v", err)
+		}
+	}
+}
+
 type failingJournal struct {
 	commandJournal
 	claimErr    error

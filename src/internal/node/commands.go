@@ -38,7 +38,13 @@ func (e *journalError) Error() string { return e.err.Error() }
 func (e *journalError) Unwrap() error { return e.err }
 
 func storageError(operation string, err error) error {
-	return &journalError{fmt.Errorf("node command journal %s: %w", operation, err)}
+	failure := fmt.Errorf("node command journal %s: %w", operation, err)
+	if state.RetryableCancellation(err) {
+		// Proven no-commit cancellation permits reconnect recovery, never a
+		// native-effect retry. Uncertain commits and rollback failures stay fatal.
+		return failure
+	}
+	return &journalError{failure}
 }
 
 func openJournal(ctx context.Context, options Options) (*state.NodeJournal, error) {

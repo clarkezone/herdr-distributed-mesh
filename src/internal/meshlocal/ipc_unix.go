@@ -17,6 +17,17 @@ import (
 
 func samePath(a, b string) bool { return a == b }
 
+func rejectLinkedPath(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("managed cleanup refuses linked state paths")
+	}
+	return nil
+}
+
 func replaceStatus(from, to string) error { return os.Rename(from, to) }
 
 func openPrivateRead(path string) (*os.File, error) {

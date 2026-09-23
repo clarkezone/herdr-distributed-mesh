@@ -233,6 +233,37 @@ func TestMCPLifecyclePartialReceiptsAreStructuredToolErrors(t *testing.T) {
 	}
 }
 
+func TestMCPLifecycleNodeUnavailableRetainsDurableReceipt(t *testing.T) {
+	start, stop := mcpLifecycleInputs(true)
+	for _, operation := range []meshmcp.Operation{meshmcp.StartAgent, meshmcp.StopAgent} {
+		for _, detail := range []string{"node_disconnected", "server_restarted"} {
+			t.Run(string(operation)+"/"+detail, func(t *testing.T) {
+				var original *pb.CommandRecord
+				submissions := 0
+				client := &mcpFleetFixture{submit: func(_ context.Context, request *pb.SubmitCommandRequest) (*pb.CommandRecord, error) {
+					submissions++
+					original = mcpLifecycleRecord(t, request, pb.CommandStatus_COMMAND_STATUS_REJECTED)
+					original.Status, original.Detail, original.AgentLifecycle = pb.CommandStatus_COMMAND_STATUS_NODE_UNAVAILABLE, detail, nil
+					return original, nil
+				}}
+				session := mcpApplicationClient(t, mcpTestOptions(client))
+				var input any = start
+				if operation == meshmcp.StopAgent {
+					input = stop
+				}
+				result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: string(operation), Arguments: input})
+				if err != nil || result == nil || !result.IsError || result.StructuredContent == nil || submissions != 1 {
+					t.Fatalf("node-unavailable receipt discarded or resubmitted: %v %v submissions=%d", result, err, submissions)
+				}
+				expected, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(original)
+				if err != nil || !reflect.DeepEqual(mcpObject(t, json.RawMessage(expected)), mcpObject(t, result.StructuredContent)) {
+					t.Fatalf("durable receipt was rewritten: %+v err=%v", result.StructuredContent, err)
+				}
+			})
+		}
+	}
+}
+
 func TestMCPLifecycleCancellationRetainsKnownRunningReceipt(t *testing.T) {
 	start, _ := mcpLifecycleInputs(false)
 	submitted := make(chan struct{})

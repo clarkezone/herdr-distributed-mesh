@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
@@ -19,7 +20,7 @@ func finishLifecycleRecord(ctx context.Context, tx *sql.Tx, record *pb.CommandRe
 	}
 	if result.AgentLifecycle != nil {
 		if err := protocol.ValidateLifecycleAdvance(record.AgentLifecycle, result.AgentLifecycle, record.Command); err != nil {
-			return err
+			return fmt.Errorf("%w: %v", ErrCommandConflict, err)
 		}
 		record.AgentLifecycle = proto.Clone(result.AgentLifecycle).(*pb.AgentLifecycleReceipt)
 	} else if record.AgentLifecycle != nil {

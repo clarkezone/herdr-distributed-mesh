@@ -145,6 +145,7 @@ func (out *mcpCapture) Write(data []byte) (int, error) {
 func captureMCP(options control.Options, call func(control.Options) error) (json.RawMessage, error) {
 	var out mcpCapture
 	options.Output, options.JSON, options.Diagnose = &out, true, false
+	options.RetryOutput = nil
 	callErr := call(options)
 	if out.err != nil {
 		return nil, errors.Join(callErr, out.err)
@@ -372,7 +373,9 @@ func mcpLifecycleReceipt(data json.RawMessage, callErr error, nodeID, key, kind 
 			return nil, errors.Join(receiptErr, fmt.Errorf("invalid lifecycle stage receipt: %w", err))
 		}
 	}
-	if protocol.IsTerminalCommand(record.Status) {
+	// Node-unavailable is a coordinator outcome before dispatch, not a native
+	// lifecycle result. Preserve its durable receipt just as control does.
+	if protocol.IsTerminalCommand(record.Status) && record.Status != pb.CommandStatus_COMMAND_STATUS_NODE_UNAVAILABLE {
 		if err := protocol.ValidateLifecycleResult(&pb.CommandResult{
 			CommandId: record.Command.CommandId, Status: record.Status, Detail: record.Detail, AgentLifecycle: record.AgentLifecycle,
 		}, record.Command); err != nil {

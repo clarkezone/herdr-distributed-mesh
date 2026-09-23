@@ -99,3 +99,89 @@ func TestWorkspaceCommandOutputIsOneTypedObject(t *testing.T) {
 		t.Fatal("workspace human output missing identifiers")
 	}
 }
+
+func TestRetryIdentityPrecedesAmbiguousAgentSubmission(t *testing.T) {
+	for _, suppliedKey := range []string{"", "original-key"} {
+		for _, failure := range []error{context.Canceled, context.DeadlineExceeded} {
+			t.Run(suppliedKey+"/"+failure.Error(), func(t *testing.T) {
+				var stdout, stderr bytes.Buffer
+				view := agentClientView()
+				view.Target.SessionName, view.Target.SessionIncarnation = "Worker", strings.Repeat("a", 64)
+				target := &agentflowv1.AgentTarget{PaneId: view.Target.PaneId, SessionName: "Worker"}
+				var submitted *agentflowv1.SubmitCommandRequest
+				client := agentClientFixture{
+					query: func(context.Context, *agentflowv1.AgentQueryRequest) (*agentflowv1.AgentQueryResult, error) {
+						return &agentflowv1.AgentQueryResult{QueryId: protocol.NewCommandID(), Agent: view}, nil
+					},
+					submit: func(_ context.Context, request *agentflowv1.SubmitCommandRequest) (*agentflowv1.CommandRecord, error) {
+						submitted = request
+						for _, value := range []string{request.IdempotencyKey, request.NodeInstanceId,
+							view.Target.TerminalId, view.Target.AgentSessionId, view.Target.SessionName, view.Target.SessionIncarnation} {
+							if !strings.Contains(stderr.String(), value) {
+								t.Errorf("recovery value %q missing before submission: %s", value, stderr.String())
+							}
+						}
+						return nil, failure
+					},
+				}
+				err := Agent(context.Background(), Options{FleetClient: client, RequiredServerTag: "tag:server",
+					JSON: true, Output: &stdout, RetryOutput: &stderr},
+					&agentflowv1.AgentQueryRequest{NodeInstanceId: "node-1", Kind: agentflowv1.AgentQueryKind_AGENT_QUERY_KIND_GET, Target: target},
+					&agentflowv1.AgentControl{Action: agentflowv1.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT, Target: target, Text: "private task"},
+					suppliedKey, time.Second)
+				if !errors.Is(err, failure) || submitted == nil || !strings.Contains(err.Error(), submitted.IdempotencyKey) {
+					t.Fatalf("ambiguous failure lost key/cause: %v", err)
+				}
+				if stdout.Len() != 0 || strings.Contains(stderr.String(), "private task") {
+					t.Fatalf("receipt polluted JSON stdout or disclosed prompt: stdout=%s stderr=%s", &stdout, &stderr)
+				}
+				if suppliedKey != "" && submitted.IdempotencyKey != suppliedKey {
+					t.Fatal("retry changed supplied key")
+				}
+			})
+		}
+	}
+}
+
+func TestRetryIdentityWriteFailurePreventsSubmission(t *testing.T) {
+	called := false
+	client := agentClientFixture{submit: func(context.Context, *agentflowv1.SubmitCommandRequest) (*agentflowv1.CommandRecord, error) {
+		called = true
+		return nil, errors.New("unexpected submission")
+	}}
+	err := Ping(context.Background(), Options{FleetClient: client, RequiredServerTag: "tag:server",
+		Output: io.Discard, RetryOutput: failedFollowWriter{}}, "node", "original-key", time.Second)
+	if !errors.Is(err, io.ErrClosedPipe) || called {
+		t.Fatalf("mutation proceeded without recovery output: called=%t err=%v", called, err)
+	}
+}
+
+func TestGeneratedLifecycleKeyPrintedBeforeAmbiguousSubmission(t *testing.T) {
+	for _, stop := range []bool{false, true} {
+		var stdout, stderr bytes.Buffer
+		var submitted *agentflowv1.SubmitCommandRequest
+		client := agentClientFixture{submit: func(_ context.Context, request *agentflowv1.SubmitCommandRequest) (*agentflowv1.CommandRecord, error) {
+			submitted = request
+			if request.IdempotencyKey == "" || !strings.Contains(stderr.String(), request.IdempotencyKey) {
+				t.Errorf("generated lifecycle key unavailable before dispatch: %s", &stderr)
+			}
+			return nil, context.DeadlineExceeded
+		}}
+		options := Options{FleetClient: client, RequiredServerTag: "tag:server", JSON: true, Output: &stdout, RetryOutput: &stderr}
+		var err error
+		if stop {
+			target := agentClientView().Target
+			target.SessionIncarnation = strings.Repeat("a", 64)
+			err = StopAgent(context.Background(), options, "node", "", &agentflowv1.AgentStop{
+				Target: target, WorkspaceId: "w1", TabId: "w1:t1", Provider: "copilot",
+			}, time.Second)
+		} else {
+			err = StartAgent(context.Background(), options, "node", "", &agentflowv1.AgentStart{
+				ProjectId: "project", WorkspaceId: "w1", Name: "worker", Provider: "copilot",
+			}, time.Second)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) || submitted == nil || stdout.Len() != 0 {
+			t.Fatalf("lifecycle ambiguous failure changed: submitted=%v stdout=%s err=%v", submitted != nil, &stdout, err)
+		}
+	}
+}

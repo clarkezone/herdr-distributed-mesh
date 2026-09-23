@@ -85,7 +85,10 @@ func (s *service) SubmitCommand(ctx context.Context, request *agentflowv1.Submit
 		return nil, status.Error(codes.FailedPrecondition, "target node has no ready probe session")
 	}
 	var submitted *agentflowv1.SubmitCommandRequest
-	if name != "" || incarnation != "" || request.CommandType == protocol.AgentControlCommandType || protocol.IsLifecycleCommand(request.CommandType) {
+	// Agent controls are already fully resolved and use their exact typed body
+	// as retry identity. Duplicating an 8 KiB prompt would exceed the journal.
+	if request.CommandType != protocol.AgentControlCommandType &&
+		(name != "" || incarnation != "" || protocol.IsLifecycleCommand(request.CommandType)) {
 		submitted = proto.Clone(request).(*agentflowv1.SubmitCommandRequest)
 	}
 	if projectID, revision := protocol.RequestProject(request); projectID != "" {

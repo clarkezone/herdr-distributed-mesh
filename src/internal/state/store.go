@@ -23,8 +23,12 @@ var (
 	ErrLocked           = errors.New("state is owned by another store")
 )
 
+// MaxNodeBytes bounds the complete persisted NodeView, including both the
+// configured-default topology and named-session inventories with metadata.
+const MaxNodeBytes = 260 * 1024
+
 const (
-	maxNodeBytes = 260 * 1024
+	maxNodeBytes = MaxNodeBytes
 	maxNodes     = 128
 )
 

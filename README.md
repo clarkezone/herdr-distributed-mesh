@@ -82,14 +82,17 @@ herdr-mesh --state-dir C:\private\mesh-state start
 
 Use the same absolute override for `help`, `init`, `join`, `shutdown`, `status`, `nodes`,
 `dashboard`, `mcp`, `project`, and `agent` when selecting that installation.
+Keep the same path spelling while the daemon runs: a junction/alias and its
+physical path can address the same files but select different local IPC endpoints.
 Do not sync or run copies of tsnet state on multiple computers. A OneDrive copy
 of the binary is a delivery artifact, not a recommended live installation;
 install outside synced folders.
 
 Normal startup and policy setup support installer-managed parent-directory
 links, including Herdr's Windows `bin` junction. The actual state directory and
-private files must remain ordinary directories/files. Destructive maintenance
-keeps stricter checks: select the physical, non-aliased state path for cleanup.
+private files must remain ordinary directories/files. Managed destruction accepts
+those parent links but rejects linked state descendants. Advanced offline
+maintenance keeps stricter ancestor checks: select a physical, non-aliased path.
 
 Stop the managed daemon without destroying any state:
 
@@ -385,9 +388,12 @@ paths before sharing diagnostics.
 
 ### Fleet limits and recovery
 
-Fleet state is capped at 128 nodes, 256 KiB per projected state, 4,096 entities
-per state, and 2 MiB total projected payload. Limits fail explicitly, not by
-truncating data. The latest redacted observations and identity bindings are
+Fleet state is capped at 128 nodes, 256 KiB per topology/session projection,
+4,096 entities per projection, 260 KiB per combined persisted node record, and
+2 MiB total projected payload. The combined bound includes default and named
+session inventories plus node metadata. Oversized updates are rejected
+explicitly rather than truncated or treated as a coordinator storage failure.
+The latest redacted observations and identity bindings are
 persisted in SQLite. On server restart, observations return **disconnected and
 stale**, never apparently live. A reconnect requires a new baseline before
 freshness is restored. New node streams fence out older streams for the same
@@ -454,10 +460,10 @@ The read-only probe command is **`node.ping.v1`**, which returns `pong`. It neve
 calls Herdr or executes shell commands. This exercises the command delivery and
 recovery path before introducing actual workspace/worktree mutations.
 
-Upgrade the server first, preserving its enrolled state. Coordinator schema 1
-upgrades transactionally through schemas 2 and 3 to schema 4, preserving bindings,
-observations, and probe records. The node journal similarly upgrades from schema 1
-through schema 2 to schema 3. Older journal-aware binaries reject these newer schemas; take an
+Upgrade the server first, preserving its enrolled state. Supported earlier
+coordinator schemas migrate transactionally to **schema 7**, preserving bindings,
+observations and retained command records. The node journal similarly migrates
+to **schema 6**. Older journal-aware binaries reject these newer schemas; take an
 offline backup before upgrading.
 Restart the node with the new binary, its existing hostname/state/socket flags,
 and **`-enable-probes`**. Probes are off by default and do not require Herdr.
@@ -494,8 +500,10 @@ dashboard's state directory while it is running. `ctl nodes -json` reports
 `command_ready`; this means a negotiated, opted-in **probe** session, not general
 mutation readiness. Older read-only nodes remain usable for monitoring.
 
-The CLI prints its idempotency key to stderr before submitting; JSON stdout is
-one command record with status and audit transitions. If the connection fails
+Advanced durable CLI mutations print their node, idempotency key and TTL to
+stderr before submitting. JSON stdout normally contains one command record with
+status and audit transitions, but can be empty when submission fails before a
+receipt is available. If the connection fails
 or the CLI wait times out, repeat `ctl ping` with the **same client identity,
 node, idempotency key, and TTL**. A matching retry returns the existing command,
 even if the node is now offline; changing the request under that key fails.
@@ -691,8 +699,12 @@ bounded to five minutes; the overall `-timeout` must also allow enrollment and
 connection time. Canceling a wait cancels only the query, never the agent task.
 
 Input uses the existing durable command path and default ten-second TTL
-(maximum thirty seconds). The client prints the idempotency key and pinned
-target, and returns the command ID. For retries preserve the original
+(maximum thirty seconds). The advanced client prints its retry identity and
+exact discovered target selectors to stderr before submission, without prompt
+contents; failure to write that recovery receipt prevents submission. A
+successful response includes the command ID. MCP does not emit CLI stderr
+receipts, and managed high-level commands use their persisted request ledger.
+For retries preserve the original
 `-idempotency-key`, `-terminal`, optional `-agent-session`, input, TTL, and
 any `-session` / `-session-incarnation` selection;
 an explicit terminal (plus incarnation for a named session) bypasses discovery,

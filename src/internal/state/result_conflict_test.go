@@ -12,6 +12,44 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestLifecycleInputConflictsDoNotMaskStorageFailures(t *testing.T) {
+	for _, operation := range []string{"progress", "completion"} {
+		for _, fault := range []string{"stored-checkpoint", "database-write"} {
+			t.Run(operation+"/"+fault, func(t *testing.T) {
+				ctx := context.Background()
+				s := commandStore(t)
+				c := lifecycleCommand(t, 1)
+				admitWorkspace(t, s, c, true)
+				receipts := lifecycleCheckpoints()
+				requireOK(t, s.SaveCommandProgress(ctx, "node", &pb.CommandProgress{CommandId: c.CommandId, AgentLifecycle: receipts[2]}))
+				if fault == "stored-checkpoint" {
+					record, err := s.GetOperatorCommand(ctx, c.CommandId)
+					requireOK(t, err)
+					record.AgentLifecycle.PaneOutcome = "invalid"
+					payload, err := proto.Marshal(record)
+					requireOK(t, err)
+					_, err = s.conn.ExecContext(ctx, "UPDATE commands SET record = ?", payload)
+					requireOK(t, err)
+				} else {
+					_, err := s.conn.ExecContext(ctx, "CREATE TRIGGER fail_lifecycle_update BEFORE UPDATE ON commands "+
+						"BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END")
+					requireOK(t, err)
+				}
+				var err error
+				if operation == "progress" {
+					err = s.SaveCommandProgress(ctx, "node", &pb.CommandProgress{CommandId: c.CommandId, AgentLifecycle: receipts[3]})
+				} else {
+					_, err = s.FinishCommand(ctx, "node", "stable", &pb.CommandResult{CommandId: c.CommandId,
+						Status: statusSucceeded, Detail: "agent_started", AgentLifecycle: receipts[6]}, commandTestTime.Add(2*time.Second))
+				}
+				if err == nil || errors.Is(err, ErrCommandConflict) || errors.Is(err, ErrIdentityConflict) {
+					t.Fatalf("lifecycle storage failure was masked as invalid input: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestTypedResultMismatchIsInputConflict(t *testing.T) {
 	ctx := context.Background()
 	for _, command := range []*pb.Command{

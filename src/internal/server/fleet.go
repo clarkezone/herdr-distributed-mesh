@@ -12,6 +12,7 @@ import (
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -163,6 +164,9 @@ func (f *fleetStore) failLocked(err error) error {
 func (f *fleetStore) save(view *agentflowv1.NodeView) error {
 	if f.storageErr != nil {
 		return storageUnavailable()
+	}
+	if proto.Size(view) > state.MaxNodeBytes {
+		return status.Error(codes.ResourceExhausted, "combined node state size limit exceeded")
 	}
 	if f.storage == nil {
 		return nil

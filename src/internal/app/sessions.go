@@ -74,7 +74,7 @@ func parseSessionQuery(command string, args []string, streams IO) (*sessionQuery
 		return nil, errors.New("expected server tag (-required-server-tag) must not be empty and -timeout must be positive (for example 1m)")
 	}
 	query := &sessionQuery{nodeID: *nodeID, timeout: *timeout, options: control.Options{
-		Output: streams.Out, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config(),
+		Output: streams.Out, RetryOutput: streams.Err, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config(),
 	}}
 	if ensure {
 		if ttl <= 0 || ttl > protocol.MaxCommandTTL {

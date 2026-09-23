@@ -53,6 +53,9 @@ func submitAndWait(ctx context.Context, options Options, request *agentflowv1.Su
 
 func submitAndWaitWithClient(ctx context.Context, options Options, client agentflowv1.FleetClient, request *agentflowv1.SubmitCommandRequest) error {
 	key := request.IdempotencyKey
+	if err := writeCommandRetryIdentity(options, request); err != nil {
+		return fmt.Errorf("write retry identity before submission: %w", err)
+	}
 	record, err := retryUnavailable(ctx, func() (*agentflowv1.CommandRecord, error) { return client.SubmitCommand(ctx, request) })
 	if err != nil {
 		return fmt.Errorf("submit command (retry with the same key %q): %w", key, err)
@@ -74,6 +77,26 @@ func submitAndWaitWithClient(ctx context.Context, options Options, client agentf
 	}
 	if record.Status != agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED {
 		return fmt.Errorf("command %s: %s (%s); inspect with ctl command -id %s; preserve retry key %q and the original request", record.Command.CommandId, HumanCommandStatus(record.Status), record.Status, record.Command.CommandId, key)
+	}
+	return nil
+}
+
+func writeCommandRetryIdentity(options Options, request *agentflowv1.SubmitCommandRequest) error {
+	if options.RetryOutput == nil {
+		return nil
+	}
+	if _, err := fmt.Fprintf(options.RetryOutput, "Retry identity: -node %q -idempotency-key %q -ttl %s; reuse with the original request\n",
+		request.NodeInstanceId, request.IdempotencyKey, request.Ttl.AsDuration()); err != nil {
+		return err
+	}
+	target := request.GetAgentControl().GetTarget()
+	if target == nil {
+		target = request.GetAgentStop().GetTarget()
+	}
+	if target != nil {
+		_, err := fmt.Fprintf(options.RetryOutput, "Pinned target: -agent %q -terminal %q -agent-session %q -session %q -session-incarnation %q\n",
+			target.PaneId, target.TerminalId, target.AgentSessionId, target.SessionName, target.SessionIncarnation)
+		return err
 	}
 	return nil
 }

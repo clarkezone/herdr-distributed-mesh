@@ -193,6 +193,7 @@ func TestAgentControlNoProjectPolicyRefreshAndImmutableRequest(t *testing.T) {
 	if _, err := h.api.SubmitCommand(agentPeer("denied"), request); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("mutation authorization: %v", err)
 	}
+
 	record, err := h.api.SubmitCommand(agentPeer("client"), request)
 	if err != nil {
 		t.Fatal(err)
@@ -230,5 +231,64 @@ func TestAgentControlNoProjectPolicyRefreshAndImmutableRequest(t *testing.T) {
 		if command, err := h.api.prepareCommand(entry, queued); err != nil || command != nil {
 			t.Fatalf("revoked %s dispatched: %v", who, err)
 		}
+	}
+}
+
+func TestAgentPromptBoundaryThroughAdmissionAndRestart(t *testing.T) {
+	for _, session := range []string{"", "build"} {
+		t.Run("session-"+session, func(t *testing.T) {
+			root := t.TempDir()
+			h := newCommandHarness(t, root)
+			var entry *fleetEntry
+			if session == "" {
+				entry = readyAgentEntry(t, h, "node-1", "stable-1")
+			} else {
+				entry = namedEntry(t, h)
+			}
+			target := &pb.AgentTarget{PaneId: strings.Repeat("p", 128), TerminalId: strings.Repeat("t", 128),
+				AgentSessionId: strings.Repeat("a", 128), SessionName: session}
+			if session != "" {
+				target.SessionIncarnation = strings.Repeat("a", 64)
+			}
+			request := &pb.SubmitCommandRequest{NodeInstanceId: "node-1", CommandType: protocol.AgentControlCommandType,
+				IdempotencyKey: strings.Repeat("k", 128), Ttl: durationpb.New(30 * time.Second),
+				AgentControl: &pb.AgentControl{Action: pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT,
+					Target: target, Text: strings.Repeat("x", protocol.MaxAgentPromptBytes)}}
+			excessive := proto.Clone(request).(*pb.SubmitCommandRequest)
+			excessive.AgentControl.Text += "x"
+			if _, err := h.api.SubmitCommand(agentPeer("client"), excessive); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("8193-byte prompt was not rejected as invalid input: %v", err)
+			}
+			record, err := h.api.SubmitCommand(agentPeer("client"), request)
+			if err != nil {
+				t.Fatalf("valid 8192-byte prompt poisoned admission: %v", err)
+			}
+			wire, err := h.api.prepareCommand(entry, <-entry.outbound)
+			if err != nil || wire.GetAgentControl().GetText() != request.AgentControl.Text {
+				t.Fatalf("prompt dispatch changed bytes: %v", err)
+			}
+			result := &pb.CommandResult{CommandId: record.Command.CommandId, Status: pb.CommandStatus_COMMAND_STATUS_SUCCEEDED,
+				Detail: "agent_prompt_sent", AgentControl: &pb.AgentControlResult{
+					Target: proto.Clone(target).(*pb.AgentTarget), ObservedStatus: "working"}}
+			if _, err := h.api.finishCommand(entry, result); err != nil {
+				t.Fatal("boundary prompt receipt could not be persisted:", err)
+			}
+			h.stop()
+			h = newCommandHarness(t, root)
+			replayed, err := h.api.SubmitCommand(agentPeer("client"), request)
+			if err != nil || replayed.GetCommand().GetCommandId() != record.Command.CommandId ||
+				replayed.GetStatus() != pb.CommandStatus_COMMAND_STATUS_SUCCEEDED ||
+				replayed.GetCommand().GetAgentControl().GetText() != request.AgentControl.Text {
+				t.Fatalf("offline restart changed boundary prompt receipt: %v %v", replayed, err)
+			}
+			changed := proto.Clone(request).(*pb.SubmitCommandRequest)
+			changed.AgentControl.Text = "changed"
+			if _, err := h.api.SubmitCommand(agentPeer("client"), changed); status.Code(err) != codes.AlreadyExists {
+				t.Fatalf("changed prompt bypassed exact retry identity: %v", err)
+			}
+			if h.api.fleet.storageErr != nil {
+				t.Fatal("input validation poisoned coordinator storage")
+			}
+		})
 	}
 }

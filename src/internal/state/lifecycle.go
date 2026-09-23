@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
@@ -290,13 +291,16 @@ func (s *Store) SaveCommandProgress(ctx context.Context, nodeID string, progress
 		// A delayed prefix may arrive after the final cumulative receipt.
 		if record.AgentLifecycle != nil && progress.AgentLifecycle != nil &&
 			progress.AgentLifecycle.Sequence <= record.AgentLifecycle.Sequence {
-			return protocol.ValidateLifecycleAdvance(progress.AgentLifecycle, record.AgentLifecycle, record.Command)
+			if err := protocol.ValidateLifecycleAdvance(progress.AgentLifecycle, record.AgentLifecycle, record.Command); err != nil {
+				return fmt.Errorf("%w: %v", ErrCommandConflict, err)
+			}
+			return nil
 		}
 		if record.Status != statusRunning && record.Status != statusIndeterminate {
 			return ErrCommandConflict
 		}
 		if err := protocol.ValidateLifecycleAdvance(record.AgentLifecycle, progress.AgentLifecycle, record.Command); err != nil {
-			return err
+			return fmt.Errorf("%w: %v", ErrCommandConflict, err)
 		}
 		record.AgentLifecycle = proto.Clone(progress.AgentLifecycle).(*pb.AgentLifecycleReceipt)
 		if err := validateCommandRecord(record); err != nil {

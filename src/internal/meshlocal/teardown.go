@@ -319,16 +319,13 @@ func PurgeManaged(ctx context.Context, dir string) (result error) {
 		}
 		guards = append(guards, guard)
 	}
-	// Refuse aliases anywhere, even where RemoveAll would usually unlink them.
+	// Installation ancestors may be linked, but the root and its descendants
+	// must not be. Keep the original spelling used by the running daemon's IPC.
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		resolved, err := filepath.EvalSymlinks(path)
-		if err != nil || !samePath(resolved, path) || entry.Type()&os.ModeSymlink != 0 {
-			return errors.New("managed purge refuses linked or aliased descendants")
-		}
-		return nil
+		return rejectLinkedPath(path)
 	}); err != nil {
 		return err
 	}
@@ -398,9 +395,11 @@ func ReadPrivateArtifact(root, path string, limit int64) ([]byte, error) {
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return nil, errors.New("cleanup artifact escapes managed state")
 	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil || !samePath(resolved, path) {
-		return nil, errors.New("cleanup artifact is missing or aliased")
+	path = filepath.Join(canonical, relative)
+	for current := path; !samePath(current, canonical); current = filepath.Dir(current) {
+		if err := rejectLinkedPath(current); err != nil {
+			return nil, err
+		}
 	}
 	file, err := openPrivateRead(path)
 	if err != nil {

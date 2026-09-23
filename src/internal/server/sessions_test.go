@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/protocol"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -224,7 +225,10 @@ func TestSessionFleetAggregateBoundsAndNegotiation(t *testing.T) {
 	if err := fleet.updateSessions(entry, inventory, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := fleet.update(entry, large, now); err != nil {
+	if err := fleet.update(entry, large, now); status.Code(err) != codes.ResourceExhausted {
+		t.Fatal("combined default and session state exceeded the persisted node bound", err)
+	}
+	if err := fleet.update(entry, readyState(1), now); err != nil {
 		t.Fatal(err)
 	}
 	total := nodeStateSize(entry.view)
@@ -263,6 +267,99 @@ func TestSessionFleetAggregateBoundsAndNegotiation(t *testing.T) {
 	}
 	if err := (&fleetStore{}).restore(views, now); err == nil {
 		t.Fatal("persisted aggregate bound omitted sessions")
+	}
+}
+
+func TestCombinedSessionStateLimitDoesNotFailCoordinatorStorage(t *testing.T) {
+	for _, sessionsFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sessions-first-%t", sessionsFirst), func(t *testing.T) {
+			h := newCommandHarness(t, t.TempDir())
+			entry := namedEntry(t, h)
+			large := readyState(2)
+			for i := range 600 {
+				large.Workspaces = append(large.Workspaces, &pb.HerdrEntity{
+					Id: fmt.Sprintf("%0128d", i), WorkspaceId: strings.Repeat("w", 128),
+					TabId: strings.Repeat("t", 128), AgentStatus: "idle",
+				})
+			}
+			inventory := sessionInventory(2)
+			inventory.Sessions[0].Herdr = large
+			if err := validateHerdrState(large); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateSessionInventory(inventory); err != nil {
+				t.Fatal(err)
+			}
+			first := func() error { return h.api.fleet.update(entry, large, time.Now()) }
+			second := func() error { return h.api.fleet.updateSessions(entry, inventory, time.Now()) }
+			if sessionsFirst {
+				first, second = second, first
+			}
+			if err := first(); err != nil {
+				t.Fatal(err)
+			}
+			before := proto.Clone(entry.view).(*pb.NodeView)
+			if err := second(); status.Code(err) != codes.ResourceExhausted {
+				t.Fatalf("combined oversized inventory must be a capacity rejection, not a fatal storage error: %v", err)
+			}
+			if h.api.fleet.storageErr != nil || !proto.Equal(entry.view, before) {
+				t.Fatal("capacity rejection poisoned storage or changed the live snapshot")
+			}
+			stored, err := h.api.commands.LoadFleet(context.Background())
+			if err != nil || len(stored) != 1 || !proto.Equal(stored[0], before) {
+				t.Fatalf("capacity rejection changed persisted inventory: %v", err)
+			}
+			if err := h.api.fleet.heartbeat(entry, time.Now(), true); err != nil {
+				t.Fatal("coordinator failed after rejected inventory:", err)
+			}
+		})
+	}
+}
+
+func TestCombinedNodeStateExactPersistenceBoundary(t *testing.T) {
+	h := newCommandHarness(t, t.TempDir())
+	entry := namedEntry(t, h)
+	view := proto.Clone(entry.view).(*pb.NodeView)
+	for _, topology := range []*pb.HerdrState{view.Herdr, view.Sessions[0].Herdr} {
+		for i := range 32 {
+			topology.Workspaces = append(topology.Workspaces, &pb.HerdrEntity{
+				Id: fmt.Sprintf("workspace-%d", i), AgentStatus: "idle",
+				Directory: strings.Repeat("d", protocol.MaxDirectoryBytes),
+			})
+		}
+	}
+	padding := &pb.HerdrEntity{Id: "padding", AgentStatus: "idle"}
+	view.Herdr.Workspaces = append(view.Herdr.Workspaces, padding)
+	for range 4 {
+		difference := state.MaxNodeBytes - proto.Size(view)
+		if difference == 0 {
+			break
+		}
+		length := len(padding.Directory) + difference
+		if length < 0 || length > protocol.MaxDirectoryBytes {
+			t.Fatal("fixture cannot reach the exact boundary with valid metadata")
+		}
+		padding.Directory = strings.Repeat("d", length)
+	}
+	if proto.Size(view) != state.MaxNodeBytes {
+		t.Fatal("fixture did not reach the exact persisted node byte limit")
+	}
+	if err := validateStoredNode(view); err != nil {
+		t.Fatal("boundary fixture must have valid independently bounded inventories:", err)
+	}
+	if err := h.api.fleet.save(view); err != nil {
+		t.Fatal("exactly 260 KiB did not persist:", err)
+	}
+	stored, err := h.api.commands.LoadFleet(context.Background())
+	if err != nil || len(stored) != 1 || !proto.Equal(stored[0], view) {
+		t.Fatalf("boundary inventory did not round trip: %v", err)
+	}
+	padding.Directory += "d"
+	if proto.Size(view) != state.MaxNodeBytes+1 {
+		t.Fatal("fixture is not exactly one byte over capacity")
+	}
+	if err := h.api.fleet.save(view); status.Code(err) != codes.ResourceExhausted || h.api.fleet.storageErr != nil {
+		t.Fatalf("one byte over capacity was not safely rejected: %v", err)
 	}
 }
 

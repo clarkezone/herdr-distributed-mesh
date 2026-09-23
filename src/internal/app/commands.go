@@ -117,7 +117,7 @@ func parseCommandQuery(command string, args []string, streams IO) (*commandQuery
 	} else if !protocol.ValidCommandID(id) {
 		return nil, errors.New("-id requires the exact command ID returned in a command receipt, not its retry key or node ID")
 	}
-	options := control.Options{JSON: *jsonOutput, Output: streams.Out, ServerAddress: *server, RequiredServerTag: *requiredServerTag, Transport: network.config()}
+	options := control.Options{JSON: *jsonOutput, Output: streams.Out, RetryOutput: streams.Err, ServerAddress: *server, RequiredServerTag: *requiredServerTag, Transport: network.config()}
 	return &commandQuery{
 		options: options, timeout: *timeout, ttl: ttl, nodeID: nodeID, key: key, id: id,
 		worktree: &pb.WorktreeCreate{

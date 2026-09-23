@@ -15,6 +15,10 @@ Windows), plus Herdr and Git on PATH. Install and sign in to the provider you
 want to use; the default is Copilot. A Herdr terminal window does not need to
 be open.
 
+If Herdr is not on PATH, pass `--herdr <executable-path>` to `init` or `join`.
+Relative paths are resolved against that command's working directory and saved
+as absolute paths so background startup and later `start` calls use the same executable.
+
 Use a mesh build supporting your installed Herdr's native protocol. This build
 supports protocols **18, 20 and 22**, including **Herdr 0.8.2 and 0.9.1**. Other native protocol
 versions are rejected rather than assumed compatible.
@@ -38,10 +42,15 @@ Do not store or sync tsnet state to multiple computers: each computer must enrol
 its own identity. A OneDrive copy of the executable is a delivery artifact;
 copy it into a local, non-synced installation directory before running it.
 
-Normal startup and policy preview/apply accept parent-directory links, including Herdr's installer-managed
-`bin` junction. The state directory itself and its private files must remain
-ordinary directories/files. Destructive cleanup and journal maintenance retain
-stricter path checks; use a physical (non-aliased) state path for those operations.
+Normal startup, policy preview/apply, and managed shutdown/destruction accept
+parent-directory links, including Herdr's installer-managed `bin` junction.
+Keep the same state-directory spelling while a daemon is running: private IPC
+uses that path, including on upgrades from older builds. Linked and physical
+spellings share on-disk ownership locks but may select different IPC endpoints.
+The state directory itself and its private files must remain ordinary
+directories/files; managed cleanup rejects links within that state tree without
+rejecting an installation-parent link. Offline journal maintenance retains
+stricter ancestor-link checks; use a physical (non-aliased) state path for it.
 
 To select a different state directory, put the optional global `--state-dir`
 **before** the command and use an absolute path:

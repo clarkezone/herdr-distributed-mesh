@@ -158,6 +158,11 @@ func parseManaged(args []string, streams IO) (managedArgs, error) {
 		if a.verb == "start" && !protocol.ValidIdempotencyKey(a.project) {
 			return a, errors.New("agent start requires --project")
 		}
+		if a.verb == "start" && a.prompt != "" {
+			if err := protocol.ValidateAgentControlInput(pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT, a.prompt, nil); err != nil {
+				return a, err
+			}
+		}
 	}
 	return a, nil
 }
@@ -236,11 +241,15 @@ func selectManagedNode(list *pb.NodeList, selector string) (*pb.NodeView, error)
 		return nil, fmt.Errorf("more than one node is named %q; run herdr-mesh nodes and use its exact ID", selector)
 	}
 	node := matches[0]
-	if !node.Connected || node.LastSeen == nil || node.LastSeen.CheckValid() != nil ||
-		time.Since(node.LastSeen.AsTime()) > 30*time.Second || node.LastSeen.AsTime().After(time.Now().Add(5*time.Second)) {
+	if !managedNodeReporting(node) {
 		return nil, fmt.Errorf("node %q is offline or has stopped reporting; run herdr-mesh start on that computer, then check herdr-mesh nodes again", selector)
 	}
 	return node, nil
+}
+
+func managedNodeReporting(node *pb.NodeView) bool {
+	return node.Connected && node.LastSeen != nil && node.LastSeen.CheckValid() == nil &&
+		time.Since(node.LastSeen.AsTime()) <= 30*time.Second && !node.LastSeen.AsTime().After(time.Now().Add(5*time.Second))
 }
 
 func executeManaged(ctx context.Context, client pb.FleetClient, dir string, a managedArgs, streams IO) error {
@@ -291,7 +300,7 @@ func executeManaged(ctx context.Context, client pb.FleetClient, dir string, a ma
 			connection := "Offline"
 			if node.Connected {
 				connection = "Connected"
-				if node.Stale {
+				if !managedNodeReporting(node) {
 					connection = "Not reporting"
 				}
 			}
@@ -627,6 +636,11 @@ func managedCapture(options control.Options, call func(control.Options) error) (
 }
 
 func managedStart(ctx context.Context, options control.Options, dir, node string, a managedArgs) error {
+	if a.prompt != "" {
+		if err := protocol.ValidateAgentControlInput(pb.AgentControlAction_AGENT_CONTROL_ACTION_PROMPT, a.prompt, nil); err != nil {
+			return err
+		}
+	}
 	// Persist the complete operator intent and node binding before setup. Retrying
 	// a logical name after it moves to a new node cannot retarget the workflow.
 	intent := struct {

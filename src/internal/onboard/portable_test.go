@@ -53,6 +53,37 @@ func TestHostnameDefaultAndExplicitOverride(t *testing.T) {
 	}
 }
 
+func TestOnboardingPinsRelativeHerdrExecutableBeforeChangingDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, executable := range []string{"herdr", "." + string(filepath.Separator) + "herdr", filepath.Join("tools", "herdr")} {
+		t.Run(executable, func(t *testing.T) {
+			f := newFixture(t)
+			o := joinOptions()
+			o.HerdrExecutable = executable
+			want := executable
+			if executable != "herdr" {
+				want = filepath.Join(cwd, executable)
+			}
+			f.d.Prerequisites = func(value string) error {
+				if value != want {
+					t.Fatalf("prerequisites used %q instead of %q", value, want)
+				}
+				return nil
+			}
+			if err := Run(context.Background(), o, io.Discard, f.d); err != nil {
+				t.Fatal(err)
+			}
+			if f.cfg.HerdrExecutable != want {
+				t.Fatalf("saved executable %q would resolve against daemon state directory, want %q", f.cfg.HerdrExecutable, want)
+			}
+		})
+	}
+}
+
 func TestStartReusesSavedConfigurationWithoutSetup(t *testing.T) {
 	for _, coordinator := range []bool{false, true} {
 		t.Run(map[bool]string{false: "node", true: "coordinator"}[coordinator], func(t *testing.T) {
