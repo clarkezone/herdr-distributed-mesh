@@ -4,6 +4,7 @@ package onboard
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"syscall"
@@ -21,7 +22,7 @@ func configureDaemonCommand(cmd *exec.Cmd) {
 
 func daemonLaunchError(err error) error {
 	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-		return errors.New("Windows refused an independent background process; use a normal terminal outside a restrictive process job, and check executable permissions (no terminal-bound fallback was started)")
+		return fmt.Errorf("Windows refused an independent background process; use a normal terminal outside a restrictive process job, and check executable permissions (no terminal-bound fallback was started): %w", err)
 	}
 	return err
 }

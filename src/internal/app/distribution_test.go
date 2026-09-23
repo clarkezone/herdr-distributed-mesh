@@ -98,6 +98,11 @@ func checkOperatorGuideCommands(t *testing.T, guide string) {
 					args[i] = arg[1 : len(arg)-1]
 				}
 			}
+			// PowerShell examples use Windows paths; validate global selection
+			// with a native absolute path when checking help on another OS.
+			if len(args) > 1 && args[0] == "--state-dir" {
+				args[1] = filepath.Join(t.TempDir(), "state")
+			}
 			err := Run(ctx, append(args, "-h"), IO{Out: io.Discard, Err: io.Discard})
 			if !errors.Is(err, flag.ErrHelp) && !(err == nil && (args[0] == "help" || args[0] == "version" || args[0] == "setup" || args[0] == "bootstrap")) {
 				t.Fatalf("operator example is not accepted by CLI help at line %d: %v", index+1, err)

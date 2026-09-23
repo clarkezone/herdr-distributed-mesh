@@ -173,6 +173,12 @@ func TestPortableBackgroundLaunch(t *testing.T) {
 	release := func() { _ = os.WriteFile(filepath.Join(dir, "child-release"), nil, 0600) }
 	defer release()
 	if err := startDaemon(exe, dir, append(os.Environ(), "HERDR_MESH_LAUNCH_TEST_CHILD=1")); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission) {
+			if _, statErr := os.Stat(filepath.Join(dir, "child-ready")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("refused background launch unexpectedly started a child: %v", statErr)
+			}
+			t.Skipf("host disallows independent Windows process launch: %v", err)
+		}
 		t.Fatal(err)
 	}
 	waitFor("child-ready")
