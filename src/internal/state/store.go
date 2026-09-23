@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	_ "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 var (
@@ -268,6 +269,34 @@ func (s *Store) enter(ctx context.Context) error {
 
 func (s *Store) leave() { <-s.gate }
 
+func transactionCancellation(err, cause error) bool {
+	if err == nil || cause == nil {
+		return false
+	}
+	if err == cause {
+		return true
+	}
+	switch value := err.(type) {
+	case interface{ Code() int }:
+		return value.Code() == sqlite3.SQLITE_INTERRUPT
+	case interface{ Unwrap() []error }:
+		// Row cleanup can join multiple reports of the same interruption.
+		// Every cause must be cancellation; never discard a storage failure.
+		causes := value.Unwrap()
+		if len(causes) == 0 {
+			return false
+		}
+		for _, nested := range causes {
+			if !transactionCancellation(nested, cause) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 	if err := ctx.Err(); err != nil {
 		return &canceledOperation{err}
@@ -284,8 +313,8 @@ func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err er
 		rollbackErr := tx.Rollback()
 		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			err = errors.Join(err, rollbackErr)
-		} else if rollbackErr == nil && !commitAttempted && err != nil && err == ctx.Err() {
-			err = &canceledOperation{err}
+		} else if rollbackErr == nil && !commitAttempted && transactionCancellation(err, ctx.Err()) {
+			err = &canceledOperation{ctx.Err()}
 		}
 	}()
 	if err := fn(tx); err != nil {

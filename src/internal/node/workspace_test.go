@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	pb "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
@@ -243,7 +244,7 @@ func TestWorkspaceTypedResultsAndSanitizedErrors(t *testing.T) {
 }
 
 func TestWorkspaceExpiredEffectStillCommitsOutcome(t *testing.T) {
-	completed := false
+	completed, entered := false, false
 	journal := observedJournal{commandJournal: testJournal(t), onComplete: func(ctx context.Context, _ *pb.CommandResult) {
 		completed = true
 		if ctx.Err() != nil {
@@ -253,15 +254,27 @@ func TestWorkspaceExpiredEffectStillCommitsOutcome(t *testing.T) {
 	handler := &commandHandler{nodeID: "test-node", journal: journal, workspacePolicy: workspacePolicy(t), workspaceNegotiated: true,
 		verifyCoordinator: allowCoordinator,
 		ensureWorkspace: func(ctx context.Context, _ herdr.Config, _ projects.Binding) (*pb.WorkspaceEnsureResult, error) {
+			entered = true
 			<-ctx.Done()
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				t.Fatal("effect must reach its deadline after entry")
+			}
 			return nil, herdr.ErrWorkspaceIndeterminate
 		}}
-	command := workspaceCommand()
-	command.Ttl = durationpb.New(50 * time.Millisecond)
-	result, err := handler.handle(context.Background(), command, time.Now())
-	if err != nil || !completed || result.GetStatus() != pb.CommandStatus_COMMAND_STATUS_INDETERMINATE {
-		t.Fatalf("expired effect not durably uncertain: %v %v", result, err)
-	}
+	// Fake time advances only once execution blocks on the effect deadline,
+	// not while the real journal/filesystem preconditions are running.
+	synctest.Test(t, func(t *testing.T) {
+		command := workspaceCommand()
+		command.Ttl = durationpb.New(50 * time.Millisecond)
+		result, err := handler.handle(context.Background(), command, time.Now())
+		if err != nil || !entered || !completed || result.GetStatus() != pb.CommandStatus_COMMAND_STATUS_INDETERMINATE {
+			t.Fatalf("expired effect not durably uncertain: entered=%t completed=%t result=%v err=%v", entered, completed, result, err)
+		}
+		stored, claimed, err := journal.Claim(context.Background(), command)
+		if err != nil || claimed || !proto.Equal(stored, result) {
+			t.Fatalf("expired effect outcome was not durable: %v %v", stored, err)
+		}
+	})
 }
 
 func TestWorkspaceExecutorUsesEarliestDeadline(t *testing.T) {

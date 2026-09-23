@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -116,7 +117,9 @@ func TestNodeConnectRequiresConfiguredTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if err := stream.Send(nodeHello("node-1")); err != nil {
+	// Authorization can finish before Send. EOF is not the RPC status;
+	// Recv must still report the exact required-tag rejection below.
+	if err := stream.Send(nodeHello("node-1")); err != nil && !errors.Is(err, io.EOF) {
 		t.Fatalf("Send(hello) error = %v", err)
 	}
 	_, err = stream.Recv()
