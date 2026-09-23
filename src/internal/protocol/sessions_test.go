@@ -12,7 +12,7 @@ import (
 var testIncarnation = strings.Repeat("a", 64)
 
 func TestSessionSelectors(t *testing.T) {
-	for _, name := range []string{"default", "worker-1", "a_b", strings.Repeat("x", 64)} {
+	for _, name := range []string{"default", "worker-1", "a_b", "QEI", "Build-QEI_2", strings.Repeat("X", 64), strings.Repeat("x", 64)} {
 		if ValidateSessionEnsure(&pb.SessionEnsure{Name: name}) != nil ||
 			ValidateSessionSelector(name, testIncarnation, true) != nil ||
 			ValidateSessionSelector(name, "", false) != nil {
@@ -22,7 +22,7 @@ func TestSessionSelectors(t *testing.T) {
 			t.Fatal("unpinned named mutation accepted")
 		}
 	}
-	for _, name := range []string{"", "UPPER", "../worker", "worker.one", "con", "lpt9", strings.Repeat("x", 65), "é"} {
+	for _, name := range []string{"", "../worker", "worker.one", "con", "CON", "Lpt9", "lpt9", strings.Repeat("x", 65), "é"} {
 		if ValidateSessionEnsure(&pb.SessionEnsure{Name: name}) == nil {
 			t.Fatalf("invalid ensure name accepted: %q", name)
 		}

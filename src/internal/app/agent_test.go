@@ -30,7 +30,7 @@ func TestAgentFlagsRejectBeforeEnrollment(t *testing.T) {
 		{"get", []string{"-agent", "../bad"}, "", "identifiers"},
 		{"get", []string{"-required-server-tag", ""}, "", "server tag"},
 		{"get", []string{"-session", "con"}, "", "session name or incarnation"},
-		{"read", []string{"-session", "UPPER"}, "", "session name or incarnation"},
+		{"read", []string{"-session", "AUX"}, "", "session name or incarnation"},
 		{"read", []string{"-follow", "-session", "../escape"}, "", "session name or incarnation"},
 		{"wait", []string{"-session-incarnation", "bad"}, "", "session name or incarnation"},
 		{"prompt", []string{"-session-incarnation", strings.Repeat("A", 64), "-prompt", "hello"}, "", "session name or incarnation"},

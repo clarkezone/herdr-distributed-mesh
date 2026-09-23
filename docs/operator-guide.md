@@ -108,6 +108,11 @@ browser cannot add fields an older daemon does not send.
 
 ### Connected, but Herdr is not live
 
+Existing Herdr session names may contain uppercase letters (for example `QEI`);
+preserve their exact spelling. This is separate from the lowercase mesh node
+label supplied to `init` or `join`. Keep coordinator and client mesh binaries
+updated together so discovery and the dashboard both accept those session names.
+
 **Connected** confirms the mesh connection, not successful Herdr discovery.
 The node card distinguishes waiting for discovery, a discovery failure, no
 reported sessions, and an unsupported session. It shows the discovery error

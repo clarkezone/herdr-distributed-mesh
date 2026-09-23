@@ -551,6 +551,28 @@ test("literal default never replaces an unidentified configured endpoint", () =>
   assert.equal(summary(state, now).known.workspaces, 2);
 });
 
+test("stopped uppercase session preserves live default inventory and exact names", () => {
+  const value = multiSessionNode();
+  value.herdr.status = "disabled";
+  value.sessions[0].name = "default";
+  value.sessions[1] = { name: "QEI", incarnation: "", status: "stopped", error_code: "" };
+  const state = success([value]);
+  const contexts = sessionContexts(state.snapshot.nodes[0]);
+  assert.equal(contexts.length, 2);
+  assert.equal(nodeFreshness(contexts.find((s) => s.session_name === "default"), state, now).live, true);
+  assert.equal(nodeFreshness(contexts.find((s) => s.session_name === "QEI"), state, now).live, false);
+  assert.equal(projectAgents(state.snapshot.nodes).length, 1);
+  assert.equal(summary(state, now).live.workspaces, 1);
+});
+
+test("mixed-case live session filters retain exact session identity", () => {
+  const value = multiSessionNode();
+  value.sessions[0].name = "Build-QEI";
+  const nodes = snapshot([value]).nodes;
+  assert.equal(projectAgents(nodes, "", "all", { session: "Build-QEI" }).length, 1);
+  assert.equal(projectAgents(nodes, "", "all", { session: "build-qei" }).length, 0);
+});
+
 test("session freshness uses its own observation stream and never revives stopped retained data", () => {
   const value = multiSessionNode();
   value.sessions[0].herdr_received_at = iso(-30_000);

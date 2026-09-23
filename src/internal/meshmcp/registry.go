@@ -75,7 +75,7 @@ func fields(groups ...schema) schema {
 }
 
 func sessionName() schema {
-	return schema{"type": "string", "pattern": `^[a-z0-9][a-z0-9_-]{0,63}$`}
+	return schema{"type": "string", "pattern": `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`}
 }
 
 func sessionSelectors() schema {

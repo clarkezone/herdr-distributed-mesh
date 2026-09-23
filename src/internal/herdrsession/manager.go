@@ -35,7 +35,7 @@ var (
 	ErrOutputLimit     = errors.New("herdr session: native output limit exceeded")
 )
 
-var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 // ValidateName deliberately uses a portable subset of native session names.
 func ValidateName(name string) error {
@@ -43,7 +43,7 @@ func ValidateName(name string) error {
 		return ErrInvalidName
 	}
 
-	switch name {
+	switch strings.ToLower(name) {
 	case "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5",
 		"com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
 		"lpt5", "lpt6", "lpt7", "lpt8", "lpt9":

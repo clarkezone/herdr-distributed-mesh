@@ -24,7 +24,7 @@ func TestSessionFlagsValidateBeforeEnrollment(t *testing.T) {
 	}
 	base := []string{"ensure", "-server", "server:50052", "-node", "node-1"}
 	for _, suffix := range [][]string{
-		{}, {"-name", "../escape"}, {"-name", "UPPER"}, {"-name", "con"}, {"-name", "lpt1"}, {"-name", "nul"},
+		{}, {"-name", "../escape"}, {"-name", "AUX"}, {"-name", "con"}, {"-name", "lpt1"}, {"-name", "nul"},
 		{"-name", "worker", "-ttl", "31s"}, {"-name", "worker", "-ttl", "0s"},
 		{"-name", "worker", "-key", "bad/key"}, {"-name", "worker", "extra"},
 	} {
@@ -37,7 +37,7 @@ func TestSessionFlagsValidateBeforeEnrollment(t *testing.T) {
 
 func TestSessionFlagsKeepExactRequest(t *testing.T) {
 	streams := IO{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
-	args := []string{"ensure", "-server", "server:50052", "-node", "node-1", "-name", "worker", "-key", "retry-key", "-ttl", "15s", "-json"}
+	args := []string{"ensure", "-server", "server:50052", "-node", "node-1", "-name", "Build-QEI", "-key", "retry-key", "-ttl", "15s", "-json"}
 	first, err := parseSessionQuery("session", args, streams)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestSessionFlagsKeepExactRequest(t *testing.T) {
 	if err != nil || !proto.Equal(first.request, second.request) {
 		t.Fatalf("exact retry changed: %v", err)
 	}
-	if first.request.CommandType != protocol.SessionEnsureCommandType || first.request.SessionEnsure.Name != "worker" ||
+	if first.request.CommandType != protocol.SessionEnsureCommandType || first.request.SessionEnsure.Name != "Build-QEI" ||
 		first.request.IdempotencyKey != "retry-key" || first.request.Ttl.AsDuration() != 15*time.Second || !first.options.JSON {
 		t.Fatalf("flags lost: %+v", first)
 	}
@@ -62,7 +62,7 @@ func TestWorkspaceSessionSelectorsPreservedAndValidated(t *testing.T) {
 		if command == "create-worktree" {
 			args = append(args, "-name", "task")
 		}
-		for _, name := range []string{"", "worker"} {
+		for _, name := range []string{"", "worker", "QEI"} {
 			incarnation := strings.Repeat("a", 64)
 			selected := append(append([]string{}, args...), "-session", name, "-session-incarnation", incarnation)
 			query, err := parseCommandQuery(command, selected, IO{Err: &bytes.Buffer{}})
@@ -70,7 +70,7 @@ func TestWorkspaceSessionSelectorsPreservedAndValidated(t *testing.T) {
 				t.Fatalf("selectors changed: %+v %v", query, err)
 			}
 		}
-		for _, suffix := range [][]string{{"-session", "con"}, {"-session", "UPPER"}, {"-session-incarnation", "bad"}, {"-session-incarnation", strings.Repeat("A", 64)}} {
+		for _, suffix := range [][]string{{"-session", "con"}, {"-session", "AUX"}, {"-session-incarnation", "bad"}, {"-session-incarnation", strings.Repeat("A", 64)}} {
 			if _, err := parseCommandQuery(command, append(append([]string{}, args...), suffix...), IO{Err: &bytes.Buffer{}}); err == nil {
 				t.Fatalf("invalid selector accepted: %v", suffix)
 			}

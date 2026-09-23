@@ -225,19 +225,19 @@ func TestSessionIdentityNotSocketPath(t *testing.T) {
 }
 
 func TestNamesAndNoRemoteArguments(t *testing.T) {
-	for _, name := range []string{"", "../x", `a\b`, "-x", "A", "aux", "com1", "nul", "a b", "dev;cmd", "é", strings.Repeat("a", 65)} {
+	for _, name := range []string{"", "../x", `a\b`, "-x", "aux", "AUX", "Com1", "NUL", "com1", "nul", "a b", "dev;cmd", "é", strings.Repeat("a", 65)} {
 		if ValidateName(name) == nil {
 			t.Errorf("accepted %q", name)
 		}
 	}
 	f := &fakeRunner{}
 	m := testManager(t, f)
-	if _, err := m.Ensure(context.Background(), "dev-a"); err != nil {
+	if _, err := m.Ensure(context.Background(), "Build-QEI"); err != nil {
 		t.Fatal(err)
 	}
 	found := false
 	for _, args := range f.commands {
-		if fmt.Sprint(args) == "[--session dev-a server]" {
+		if fmt.Sprint(args) == "[--session Build-QEI server]" {
 			found = true
 		}
 	}

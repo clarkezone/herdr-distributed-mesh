@@ -436,6 +436,13 @@ automatic reconciliation, the fuller CLI, or MCP.
 
 ## Named headless sessions
 
+Herdr session names preserve their exact letter case, including existing names
+such as `QEI`. The mesh accepts `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` and rejects
+Windows device names case-insensitively. This differs from mesh node labels,
+which remain lowercase. A stopped mixed-case session does not hide healthy
+sessions. Upgrade both coordinator and affected nodes to carry these names
+through discovery, control, and the dashboard.
+
 Upgrade the coordinator and node together. Enable the named-session manager
 with an **explicit** executable; no installed-default or focused session is
 selected implicitly, and no default Herdr process needs to be running:

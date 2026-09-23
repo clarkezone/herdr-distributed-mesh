@@ -53,7 +53,7 @@ func parseSessionQuery(command string, args []string, streams IO) (*sessionQuery
 	var name, key string
 	ttl := protocol.DefaultCommandTTL
 	if ensure {
-		flags.StringVar(&name, "name", "", "portable lowercase session name")
+		flags.StringVar(&name, "name", "", "portable Herdr session name; preserve exact letter case")
 		flags.StringVar(&key, "key", "", "actor-scoped request key; preserve name, node, and TTL for exact retries")
 		flags.StringVar(&key, "idempotency-key", "", "alias for -key")
 		flags.DurationVar(&ttl, "ttl", ttl, "startup deadline after admission; at most 30s")

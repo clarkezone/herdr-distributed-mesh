@@ -87,7 +87,7 @@ export function parseSnapshot(body) {
     const names = new Set();
     const sessions = (node.sessions ?? []).map((session) => {
       if (!record(session) || !strings(session, ["name", "incarnation", "status", "error_code"]) ||
-        !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(session.name) || names.has(session.name) ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session.name) || names.has(session.name) ||
         !SESSION_STATUSES.includes(session.status) ||
         (session.incarnation !== "" && !/^[A-Za-z0-9:_-]{1,128}$/.test(session.incarnation))) invalid();
       if (session.herdr_received_at !== undefined && !timestamp(session.herdr_received_at)) invalid();
