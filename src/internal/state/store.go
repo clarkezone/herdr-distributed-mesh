@@ -94,12 +94,7 @@ func openStore(ctx context.Context, path, ownerID string, kind databaseKind) (_ 
 	if err := protectPath(parent, true); err != nil {
 		return nil, fmt.Errorf("protect state directory: %w", err)
 	}
-	// Canonicalizing ancestor links ensures aliases use the same ownership file.
-	parent, err = filepath.EvalSymlinks(parent)
-	if err != nil {
-		return nil, fmt.Errorf("resolve state directory: %w", err)
-	}
-	path = filepath.Join(parent, filepath.Base(path))
+	// The kernel lock protects the same file even through a directory alias.
 	if err := checkRegular(path + ".lock"); err != nil {
 		return nil, err
 	}

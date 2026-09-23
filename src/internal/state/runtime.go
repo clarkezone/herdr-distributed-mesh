@@ -29,23 +29,10 @@ func PrepareRoleState(ctx context.Context, stateDir, role string) (*RoleStateLoc
 	if statErr != nil && !created {
 		return nil, ErrMaintenancePath
 	}
-	parent := root
-	for {
-		if info, err := os.Lstat(parent); err == nil {
-			if filepath.Dir(parent) == parent {
-				if !info.IsDir() || !maintenanceOrdinary(parent, info) {
-					return nil, ErrMaintenancePath
-				}
-			} else {
-				if _, err := maintenanceDirectory(parent); err != nil {
-					return nil, err
-				}
-			}
-			break
-		} else if !os.IsNotExist(err) || filepath.Dir(parent) == parent {
-			return nil, ErrMaintenancePath
+	if !created {
+		if _, err := runtimeDirectory(root); err != nil {
+			return nil, err
 		}
-		parent = filepath.Dir(parent)
 	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, ErrMaintenancePath
@@ -56,4 +43,19 @@ func PrepareRoleState(ctx context.Context, stateDir, role string) (*RoleStateLoc
 		}
 	}
 	return AcquireRoleState(ctx, root, role)
+}
+
+func runtimeDirectory(path string) (string, error) {
+	if !maintenanceLocalPath(path) {
+		return "", ErrMaintenancePath
+	}
+	path = filepath.Clean(path)
+	if filepath.Dir(path) == path {
+		return "", ErrMaintenancePath
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || !maintenanceOrdinary(path, info) {
+		return "", ErrMaintenancePath
+	}
+	return path, nil
 }

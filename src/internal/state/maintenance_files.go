@@ -56,6 +56,13 @@ func maintenanceOpenRegular(path string, write bool) (*os.File, error) {
 	if _, err := maintenanceDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
+	return runtimeOpenRegular(path, write)
+}
+
+func runtimeOpenRegular(path string, write bool) (*os.File, error) {
+	if _, err := runtimeDirectory(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || !maintenanceOrdinary(path, info) {
 		return nil, ErrMaintenancePath

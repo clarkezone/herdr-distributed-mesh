@@ -76,26 +76,26 @@ func TestPrepareRoleStateCancellationAndUnsafeRoots(t *testing.T) {
 	}
 }
 
-func TestPrepareRoleStateDoesNotFollowDirectoryAliases(t *testing.T) {
+func TestPrepareRoleStateRejectsLinkedRootButAllowsLinkedAncestor(t *testing.T) {
 	parent := maintenanceTempDir(t)
 	target := maintenanceTempDir(t)
 	link := filepath.Join(parent, "alias")
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("directory symlinks unavailable: %v", err)
 	}
-	for _, root := range []string{link, filepath.Join(link, "new"), filepath.Join(link, "new", "nested")} {
-		if guard, err := PrepareRoleState(context.Background(), root, "client"); !errors.Is(err, ErrMaintenancePath) {
-			if guard != nil {
-				_ = guard.Close()
-			}
-			t.Fatalf("role preparation followed a directory alias: %v", err)
+	if guard, err := PrepareRoleState(context.Background(), link, "client"); !errors.Is(err, ErrMaintenancePath) {
+		if guard != nil {
+			_ = guard.Close()
 		}
-	}
-	if _, err := os.Stat(filepath.Join(target, "new")); !os.IsNotExist(err) {
-		t.Fatal("rejected alias created state in its target")
+		t.Fatalf("role preparation accepted linked state root: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(target, maintenanceRoleLock)); !os.IsNotExist(err) {
 		t.Fatal("rejected alias created a role lock in its target")
+	}
+	for _, root := range []string{filepath.Join(link, "new"), filepath.Join(link, "new", "nested")} {
+		guard, err := PrepareRoleState(context.Background(), root, "client")
+		requireOK(t, err)
+		requireOK(t, guard.Close())
 	}
 }
 

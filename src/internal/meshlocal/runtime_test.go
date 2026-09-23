@@ -231,16 +231,15 @@ func (n *localNetwork) dependencies(t *testing.T) runtimeDependencies {
 }
 
 func TestManagedRuntimeSharesOneNetworkAcrossRolesAndParallelClients(t *testing.T) {
-	testManagedRuntimeAssignedDNS(t, "herdr-mesh-desktop.assigned-tail.test")
+	testManagedRuntimeAssignedDNS(t, "herdr-mesh-desktop.assigned-tail.test", canonicalTempDir(t))
 }
 
 func TestManagedRuntimePreservesAssignedCollisionSuffix(t *testing.T) {
-	testManagedRuntimeAssignedDNS(t, "herdr-mesh-desktop-1.assigned-tail.test")
+	testManagedRuntimeAssignedDNS(t, "herdr-mesh-desktop-1.assigned-tail.test", canonicalTempDir(t))
 }
 
-func testManagedRuntimeAssignedDNS(t *testing.T, assignedDNS string) {
+func testManagedRuntimeAssignedDNS(t *testing.T, assignedDNS, dir string) {
 	t.Helper()
-	dir := canonicalTempDir(t)
 	if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
 		t.Fatal(err)
 	}

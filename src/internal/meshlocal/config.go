@@ -84,24 +84,6 @@ func privateDir(dir string, create bool) (string, error) {
 	if filepath.Dir(root) == root {
 		return "", errors.New("managed state cannot be a filesystem root")
 	}
-	// Refuse links in the entire path, including Windows junction aliases.
-	for path := root; ; path = filepath.Dir(path) {
-		info, err := os.Lstat(path)
-		if err == nil {
-			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return "", errors.New("managed state path contains a link or non-directory")
-			}
-			resolved, err := filepath.EvalSymlinks(path)
-			if err != nil || !samePath(resolved, path) {
-				return "", errors.New("managed state path contains an alias")
-			}
-		} else if !create || !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-		if filepath.Dir(path) == path {
-			break
-		}
-	}
 	if create {
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return "", err

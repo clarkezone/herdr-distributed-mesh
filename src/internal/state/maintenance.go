@@ -116,7 +116,7 @@ func AcquireRoleState(ctx context.Context, stateDir, role string) (*RoleStateLoc
 	if role != "server" && role != "node" && role != "client" {
 		return nil, errors.New("maintenance: runtime lock role must be server, node, or client")
 	}
-	root, err := maintenanceDirectory(stateDir)
+	root, err := runtimeDirectory(stateDir)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func AcquireRoleState(ctx context.Context, stateDir, role string) (*RoleStateLoc
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 	created := err == nil
 	if errors.Is(err, os.ErrExist) {
-		file, err = maintenanceOpenRegular(path, true)
+		file, err = runtimeOpenRegular(path, true)
 	}
 	if err != nil {
 		return nil, ErrMaintenancePath
