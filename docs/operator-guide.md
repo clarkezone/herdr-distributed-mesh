@@ -50,7 +50,7 @@ To select a different state directory, put the optional global `--state-dir`
 herdr-mesh --state-dir C:\private\mesh-state start
 ```
 
-The same global override applies to `init`, `join`, `shutdown`, `status`, `nodes`,
+The same global override applies to `help`, `init`, `join`, `shutdown`, `status`, `nodes`,
 `dashboard`, `mcp`, `project`, and `agent`. Use it consistently for the selected
 installation; the examples below use the executable-relative default.
 
@@ -83,6 +83,21 @@ If your tailnet requires device approval, complete that approval too.
 When ready, the command prints the exact join command for another computer.
 It uses the coordinator's **actual full MagicDNS name**, including its tailnet
 suffix. Do not construct that address yourself.
+
+To show the join command again at any time, run this **on the controller**:
+
+```powershell
+herdr-mesh help
+```
+
+`herdr-mesh status` also shows the join instructions. Help reads the saved
+controller address without starting or enrolling anything; the controller must
+be running when another computer joins. Custom controller ports are included.
+
+If setup stops waiting before browser sign-in or device approval finishes, the
+background connection can still become ready. Complete sign-in, then use
+`herdr-mesh status` and `herdr-mesh help`; do not recreate the mesh. If status
+says the mesh is stopped, use `herdr-mesh start` to resume its saved configuration.
 
 ## 2. Join from laptop
 

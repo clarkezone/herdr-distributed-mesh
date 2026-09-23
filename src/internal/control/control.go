@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
@@ -112,35 +113,36 @@ func writeServerInfo(ctx context.Context, options Options, client agentflowv1.Fl
 		}
 		return json.NewEncoder(options.Output).Encode(result)
 	}
+	var view humanView
+	view.field("Coordinator", "reachable; compatible with this client")
+	view.field("Address", options.ServerAddress)
+	view.field("Version", info.ImplementationVersion)
+	view.field("Coordinator ID", info.InstanceId)
+	view.field("Execution readiness", "not checked here; inspect nodes and sessions before starting work")
 	if options.Diagnose {
-		keyExpiry := "none"
+		view.field("Protocol", fmt.Sprintf("compatible; using version %d (coordinator supports %d-%d)",
+			selectedProtocol, info.Protocol.GetMinimum(), info.Protocol.GetMaximum()))
+		view.field("Capability codes", strings.Join(info.Capabilities, ", "))
+		view.field("Local transport", "embedded Tailscale client")
+		view.field("Local Tailscale ID", localStatus.StableID)
+		view.field("Local DNS name", localStatus.DNSName)
+		view.field("Local IP addresses", strings.Join(localStatus.IPs, ", "))
+		view.field("Requested role tags", strings.Join(options.Transport.Tags, ", "))
+		view.field("Assigned role tags", strings.Join(localStatus.Tags, ", "))
+		keyExpiry := "none reported"
 		if localStatus.KeyExpiry != nil {
 			keyExpiry = localStatus.KeyExpiry.Format(time.RFC3339)
 		}
-		fmt.Fprintf(
-			options.Output,
-			"local tsnet stable_id=%s dns=%s ips=%v requested_tags=%v assigned_tags=%v key_expiry=%s state_dir=%s health=%v\n",
-			localStatus.StableID,
-			localStatus.DNSName,
-			localStatus.IPs,
-			options.Transport.Tags,
-			localStatus.Tags,
-			keyExpiry,
-			localStatus.StateDir,
-			localStatus.Health,
-		)
+		view.field("Enrollment key expiry", keyExpiry)
+		view.field("Local transport state directory", localStatus.StateDir)
+		health := "no issues reported"
+		if len(localStatus.Health) > 0 {
+			health = strings.Join(localStatus.Health, "; ")
+		}
+		view.field("Local transport health", health)
 	}
-	fmt.Fprintf(
-		options.Output,
-		"server instance=%s version=%s protocol=%d-%d selected=%d capabilities=%v\n",
-		info.InstanceId,
-		info.ImplementationVersion,
-		info.Protocol.GetMinimum(),
-		info.Protocol.GetMaximum(),
-		selectedProtocol,
-		info.Capabilities,
-	)
-	return nil
+	_, err = fmt.Fprint(options.Output, view.String())
+	return err
 }
 
 type serverInfoClient interface {

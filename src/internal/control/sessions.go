@@ -79,14 +79,27 @@ func writeSessions(options Options, list *pb.SessionList) error {
 			}
 		}
 		for _, value := range list.Sessions {
-			if _, err := fmt.Fprintf(options.Output, "session=%s session_incarnation=%s status=%s herdr=%s stale=%t error=%s\n",
-				value.Name, value.Incarnation, value.Status, value.Herdr.GetStatus(), value.Stale, value.ErrorCode); err != nil {
+			var view humanView
+			view.session(value.Name, value.Incarnation)
+			view.field("Status", readable(value.Status))
+			view.field("Herdr", readable(value.Herdr.GetStatus()))
+			view.freshness(value.Stale)
+			view.field("Issue", HumanDetail(value.ErrorCode))
+			switch value.Status {
+			case "unavailable", "unsupported":
+				view.field("Next", "check the execution node's Herdr configuration and supported version, then refresh sessions")
+			case "stopped":
+				view.field("Next", "use ctl session ensure with this node and session name when you intend to start it")
+			case "starting":
+				view.field("Next", "wait and refresh sessions before sending agent input")
+			}
+			if _, err := fmt.Fprintln(options.Output, view.String()); err != nil {
 				return err
 			}
 		}
 	}
 	if list.ErrorCode != "" {
-		return fmt.Errorf("list sessions: %s", list.ErrorCode)
+		return fmt.Errorf("list sessions: %s", HumanDetail(list.ErrorCode))
 	}
 	return nil
 }

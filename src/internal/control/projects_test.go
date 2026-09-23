@@ -140,7 +140,7 @@ func TestProjectPendingWithoutAcknowledgement(t *testing.T) {
 	record := projectFixture()
 	record.Applied = nil
 	var out bytes.Buffer
-	if err := writeProject(Options{Output: &out}, record); err != nil || !strings.Contains(out.String(), "applied=none") {
+	if err := writeProject(Options{Output: &out}, record); err != nil || !strings.Contains(out.String(), "Applied configuration: none reported") {
 		t.Fatalf("pending record invented an acknowledgement: %s %v", out.String(), err)
 	}
 	client := projectClient{list: func(request *pb.ListProjectsRequest) (*pb.ProjectList, error) {

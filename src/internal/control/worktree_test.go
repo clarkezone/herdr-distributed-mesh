@@ -48,7 +48,7 @@ func TestWorktreeOutputIsOneTypedObject(t *testing.T) {
 	if err := writeCommand(Options{Output: &output}, record); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "workspace=w2 name=task branch=task base_commit=") {
+	if !strings.Contains(output.String(), "Workspace: w2\nWorktree name: task\nBranch: task\nBase commit: ") {
 		t.Fatal("human output missing worktree identity")
 	}
 }

@@ -53,12 +53,26 @@ func TestValidateListenAddress(t *testing.T) {
 		if err := ValidateListenAddress(address); err != nil {
 			t.Fatalf("%s rejected: %v", address, err)
 		}
+
 	}
 	for _, address := range []string{"", ":8787", "0.0.0.0:8787", "[::]:8787", "localhost:8787", "100.1.2.3:8787",
 		"example.com:8787", "127.0.0.1", "127.0.0.1:http", "127.0.0.1:-1", "127.0.0.1:65536", "[::1%eth0]:8787"} {
 		if err := ValidateListenAddress(address); err == nil {
 			t.Fatalf("unsafe address %s accepted", address)
 		}
+	}
+}
+
+func TestListenerFailureNamesAddressAndOverride(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	address := listener.Addr().String()
+	err = Run(context.Background(), Options{ListenAddress: address, ServerAddress: "coordinator:50052", Output: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), address) || !strings.Contains(err.Error(), "-listen") {
+		t.Fatalf("bind failure lacks actionable address: %v", err)
 	}
 }
 

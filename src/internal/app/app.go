@@ -41,6 +41,9 @@ func Run(ctx context.Context, args []string, streams IO) error {
 		flags := flag.NewFlagSet("herdr-mesh", flag.ContinueOnError)
 		flags.SetOutput(streams.Err)
 		dir := flags.String("state-dir", "", "absolute managed state directory; default: herdr-mesh-state beside the executable")
+		var help bool
+		flags.BoolVar(&help, "help", false, "show help for this installation")
+		flags.BoolVar(&help, "h", false, "show help for this installation")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
@@ -50,9 +53,12 @@ func Run(ctx context.Context, args []string, streams IO) error {
 			return err
 		}
 		args = flags.Args()
+		if help {
+			args = append([]string{"help"}, args...)
+		}
 		if len(args) > 0 {
 			switch args[0] {
-			case "init", "join", "start", "shutdown", "nodes", "status", "doctor", "dashboard", "mcp", "project", "agent":
+			case "init", "join", "start", "shutdown", "nodes", "status", "doctor", "dashboard", "mcp", "project", "agent", "help", "-h", "--help":
 				if managedExplicitServer(args[1:]) && args[0] != "join" {
 					return errors.New("global --state-dir selects managed state; do not combine it with advanced --server")
 				}
@@ -63,6 +69,9 @@ func Run(ctx context.Context, args []string, streams IO) error {
 	}
 	if len(args) == 0 {
 		printUsage(streams.Err)
+		if err := printControllerHelp(ctx, streams.Err); err != nil {
+			return err
+		}
 		return flag.ErrHelp
 	}
 
@@ -116,10 +125,11 @@ func Run(ctx context.Context, args []string, streams IO) error {
 			printAdvancedUsage(streams.Out)
 		} else {
 			printUsage(streams.Out)
+			return printControllerHelp(ctx, streams.Out)
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("unknown command %q; run herdr-mesh help to see available commands", args[0])
 	}
 }
 
@@ -367,8 +377,7 @@ Connect each computer once:
   herdr-mesh join --server <coordinator-full-magic-dns-name> [--name <node-name>]
 
 Names default to this machine's hostname; --name overrides the mesh label.
-Configuration, enrollment, databases and logs live in herdr-mesh-state beside
-the executable. No registry, login startup or system service is installed.
+Configuration and logs live in herdr-mesh-state beside the executable.
 Use herdr-mesh --state-dir <absolute-directory> <command> to select other state.
 
 Use the saved mesh connection:
@@ -395,6 +404,7 @@ Stop or remove this computer's managed installation:
 Shutdown preserves state by default. --destroy requires confirmation and an API token.
 
 Use --help on a command for options.
+After setup, herdr-mesh help on the controller shows the join command.
   herdr-mesh version
   herdr-mesh help --advanced`)
 }

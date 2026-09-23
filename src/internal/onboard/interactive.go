@@ -48,7 +48,6 @@ func DefaultDependencies(input io.Reader, output io.Writer) Dependencies {
 					return fmt.Errorf("required executable %q is not on PATH; install Herdr and Git yourself before onboarding: %w", name, err)
 				}
 			}
-			fmt.Fprintln(output, "Use an already-installed, authenticated provider CLI with Herdr; onboarding does not install or authenticate provider tools.")
 			return nil
 		},
 		Executable: os.Executable, Start: startDaemon, Browser: openBrowser,
@@ -121,7 +120,7 @@ func confirm(ctx context.Context, input io.Reader) (bool, error) {
 	}
 }
 
-func validAuthURL(raw string) bool {
+func ValidAuthURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme == "https" && u.User == nil &&
 		u.Port() == "" && (u.Hostname() == "login.tailscale.com" || u.Hostname() == "controlplane.tailscale.com") &&

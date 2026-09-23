@@ -180,7 +180,7 @@ func TestConfigurationConflictAndAdvancedStateRefused(t *testing.T) {
 	f := newFixture(t)
 	f.saved = 1
 	f.cfg = meshlocal.Config{Name: "other"}
-	if err := Run(context.Background(), joinOptions(), io.Discard, f.d); err == nil || !strings.Contains(err.Error(), "different managed identity") {
+	if err := Run(context.Background(), joinOptions(), io.Discard, f.d); err == nil || !strings.Contains(err.Error(), "different mesh configuration") {
 		t.Fatal(err)
 	}
 	if f.saved != 1 || f.starts != 0 || f.prompts != 0 {
@@ -259,7 +259,7 @@ func TestNamesServerAndRedirectedSecretValidation(t *testing.T) {
 		t.Fatal("redirected token accepted")
 	}
 	for _, u := range []string{"https://evil.example/a/key", "http://login.tailscale.com/a/key", "https://login.tailscale.com@evil.example/a/key"} {
-		if validAuthURL(u) {
+		if ValidAuthURL(u) {
 			t.Fatalf("unsafe browser URL %s", u)
 		}
 	}

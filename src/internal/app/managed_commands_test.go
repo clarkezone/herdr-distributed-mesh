@@ -161,7 +161,7 @@ func TestManagedNameHandleRefusesUnknownAndPreservesOptionalProviderSession(t *t
 		t.Fatal(err)
 	}
 	unknown := mcpLifecycleRecord(t, r, pb.CommandStatus_COMMAND_STATUS_INDETERMINATE)
-	if _, err := managedHandle(managedNamedProjection(unknown), "node-1", a); err == nil || !strings.Contains(err.Error(), "unresolved") {
+	if _, err := managedHandle(managedNamedProjection(unknown), "node-1", a); err == nil || !strings.Contains(err.Error(), "not fully confirmed") {
 		t.Fatalf("unknown launch not fenced: %v", err)
 	}
 	for _, providerSession := range []string{"", "provider-session-original"} {
@@ -225,7 +225,7 @@ func TestManagedStartCrossClientNameDoesNotSetUpAnotherPane(t *testing.T) {
 		return &pb.NamedAgentRecord{Record: &pb.CommandRecord{Status: pb.CommandStatus_COMMAND_STATUS_RUNNING}}, nil
 	}}
 	err := managedStart(context.Background(), managedOptions(client, a, io.Discard), maintenanceAppTempDir(t), "node-1", a)
-	if err == nil || !strings.Contains(err.Error(), "already has a durable start") {
+	if err == nil || !strings.Contains(err.Error(), "already has a saved start request") {
 		t.Fatalf("another controller's pending start bypassed: %v", err)
 	}
 }
@@ -278,7 +278,7 @@ func TestManagedProjectWaitCancellationAndGenerationFence(t *testing.T) {
 	}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := managedWaitProject(ctx, client, "node", "demo", nil); !errors.Is(err, context.Canceled) {
+	if _, err := managedWaitProject(ctx, client, "node", "demo", nil, false); !errors.Is(err, context.Canceled) {
 		t.Fatalf("project wait ignored cancellation: %v", err)
 	}
 	client.project = func(*pb.GetProjectRequest) (*pb.ProjectRecord, error) {
@@ -287,7 +287,7 @@ func TestManagedProjectWaitCancellationAndGenerationFence(t *testing.T) {
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_, err := managedWaitProject(ctx, client, "node", "demo", &pb.ProjectRecord{
-		Desired: &pb.ProjectConfig{NodeInstanceId: "node", ProjectId: "demo", Generation: 1}, Readiness: "pending"})
+		Desired: &pb.ProjectConfig{NodeInstanceId: "node", ProjectId: "demo", Generation: 1}, Readiness: "pending"}, false)
 	if err == nil || !strings.Contains(err.Error(), "configuration changed") {
 		t.Fatalf("generation changed while waiting: %v", err)
 	}

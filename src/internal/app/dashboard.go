@@ -29,7 +29,7 @@ func runDashboard(ctx context.Context, args []string, streams IO) error {
 	if *serverAddress == "" {
 		client, closeClient, _, err := managedFleet(ctx)
 		if err != nil {
-			return err
+			return explainManagedConnection(ctx, err)
 		}
 		defer closeClient()
 		return dashboard.Run(ctx, dashboard.Options{FleetClient: client, ListenAddress: *listenAddress, Output: streams.Out})

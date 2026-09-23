@@ -38,7 +38,7 @@ func parseSessionQuery(command string, args []string, streams IO) (*sessionQuery
 	ensure := command == "session"
 	if ensure {
 		if len(args) == 0 || args[0] != "ensure" {
-			return nil, errors.New("session requires ensure")
+			return nil, errors.New("session requires ensure; use herdr-mesh ctl session ensure -help for flags, or ctl sessions to list sessions")
 		}
 		args = args[1:]
 	}
@@ -65,13 +65,13 @@ func parseSessionQuery(command string, args []string, streams IO) (*sessionQuery
 		return nil, err
 	}
 	if flags.NArg() != 0 {
-		return nil, errors.New("unexpected positional arguments")
+		return nil, errors.New("session commands accept flags, not positional arguments; add -help to see the required flags")
 	}
 	if strings.TrimSpace(*server) == "" || strings.TrimSpace(*nodeID) == "" {
 		return nil, errors.New("-server and -node are required")
 	}
 	if strings.TrimSpace(*tag) == "" || *timeout <= 0 {
-		return nil, errors.New("expected server tag and positive timeout are required")
+		return nil, errors.New("expected server tag (-required-server-tag) must not be empty and -timeout must be positive (for example 1m)")
 	}
 	query := &sessionQuery{nodeID: *nodeID, timeout: *timeout, options: control.Options{
 		Output: streams.Out, JSON: *jsonOutput, ServerAddress: *server, RequiredServerTag: *tag, Transport: network.config(),

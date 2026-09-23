@@ -37,7 +37,7 @@ func TestInterruptedStateAndLauncherFailureNeverReplaceIdentity(t *testing.T) {
 			if scenario == "orphan-state" && f.saved != 0 {
 				t.Fatal("orphaned identity replaced")
 			}
-			if scenario == "lock-never-acquired" && !strings.Contains(err.Error(), "did not acquire") {
+			if scenario == "lock-never-acquired" && !strings.Contains(err.Error(), "mesh did not start") {
 				t.Fatal(err)
 			}
 			if f.prompts != 0 || f.policyCalls != 0 {

@@ -95,7 +95,7 @@ func TestWorkspaceCommandOutputIsOneTypedObject(t *testing.T) {
 	if err := writeCommand(Options{Output: &output}, record); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "project=AgentFlow binding_revision=r1 workspace=w1 created=false") {
+	if !strings.Contains(output.String(), "Project: AgentFlow\nBinding revision: r1\nWorkspace: w1\nCreated: false\n") {
 		t.Fatal("workspace human output missing identifiers")
 	}
 }

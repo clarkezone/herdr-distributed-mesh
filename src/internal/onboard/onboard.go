@@ -139,7 +139,7 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(output, "Mesh node label: %s\n", o.Name)
+	fmt.Fprintf(output, "Node: %s\n", o.Name)
 	exe, err := d.Executable()
 	if err != nil {
 		return err
@@ -158,9 +158,9 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 	existing, err := d.Load(dir)
 	if err == nil {
 		if existing != cfg {
-			return fmt.Errorf("this computer already has a different managed identity in %s; reuse its exact init/join options, or explicitly stop and archive it before choosing another identity", dir)
+			return fmt.Errorf("this computer already has a different mesh configuration in %s; use herdr-mesh start to resume it, or reuse the original init/join options", dir)
 		}
-		fmt.Fprintln(output, "Reusing this computer's existing managed identity.")
+		fmt.Fprintln(output, "Using the saved mesh configuration.")
 	} else {
 		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("cannot inspect managed configuration; refusing replacement: %w", err)
@@ -201,14 +201,13 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 }
 
 func launchAndWait(ctx context.Context, exe, dir string, coordinator bool, output io.Writer, d Dependencies) error {
-	fmt.Fprintf(output, "Mesh state: %s\n", dir)
-	fmt.Fprintln(output, "Background runtime only; no login or boot startup is installed.")
+	fmt.Fprintf(output, "State directory: %s\n", dir)
 	running, err := d.Running(dir)
 	if err != nil {
-		return fmt.Errorf("cannot inspect existing managed daemon; refusing duplicate launch: %w", err)
+		return fmt.Errorf("cannot check whether mesh is already running; check access to %s before retrying (no second process was started): %w", dir, err)
 	}
 	if !running {
-		fmt.Fprintln(output, "Starting the shared managed daemon; browser enrollment may be required.")
+		fmt.Fprintln(output, "Starting mesh...")
 		if err := d.Start(exe, dir, DaemonEnvironment(d.Environment())); err != nil {
 			return fmt.Errorf("could not start managed daemon; saved identity is preserved: %w", err)
 		}
@@ -221,7 +220,7 @@ func launchAndWait(ctx context.Context, exe, dir string, coordinator bool, outpu
 				break
 			}
 			if attempt == 15 {
-				return fmt.Errorf("background daemon did not acquire its private runtime lock; inspect %s and rerun the same command (saved identity retained)", filepath.Join(dir, "daemon.log"))
+				return fmt.Errorf("mesh did not start; inspect %s, then run herdr-mesh start (saved configuration retained)", filepath.Join(dir, "daemon.log"))
 			}
 			if err := d.Wait(ctx); err != nil {
 				return fmt.Errorf("startup verification interrupted; rerun the same command to resume: %w", err)
@@ -257,8 +256,7 @@ func configurePolicy(ctx context.Context, dir, tailnet string, output io.Writer,
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	fmt.Fprintln(output, "Prerequisites: Herdr, Git, and your chosen provider CLI must already be installed and authenticated. Nothing is installed globally.")
-	fmt.Fprintln(output, "Policy access requires a Tailscale API access token (tskey-api-) authorized to read/write this tailnet policy. Browser device sign-in does not grant policy API access. The token is used only for this preview/application and is not saved.")
+	fmt.Fprintln(output, "Enter a Tailscale API access token (tskey-api-) with permission to read and update this tailnet's policy. It is used for this setup only and is not saved.")
 	token, err := d.Token(ctx)
 	defer clear(token)
 	if err != nil {
@@ -272,7 +270,7 @@ func configurePolicy(ctx context.Context, dir, tailnet string, output io.Writer,
 	}
 	// The setup host creates and protects its own output directory.
 	base.OutputDirectory = filepath.Join(previewDir, "artifacts")
-	fmt.Fprintln(output, "Reading policy and preparing an additive preview (no enrollment keys)...")
+	fmt.Fprintln(output, "Reading tailnet policy and preparing proposed changes...")
 	preview, err := d.Policy(ctx, base, token)
 	if err != nil {
 		return err
@@ -313,7 +311,7 @@ func configurePolicy(ctx context.Context, dir, tailnet string, output io.Writer,
 	if err := createMarker(pending, []byte("Policy application may have remote effects. Inspect before retrying.\n")); err != nil {
 		return err
 	}
-	fmt.Fprintln(output, "Applying the reviewed policy with concurrency protection; creating zero device keys...")
+	fmt.Fprintln(output, "Applying the reviewed policy...")
 	if _, err := d.Policy(ctx, base, token); err != nil {
 		return fmt.Errorf("policy application did not complete; pending state retained at %s; inspect and reconcile remote policy before removing this marker and rerunning init: %w", pending, err)
 	}
@@ -339,7 +337,7 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 	last, opened := "", ""
 	for {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("onboarding wait stopped; the saved identity and background daemon are preserved. Rerun the same command to inspect/resume: %w", err)
+			return readinessWaitError(err)
 		}
 		running, err := d.Running(dir)
 		if err != nil {
@@ -351,7 +349,7 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 				return fmt.Errorf("managed daemon stopped before readiness; cannot read its final status: %w", statusErr)
 			}
 			if statusErr == nil && (status.State == "failed" || status.State == "error") && status.Error != "" {
-				fmt.Fprintf(output, "Managed daemon: %s\n%s\n", status.State, status.Error)
+				fmt.Fprintf(output, "Mesh: %s\nDetails: %s\n", StatusLabel(status.State), status.Error)
 			}
 			return fmt.Errorf("managed daemon stopped before readiness; inspect %s and rerun the same command after resolving the failure (saved identity retained)", filepath.Join(dir, "daemon.log"))
 		}
@@ -361,15 +359,15 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 		}
 		if err == nil {
 			progress := status.State + "\n" + status.Error
-			if progress != last {
-				fmt.Fprintf(output, "Managed daemon: %s\n", status.State)
+			if progress != last && status.State != "ready" {
+				fmt.Fprintf(output, "Mesh: %s\n", StatusLabel(status.State))
 				if status.Error != "" {
 					fmt.Fprintln(output, status.Error)
 				}
 				last = progress
 			}
 			if status.AuthURL != "" && status.AuthURL != opened {
-				if !validAuthURL(status.AuthURL) {
+				if !ValidAuthURL(status.AuthURL) {
 					return errors.New("daemon supplied an unrecognized browser sign-in URL; refusing to open it")
 				}
 				fmt.Fprintln(output, "Complete Tailscale browser sign-in. If your tailnet requires device approval, an administrator must approve this computer before it can become ready.")
@@ -384,16 +382,9 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 				if !ValidDNS(strings.TrimSuffix(status.DNSName, ".")) {
 					return errors.New("daemon reported ready without an actual full MagicDNS name; no join endpoint can be advertised")
 				}
-				endpoint := strings.TrimSuffix(status.DNSName, ".")
-				if coordinator && status.Server != "" {
-					host, port, err := net.SplitHostPort(status.Server)
-					number, portErr := strconv.Atoi(port)
-					if err != nil || portErr != nil || number < 1 || number > 65535 ||
-						!strings.EqualFold(strings.TrimSuffix(host, "."), endpoint) {
-						return errors.New("coordinator address does not match its actual MagicDNS identity; refusing to advertise an unverified endpoint")
-					}
-					if number != 50052 {
-						endpoint = net.JoinHostPort(endpoint, strconv.Itoa(number))
+				if coordinator {
+					if _, err := JoinCommand(status); err != nil {
+						return err
 					}
 				}
 				if err := d.Verify(ctx, dir); err != nil {
@@ -401,7 +392,10 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 				}
 				fmt.Fprintf(output, "Ready: %s\n", status.DNSName)
 				if coordinator {
-					fmt.Fprintf(output, "On another computer run:\nherdr-mesh join --server %s\n", endpoint)
+					if err := PrintJoinInstructions(output, status); err != nil {
+						return err
+					}
+					fmt.Fprintln(output, "To show these instructions again, run herdr-mesh help on this controller.")
 				}
 				return nil
 			case "error", "failed", "stopped":
@@ -409,9 +403,13 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 			}
 		}
 		if err := d.Wait(ctx); err != nil {
-			return fmt.Errorf("onboarding wait stopped; rerun the same command to resume with the saved identity: %w", err)
+			return readinessWaitError(err)
 		}
 	}
+}
+
+func readinessWaitError(err error) error {
+	return fmt.Errorf("stopped waiting for mesh readiness; startup can continue in the background. Run herdr-mesh status for progress. Once ready, herdr-mesh help on the controller shows the join command: %w", err)
 }
 
 func DaemonEnvironment(environment []string) []string {

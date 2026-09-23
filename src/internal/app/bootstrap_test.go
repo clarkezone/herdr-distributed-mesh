@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"strings"
@@ -90,6 +91,50 @@ func TestBootstrapHelpSucceedsWithoutRuntime(t *testing.T) {
 				!strings.Contains(out.String(), "ssh-host") || !strings.Contains(out.String(), "herdr-executable") {
 				t.Fatalf("help did not succeed without runtime: %v", err)
 			}
+
 		})
+	}
+}
+
+func TestBootstrapHumanReceiptAndUnchangedJSON(t *testing.T) {
+	for _, staged := range []bool{false, true} {
+		result := &bootstrap.Result{
+			Status: "runner-running-mesh-unverified", OperationID: "operation-123",
+			Startup: "requested-once", Enrollment: "not-checked", Connectivity: "not-checked",
+			InstallDirectory: `C:\Mesh\v1`, StateDirectory: `C:\Mesh\state`,
+			ExistingTaskName: `\Mesh\Node`, RunnerState: "Running",
+		}
+		if staged {
+			result.Status, result.Startup, result.RunnerRequired = "staged-not-started", "not-attempted", true
+			result.ExistingTaskName, result.RunnerState = "", ""
+		}
+		for _, asJSON := range []bool{false, true} {
+			args := bootstrapArgs()
+			if asJSON {
+				args = append(args, "-json")
+			}
+			var out, diagnostics bytes.Buffer
+			err := runBootstrap(context.Background(), args, IO{Out: &out, Err: &diagnostics},
+				func(context.Context, bootstrap.Options) (*bootstrap.Result, error) { return result, nil })
+			if err != nil || diagnostics.Len() != 0 {
+				t.Fatalf("receipt failed: %v", err)
+			}
+			if asJSON {
+				expected, err := json.Marshal(result)
+				if err != nil || out.String() != string(expected)+"\n" {
+					t.Fatalf("JSON contract changed: %s", out.String())
+				}
+				continue
+			}
+			for _, text := range []string{"Operation ID: operation-123", "Enrollment: not checked", "Connectivity: not checked", "Install directory: C:\\Mesh\\v1", "Next:"} {
+				if !strings.Contains(out.String(), text) {
+					t.Fatalf("missing %q: %s", text, out.String())
+				}
+			}
+			if staged && !strings.Contains(out.String(), "node not started") ||
+				!staged && !strings.Contains(out.String(), "mesh readiness not verified") {
+				t.Fatalf("overstated readiness: %s", out.String())
+			}
+		}
 	}
 }

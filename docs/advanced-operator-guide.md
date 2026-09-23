@@ -35,6 +35,33 @@ execution-node prerequisites. Herdr is the underlying headless runtime, not a
 second mesh CLI the operator must use for routine session control. Provider
 authentication and permission decisions are not performed implicitly.
 
+## Reading human command results
+
+Coordinator status confirms that the coordinator is reachable and speaks a
+compatible protocol; it does not confirm execution-node or agent readiness.
+Protocol numbers, capability codes, and local transport identity details are
+shown in diagnostic mode rather than the ordinary human status summary. Node
+views separately label the coordinator connection, default-session inventory,
+and named-session manager. A connected node or a ready session manager alone
+does not establish that a particular agent can accept work.
+
+Without `-json`, command receipts show the command ID, readable status, target
+node, explanation, and exact retry key on separate labelled lines. Preserve the
+key **and the original request and target identifiers** for an exact retry.
+An unknown outcome can mean effects already occurred; do not submit a new key
+to bypass it. Inspect the existing receipt with `ctl command -server
+<coordinator:port> -id <command-id>` and inspect the original target first.
+Agent launch and input receipts confirm only their reported stages, never that
+the agent's task completed. Use agent read/wait to observe subsequent progress.
+
+Project views distinguish desired configuration from the node's applied
+configuration. Different generations are not confirmation that a new binding
+is ready. Session and agent inventory views label stale observations and
+unavailable sources; reported input readiness in a stale snapshot is not current
+readiness. Empty optional fields and internal event counters are omitted from
+human views. JSON output retains the existing field names, raw status codes,
+identifiers, and counters; use it for automation rather than parsing human text.
+
 ## Prepare the tailnet
 
 If role setup is needed, supply a Tailscale API access token through your
@@ -93,6 +120,9 @@ The runner must already match the executable and fixed arguments. A running
 runner is not verified mesh readiness; inspect it through `ctl nodes` afterward.
 An unknown start is not automatically retried. See [Bootstrap](node-bootstrap.md)
 for endpoint preparation, exact-match requirements, and uncertainty handling.
+Human bootstrap receipts separately label staging, startup, enrollment, and
+connectivity. Enrollment and connectivity remain **not checked** by bootstrap;
+neither staging nor observing a running Scheduled Task establishes mesh readiness.
 
 ## Start the mesh roles
 

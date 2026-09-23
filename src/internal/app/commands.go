@@ -81,7 +81,7 @@ func parseCommandQuery(command string, args []string, streams IO) (*commandQuery
 		return nil, err
 	}
 	if flags.NArg() != 0 {
-		return nil, errors.New("unexpected positional arguments")
+		return nil, errors.New("this command accepts flags, not positional arguments; add -help to see its required flags")
 	}
 	if *server == "" {
 		return nil, errors.New("-server is required")
@@ -97,7 +97,7 @@ func parseCommandQuery(command string, args []string, streams IO) (*commandQuery
 	}
 	if submit {
 		if nodeID == "" {
-			return nil, errors.New("-node is required")
+			return nil, errors.New("-node is required; use a mesh node ID from herdr-mesh ctl nodes, not a hostname")
 		}
 		if ttl <= 0 || ttl > protocol.MaxCommandTTL {
 			return nil, errors.New("-ttl must be positive and at most 30s")
@@ -106,16 +106,16 @@ func parseCommandQuery(command string, args []string, streams IO) (*commandQuery
 			key = protocol.NewCommandID()
 		}
 		if (command == "ensure-workspace" || command == "create-worktree") && projectID == "" {
-			return nil, errors.New("-project is required")
+			return nil, errors.New("-project is required; use the registered project ID from ctl projects, not a checkout path")
 		}
 		if command == "create-worktree" && name == "" {
-			return nil, errors.New("-name is required")
+			return nil, errors.New("-name is required; choose a portable lowercase worktree destination name, not a path")
 		}
 		if command == "create-worktree" && branch == "" {
 			branch = name
 		}
 	} else if !protocol.ValidCommandID(id) {
-		return nil, errors.New("-id requires a valid command ID")
+		return nil, errors.New("-id requires the exact command ID returned in a command receipt, not its retry key or node ID")
 	}
 	options := control.Options{JSON: *jsonOutput, Output: streams.Out, ServerAddress: *server, RequiredServerTag: *requiredServerTag, Transport: network.config()}
 	return &commandQuery{

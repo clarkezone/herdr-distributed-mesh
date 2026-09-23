@@ -68,7 +68,7 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 		if err := d.Stop(ctx, dir); err != nil {
 			return err
 		}
-		fmt.Fprintln(output, "Managed daemon stopped. State and enrollment retained; use herdr-mesh start to resume.")
+		fmt.Fprintln(output, "Mesh stopped. State and enrollment retained; use herdr-mesh start to resume.")
 		return nil
 	}
 	fmt.Fprintln(output, "DESTROY: stop the managed daemon, remove its exact Tailscale device, and delete all managed databases, journals, configuration and tsnet state.")

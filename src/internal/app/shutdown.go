@@ -32,7 +32,7 @@ func runShutdownWith(ctx context.Context, args []string, streams IO, run func(co
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), `Usage: herdr-mesh shutdown [options]
 
-Stop this computer's managed mesh daemon, NOT a Herdr agent.
+Stop this computer's mesh connection, NOT a Herdr agent.
 Default: retain all state and enrollment; resume with herdr-mesh start.
 --destroy: permanently remove this computer's managed installation.
 --remove-policy: additionally retire its owned shared policy (coordinator only).
@@ -52,7 +52,7 @@ Options:`)
 		return err
 	}
 	if flags.NArg() != 0 || *timeout <= 0 || *timeout > 10*time.Minute {
-		return errors.New("shutdown accepts no positional arguments; timeout must be in (0,10m]")
+		return errors.New("shutdown accepts no positional arguments; --timeout must be greater than zero and at most 10m")
 	}
 	if !options.Destroy && (options.RemovePolicy || options.Yes || options.TokenEnv != "") {
 		return errors.New("--remove-policy, --yes and --api-token-env require --destroy")

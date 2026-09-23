@@ -38,7 +38,7 @@ func runProjectQuery(ctx context.Context, command string, args []string, streams
 func parseProjectQuery(command string, args []string, streams IO) (*projectQuery, error) {
 	if command == "project" {
 		if len(args) == 0 || (args[0] != "register" && args[0] != "get") {
-			return nil, errors.New("ctl project requires register or get")
+			return nil, errors.New("ctl project requires register or get; use herdr-mesh ctl project <operation> -help for flags")
 		}
 		command, args = args[0], args[1:]
 	}
@@ -69,7 +69,7 @@ func parseProjectQuery(command string, args []string, streams IO) (*projectQuery
 		return nil, err
 	}
 	if flags.NArg() != 0 {
-		return nil, errors.New("unexpected positional arguments")
+		return nil, errors.New("project commands accept flags, not positional arguments; add -help to see the required flags")
 	}
 	if strings.TrimSpace(*server) == "" {
 		return nil, errors.New("-server is required")
@@ -84,7 +84,7 @@ func parseProjectQuery(command string, args []string, streams IO) (*projectQuery
 		return nil, errors.New("-node and -project are required")
 	}
 	if command == "register" && strings.TrimSpace(request.CheckoutPath) == "" {
-		return nil, errors.New("-path is required")
+		return nil, errors.New("-path is required; supply an existing absolute Git checkout path on the target node, not this client")
 	}
 	return &projectQuery{
 		command: command, timeout: *timeout, request: request,

@@ -43,8 +43,31 @@ func runBootstrap(ctx context.Context, args []string, streams IO,
 	if asJSON {
 		return json.NewEncoder(streams.Out).Encode(result)
 	}
-	_, err = fmt.Fprintf(streams.Out, "status=%s operation_id=%s startup=%s enrollment=%s connectivity=%s\n",
-		result.Status, result.OperationID, result.Startup, result.Enrollment, result.Connectivity)
+	status := strings.ReplaceAll(result.Status, "-", " ")
+	if result.Status == "staged-not-started" {
+		status = "staged; node not started"
+	} else if result.Status == "runner-running-mesh-unverified" {
+		status = "runner is running; mesh readiness not verified"
+	}
+	var receipt strings.Builder
+	fmt.Fprintf(&receipt, "Bootstrap: %s\nOperation ID: %s\nStartup: %s\nEnrollment: %s\nConnectivity: %s\n",
+		status, result.OperationID, strings.ReplaceAll(result.Startup, "-", " "),
+		strings.ReplaceAll(result.Enrollment, "-", " "), strings.ReplaceAll(result.Connectivity, "-", " "))
+	for _, field := range []struct{ label, value string }{
+		{"Install directory", result.InstallDirectory}, {"State directory", result.StateDirectory},
+		{"Executable", result.Executable}, {"Scheduled Task", result.ExistingTaskName},
+		{"Runner state", result.RunnerState}, {"Runner observed at (UTC)", result.RunnerObservedAtUTC},
+	} {
+		if field.value != "" {
+			fmt.Fprintf(&receipt, "%s: %s\n", field.label, field.value)
+		}
+	}
+	if result.Status == "staged-not-started" {
+		fmt.Fprintln(&receipt, "Next: prepare an exact-match Scheduled Task runner, then repeat the same install inputs with -start -existing-task <task-name>. Bootstrap does not create the runner.")
+	} else {
+		fmt.Fprintln(&receipt, "Next: inspect the node with herdr-mesh ctl nodes -server <coordinator:port>. A running runner does not verify enrollment, connectivity, or execution readiness.")
+	}
+	_, err = fmt.Fprint(streams.Out, receipt.String())
 	return err
 }
 

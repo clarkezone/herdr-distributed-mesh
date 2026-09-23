@@ -81,17 +81,30 @@ func runManagedCommands(ctx context.Context, args []string, streams IO) (bool, e
 				return true, errors.Join(err, dirErr)
 			}
 			local, readErr := meshlocal.ReadStatus(localDir)
-			if readErr != nil {
-				return true, errors.Join(err, fmt.Errorf("read local daemon status: %w", readErr))
-			}
 			if parsed.json {
+				if readErr != nil {
+					return true, errors.Join(err, fmt.Errorf("read local daemon status: %w", readErr))
+				}
 				writeErr := json.NewEncoder(streams.Out).Encode(map[string]any{"daemon": local, "server_error": err.Error()})
 				return true, errors.Join(err, writeErr)
 			}
-			_, writeErr := fmt.Fprintf(streams.Out, "daemon=%s dns=%s server=%s error=%s\n", local.State, local.DNSName, local.Server, local.Error)
-			return true, errors.Join(err, writeErr)
+			if readErr == nil {
+				if running, probeErr := meshlocal.IsRunning(localDir); probeErr == nil && !running {
+					local.State = "stopped"
+				}
+				if writeErr := printLocalStatus(streams.Out, localDir, local); writeErr != nil {
+					return true, errors.Join(explainManagedConnection(ctx, err), writeErr)
+				}
+				if helpErr := printControllerInstructions(localDir, streams.Out); helpErr != nil {
+					return true, errors.Join(explainManagedConnection(ctx, err), helpErr)
+				}
+			}
+			return true, explainManagedConnection(ctx, err)
 		}
-		return true, err
+		if parsed.json {
+			return true, err
+		}
+		return true, explainManagedConnection(ctx, err)
 	}
 	defer closeClient()
 	return true, executeManaged(op, client, dir, parsed, streams)
@@ -129,7 +142,7 @@ func parseManaged(args []string, streams IO) (managedArgs, error) {
 		return a, err
 	}
 	if flags.NArg() != 0 || a.timeout <= 0 || a.timeout > 24*time.Hour {
-		return a, errors.New("unexpected arguments or timeout outside (0,24h]")
+		return a, errors.New("unexpected arguments or invalid --timeout; use flags only and a timeout greater than zero and at most 24h")
 	}
 	if a.root == "project" && (a.verb != "add" || a.name == "" || a.node == "" || a.path == "") {
 		return a, errors.New("usage: project add <project-name> --node <node-name> --path <existing-checkout>")
@@ -166,7 +179,7 @@ func printManagedUsage(flags *flag.FlagSet, a managedArgs) {
 		fmt.Fprintln(output, "\n<agent-name> is the name chosen with agent start, not a workspace, tab or Herdr session.")
 		fmt.Fprintln(output, "Follow/stop use that original mesh name; renaming a TUI label does not change it.")
 		fmt.Fprintln(output, "Agents started directly in the TUI do not automatically have a mesh control name.")
-		fmt.Fprintln(output, "<node-name> is the mesh label assigned by init/join --name, not the Windows hostname.")
+		fmt.Fprintln(output, "<node-name> is shown by herdr-mesh nodes; it defaults to the hostname unless --name overrides it.")
 		options = append(options, "node", "session")
 		switch a.verb {
 		case "start":
@@ -216,13 +229,16 @@ func selectManagedNode(list *pb.NodeList, selector string) (*pb.NodeView, error)
 			}
 		}
 	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("node %q was not found; run herdr-mesh nodes and use a listed name or ID", selector)
+	}
 	if len(matches) != 1 {
-		return nil, fmt.Errorf("node %q has %d matches; use an unambiguous logical name or exact ID", selector, len(matches))
+		return nil, fmt.Errorf("more than one node is named %q; run herdr-mesh nodes and use its exact ID", selector)
 	}
 	node := matches[0]
 	if !node.Connected || node.LastSeen == nil || node.LastSeen.CheckValid() != nil ||
 		time.Since(node.LastSeen.AsTime()) > 30*time.Second || node.LastSeen.AsTime().After(time.Now().Add(5*time.Second)) {
-		return nil, fmt.Errorf("node %q is offline or stale", selector)
+		return nil, fmt.Errorf("node %q is offline or has stopped reporting; run herdr-mesh start on that computer, then check herdr-mesh nodes again", selector)
 	}
 	return node, nil
 }
@@ -242,7 +258,7 @@ func executeManaged(ctx context.Context, client pb.FleetClient, dir string, a ma
 			}
 			return errors.Join(serverErr, writeErr)
 		} else {
-			if _, err := fmt.Fprintf(streams.Out, "daemon=%s dns=%s server=%s error=%s\n", local.State, local.DNSName, local.Server, local.Error); err != nil {
+			if err := printLocalStatus(streams.Out, dir, local); err != nil {
 				return err
 			}
 		}
@@ -250,7 +266,10 @@ func executeManaged(ctx context.Context, client pb.FleetClient, dir string, a ma
 		if local.Error != "" {
 			return errors.Join(serverErr, fmt.Errorf("managed daemon reports %s: %s", local.State, local.Error))
 		}
-		return serverErr
+		if serverErr != nil {
+			return serverErr
+		}
+		return printControllerInstructions(dir, streams.Out)
 	}
 	list, err := client.ListNodes(ctx, &emptypb.Empty{})
 	if err != nil {
@@ -269,9 +288,20 @@ func executeManaged(ctx context.Context, client pb.FleetClient, dir string, a ma
 			return managedWriteJSON(streams.Out, list)
 		}
 		for _, node := range list.GetNodes() {
-			if _, err := fmt.Fprintf(streams.Out, "%s  %s  connected=%t stale=%t\n", node.Hostname, node.InstanceId, node.Connected, node.Stale); err != nil {
+			connection := "Offline"
+			if node.Connected {
+				connection = "Connected"
+				if node.Stale {
+					connection = "Not reporting"
+				}
+			}
+			if _, err := fmt.Fprintf(streams.Out, "%s  %s  (ID: %s)\n", node.Hostname, connection, node.InstanceId); err != nil {
 				return err
 			}
+		}
+		if len(list.Nodes) == 0 {
+			_, err := fmt.Fprintln(streams.Out, "No nodes are connected yet. Run herdr-mesh help on the controller for the join command.")
+			return err
 		}
 		return nil
 	}
@@ -304,7 +334,7 @@ func executeManaged(ctx context.Context, client pb.FleetClient, dir string, a ma
 		if record.GetDesired().GetCheckoutPath() != a.path {
 			return errors.New("registered checkout differs from the requested existing checkout")
 		}
-		record, err = managedWaitProject(ctx, client, node.InstanceId, a.name, record)
+		record, err = managedWaitProject(ctx, client, node.InstanceId, a.name, record, a.json)
 		if err != nil {
 			return err
 		}
@@ -373,7 +403,7 @@ func managedPause(ctx context.Context) error {
 	}
 }
 
-func managedWaitProject(ctx context.Context, client pb.FleetClient, node, project string, initial *pb.ProjectRecord) (*pb.ProjectRecord, error) {
+func managedWaitProject(ctx context.Context, client pb.FleetClient, node, project string, initial *pb.ProjectRecord, jsonOutput bool) (*pb.ProjectRecord, error) {
 	record := initial
 	var desired *pb.ProjectConfig
 	for {
@@ -397,6 +427,9 @@ func managedWaitProject(ctx context.Context, client pb.FleetClient, node, projec
 			return record, nil
 		}
 		if record.Readiness != "pending" {
+			if !jsonOutput {
+				return nil, fmt.Errorf("project %q is not ready on the selected node; check herdr-mesh nodes and run herdr-mesh doctor on that computer. Configuration: %s; %s", project, control.HumanDetail(record.Readiness), control.HumanDetail(record.GetApplied().GetErrorCode()))
+			}
 			return nil, fmt.Errorf("project is not ready: %s (%s)", record.Readiness, record.GetApplied().GetErrorCode())
 		}
 		if err := managedPause(ctx); err != nil {
@@ -427,9 +460,15 @@ func managedHandle(value *pb.NamedAgentRecord, node string, a managedArgs) (*pb.
 	}
 	r := record.AgentLifecycle
 	if r == nil || protocol.ValidateLifecycleReceipt(r, record.Command) != nil {
+		if !a.json {
+			return nil, fmt.Errorf("agent startup has no confirmed control target (%s); repeat the original agent start command to inspect its saved result, not a new agent name", control.HumanCommandStatus(record.Status))
+		}
 		return nil, fmt.Errorf("named agent has no confirmed handle (status %s); retry the original start to inspect its receipt", record.Status)
 	}
 	if r.PaneOutcome != "confirmed" || (a.verb != "stop" && (r.LaunchOutcome != "confirmed" || r.PromptOutcome == "unknown")) {
+		if !a.json {
+			return nil, fmt.Errorf("agent startup is not fully confirmed (pane: %s; provider launch: %s; prompt delivery: %s); repeat the original agent start command to inspect its saved result, not a new agent name", r.PaneOutcome, r.LaunchOutcome, r.PromptOutcome)
+		}
 		return nil, fmt.Errorf("named agent has unresolved launch effects: pane=%s launch=%s prompt=%s; original receipt must be reconciled", r.PaneOutcome, r.LaunchOutcome, r.PromptOutcome)
 	}
 	h := r.Handle
@@ -618,6 +657,9 @@ func managedStart(ctx context.Context, options control.Options, dir, node string
 		return control.StartAgent(ctx, options, node, original.IdempotencyKey, original.AgentStart, original.Ttl.AsDuration())
 	}
 	if existing, err := options.FleetClient.ResolveNamedAgent(ctx, &pb.ResolveNamedAgentRequest{NodeInstanceId: node, Name: a.name, SessionName: a.session}); err == nil {
+		if !a.json {
+			return fmt.Errorf("agent %q already has a saved start request (%s); use herdr-mesh agent follow or stop with this name and --node. No new launch was submitted", a.name, control.HumanCommandStatus(existing.GetRecord().GetStatus()))
+		}
 		return fmt.Errorf("agent name already has a durable start (%s); use agent follow or stop; no new launch was submitted", existing.GetRecord().GetStatus())
 	} else if status.Code(err) != codes.NotFound {
 		return fmt.Errorf("resolve original named start before setup: %w", err)
@@ -638,7 +680,7 @@ func managedStart(ctx context.Context, options control.Options, dir, node string
 		CommandId: session.GetCommand().GetCommandId(), Status: session.GetStatus(), Detail: session.GetDetail(), SessionEnsure: session.GetSessionEnsure()}) != nil {
 		return errors.New("session ensure returned a mismatched or invalid receipt")
 	}
-	project, err := managedWaitProject(ctx, options.FleetClient, node, a.project, nil)
+	project, err := managedWaitProject(ctx, options.FleetClient, node, a.project, nil, a.json)
 	if err != nil {
 		return err
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	agentflowv1 "github.com/clarkezone/herdr-distributed-mesh/src/gen/agentflow/v1"
@@ -47,8 +46,6 @@ func EnsureWorkspaceInSession(ctx context.Context, options Options, nodeID, key 
 }
 
 func submitAndWait(ctx context.Context, options Options, request *agentflowv1.SubmitCommandRequest) error {
-	key := request.IdempotencyKey
-	log.Printf("command type=%s idempotency_key=%s target_node=%s", request.CommandType, key, request.NodeInstanceId)
 	return withFleet(ctx, options, func(client agentflowv1.FleetClient, _ transport.SelfStatus) error {
 		return submitAndWaitWithClient(ctx, options, client, request)
 	})
@@ -76,7 +73,7 @@ func submitAndWaitWithClient(ctx context.Context, options Options, client agentf
 		return err
 	}
 	if record.Status != agentflowv1.CommandStatus_COMMAND_STATUS_SUCCEEDED {
-		return fmt.Errorf("command ended with %s; use the same key or command ID to inspect this operation", record.Status)
+		return fmt.Errorf("command %s: %s (%s); inspect with ctl command -id %s; preserve retry key %q and the original request", record.Command.CommandId, HumanCommandStatus(record.Status), record.Status, record.Command.CommandId, key)
 	}
 	return nil
 }
@@ -164,40 +161,64 @@ func writeCommand(options Options, record *agentflowv1.CommandRecord) error {
 		_, err = fmt.Fprintln(options.Output, string(data))
 		return err
 	}
-	_, err := fmt.Fprintf(options.Output, "command=%s node=%s key=%s status=%s detail=%s audit_events=%d\n",
-		record.Command.CommandId, record.Command.TargetId, record.Command.IdempotencyKey, record.Status, record.Detail, len(record.Audit))
-	if err != nil {
-		return err
+	var view humanView
+	view.field("Command", record.Command.CommandId)
+	view.field("Status", HumanCommandStatus(record.Status))
+	view.field("Target node", record.Command.TargetId)
+	view.field("Detail", HumanDetail(record.Detail))
+	view.field("Retry key", record.Command.IdempotencyKey)
+	view.field("Retry safety", "reuse this exact key and original request/target; a new key creates a new operation")
+	switch record.Status {
+	case agentflowv1.CommandStatus_COMMAND_STATUS_INDETERMINATE:
+		view.field("Next", "effects may already have occurred; inspect this command and its target before further changes")
+	case agentflowv1.CommandStatus_COMMAND_STATUS_NODE_UNAVAILABLE:
+		view.field("Next", "check the node connection and inspect this command before deciding whether to retry")
+	case agentflowv1.CommandStatus_COMMAND_STATUS_FAILED, agentflowv1.CommandStatus_COMMAND_STATUS_REJECTED, agentflowv1.CommandStatus_COMMAND_STATUS_TIMED_OUT:
+		view.field("Next", "inspect this command and the reported issue before submitting another operation")
 	}
 	if workspace := record.WorkspaceEnsure; workspace != nil {
-		_, err = fmt.Fprintf(options.Output, "project=%s binding_revision=%s workspace=%s created=%t session=%s session_incarnation=%s\n",
-			workspace.ProjectId, workspace.BindingRevision, workspace.WorkspaceId, workspace.Created, workspace.SessionName, workspace.SessionIncarnation)
-		if err != nil {
-			return err
-		}
+		view.field("Project", workspace.ProjectId)
+		view.field("Binding revision", workspace.BindingRevision)
+		view.field("Workspace", workspace.WorkspaceId)
+		view.field("Created", fmt.Sprint(workspace.Created))
+		view.session(workspace.SessionName, workspace.SessionIncarnation)
 	}
 	if worktree := record.WorktreeCreate; worktree != nil {
-		_, err = fmt.Fprintf(options.Output, "project=%s binding_revision=%s workspace=%s name=%s branch=%s base_commit=%s session=%s session_incarnation=%s\n",
-			worktree.ProjectId, worktree.BindingRevision, worktree.WorkspaceId, worktree.Name, worktree.Branch, worktree.BaseCommit, worktree.SessionName, worktree.SessionIncarnation)
+		view.field("Project", worktree.ProjectId)
+		view.field("Binding revision", worktree.BindingRevision)
+		view.field("Workspace", worktree.WorkspaceId)
+		view.field("Worktree name", worktree.Name)
+		view.field("Branch", worktree.Branch)
+		view.field("Base commit", worktree.BaseCommit)
+		view.session(worktree.SessionName, worktree.SessionIncarnation)
 	}
-	if err == nil && record.AgentControl != nil {
+	if record.AgentControl != nil {
 		value := record.AgentControl
-		_, err = fmt.Fprintf(options.Output, "agent=%s terminal=%s observed_status=%s state_change_seq=%d session=%s session_incarnation=%s (input receipt, not task completion)\n",
-			value.Target.GetPaneId(), value.Target.GetTerminalId(), value.ObservedStatus, value.StateChangeSeq, value.Target.GetSessionName(), value.Target.GetSessionIncarnation())
+		view.target(value.Target)
+		view.field("Observed status", readable(value.ObservedStatus))
+		view.field("Receipt", "input receipt, not task completion; read or wait on the agent to observe progress")
 	}
-	if err == nil && record.SessionEnsure != nil {
+	if record.SessionEnsure != nil {
 		value := record.SessionEnsure
-		_, err = fmt.Fprintf(options.Output, "session=%s session_incarnation=%s status=%s error=%s\n",
-			value.Name, value.Incarnation, value.Status, value.ErrorCode)
+		view.session(value.Name, value.Incarnation)
+		view.field("Session status", readable(value.Status))
+		view.field("Session issue", HumanDetail(value.ErrorCode))
 	}
-	if err == nil && record.AgentLifecycle != nil {
+	if record.AgentLifecycle != nil {
 		value := record.AgentLifecycle
 		handle := value.GetHandle()
 		target := handle.GetTarget()
-		_, err = fmt.Fprintf(options.Output, "workspace=%s tab=%s agent=%s terminal=%s provider=%s agent_session=%s session=%s session_incarnation=%s\npane=%s launch=%s prompt=%s stop=%s observed_status=%s checkpoint=%d (readiness/input receipt, not task completion)\n",
-			handle.GetWorkspaceId(), handle.GetTabId(), target.GetPaneId(), target.GetTerminalId(), handle.GetProvider(),
-			target.GetAgentSessionId(), target.GetSessionName(), target.GetSessionIncarnation(),
-			value.PaneOutcome, value.LaunchOutcome, value.PromptOutcome, value.StopOutcome, value.ObservedStatus, value.Sequence)
+		view.field("Workspace", handle.GetWorkspaceId())
+		view.field("Tab", handle.GetTabId())
+		view.target(target)
+		view.field("Provider", handle.GetProvider())
+		view.field("Pane creation", readable(value.PaneOutcome))
+		view.field("Agent launch", readable(value.LaunchOutcome))
+		view.field("Initial prompt", readable(value.PromptOutcome))
+		view.field("Agent stop", readable(value.StopOutcome))
+		view.field("Observed status", readable(value.ObservedStatus))
+		view.field("Receipt", "readiness/input receipt, not task completion; read or wait on the agent to observe progress")
 	}
+	_, err := fmt.Fprint(options.Output, view.String())
 	return err
 }

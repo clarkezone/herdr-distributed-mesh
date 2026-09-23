@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -20,6 +21,10 @@ func main() {
 	if err == nil || errors.Is(err, flag.ErrHelp) {
 		return
 	}
-	log.Printf("fatal: %v", err)
+	if len(os.Args) > 1 && os.Args[1] == "managed-run" {
+		log.Printf("fatal: %v", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	}
 	os.Exit(1)
 }

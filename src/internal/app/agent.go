@@ -17,7 +17,7 @@ type agentKeys []string
 func (v *agentKeys) String() string { return fmt.Sprint([]string(*v)) }
 func (v *agentKeys) Set(value string) error {
 	if len(*v) >= 8 || !protocol.ValidAgentKey(value) {
-		return errors.New("use at most eight supported -key values")
+		return errors.New("use at most eight supported -key values: single printable ASCII characters or named keys such as enter, esc, tab, up, down, or ctrl+c")
 	}
 	*v = append(*v, value)
 	return nil
@@ -25,7 +25,7 @@ func (v *agentKeys) Set(value string) error {
 
 func runAgent(ctx context.Context, args []string, streams IO) error {
 	if len(args) == 0 {
-		return errors.New("agent requires get, read, wait, prompt, input, interrupt, start, or stop")
+		return errors.New("agent requires get, read, wait, prompt, input, interrupt, start, or stop; use herdr-mesh ctl agent <operation> -help for flags")
 	}
 	verb := args[0]
 	if verb == "start" || verb == "stop" {
@@ -46,7 +46,7 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 	case "interrupt":
 		action = pb.AgentControlAction_AGENT_CONTROL_ACTION_INTERRUPT
 	default:
-		return fmt.Errorf("unknown agent operation %q", verb)
+		return fmt.Errorf("unknown agent operation %q; choose get, read, wait, prompt, input, interrupt, start, or stop", verb)
 	}
 	flags := flag.NewFlagSet("agent "+verb, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
@@ -95,13 +95,13 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected positional arguments")
+		return fmt.Errorf("agent %s accepts flags, not positional arguments; use herdr-mesh ctl agent %s -help", verb, verb)
 	}
 	if *server == "" || *nodeID == "" || *paneID == "" {
-		return errors.New("-server, -node and -agent are required")
+		return errors.New("-server, -node and -agent are required; use the mesh node ID and agent pane ID from ctl agents, not host or provider names")
 	}
 	if *tag == "" || *timeout <= 0 {
-		return errors.New("expected server tag and positive timeout are required")
+		return errors.New("expected server tag (-required-server-tag) must not be empty and -timeout must be positive (for example 1m)")
 	}
 	if ttl <= 0 || ttl > protocol.MaxCommandTTL {
 		return errors.New("-ttl must be positive and at most 30s")

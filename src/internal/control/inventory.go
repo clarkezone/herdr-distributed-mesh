@@ -73,20 +73,47 @@ func AgentInventory(ctx context.Context, options Options, filter InventoryFilter
 			return json.NewEncoder(options.Output).Encode(result)
 		}
 		for _, source := range result.Sources {
-			if _, err := fmt.Fprintf(options.Output, "source node=%s session=%q incarnation=%s connected=%t stale=%t status=%s error=%s session_manager_ready=%t session_manager_error=%s\n",
-				source.NodeID, source.SessionName, source.SessionIncarnation, source.Connected, source.Stale, source.Status, source.ErrorCode,
-				source.SessionManagerReady, source.SessionManagerError); err != nil {
+			var view humanView
+			view.field("Source node", source.NodeID)
+			if source.SessionName == "" {
+				view.field("Session", "configured default")
+			} else {
+				view.session(source.SessionName, source.SessionIncarnation)
+			}
+			connection := "connected"
+			if !source.Connected {
+				connection = "disconnected; restore the node connection before acting"
+			}
+			view.field("Connection", connection)
+			view.freshness(source.Stale)
+			view.field("Herdr status", readable(source.Status))
+			view.field("Issue", HumanDetail(source.ErrorCode))
+			manager := "ready"
+			if !source.SessionManagerReady {
+				manager = "unavailable; inspect the execution node's managed-session configuration"
+			}
+			view.field("Session manager", manager)
+			view.field("Session manager issue", HumanDetail(source.SessionManagerError))
+			if _, err := fmt.Fprintln(options.Output, view.String()); err != nil {
 				return err
 			}
 		}
 		for _, agent := range result.Agents {
-			readiness := "unknown"
+			readiness := "unknown; query the agent before sending input"
 			if agent.InteractiveReady != nil {
-				readiness = fmt.Sprint(*agent.InteractiveReady)
+				readiness = readyText(*agent.InteractiveReady)
 			}
-			if _, err := fmt.Fprintf(options.Output, "agent node=%s session=%q pane=%s terminal=%s workspace=%s tab=%s project=%s provider=%s ready=%s status=%s stale=%t\n",
-				agent.Source.NodeID, agent.Source.SessionName, agent.Target.PaneId, agent.Target.TerminalId,
-				agent.WorkspaceID, agent.TabID, agent.ProjectID, agent.Provider, readiness, agent.ObservedStatus, agent.Source.Stale); err != nil {
+			var view humanView
+			view.target(agent.Target)
+			view.field("Target node", agent.Source.NodeID)
+			view.field("Workspace", agent.WorkspaceID)
+			view.field("Tab", agent.TabID)
+			view.field("Project", agent.ProjectID)
+			view.field("Provider", agent.Provider)
+			view.field("Reported input readiness", readiness)
+			view.field("Observed status", readable(agent.ObservedStatus))
+			view.freshness(agent.Source.Stale)
+			if _, err := fmt.Fprintln(options.Output, view.String()); err != nil {
 				return err
 			}
 		}

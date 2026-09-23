@@ -78,10 +78,10 @@ func runAgentLifecycle(ctx context.Context, verb string, args []string, streams 
 	}
 	if flags.NArg() != 0 || *server == "" || *node == "" || *workspace == "" || *provider == "" ||
 		*tag == "" || *timeout <= 0 || *ttl <= 0 || *ttl > protocol.MaxCommandTTL {
-		return errors.New("require -server, -node, -workspace, -provider, expected server tag, positive -timeout and -ttl in (0,30s]")
+		return errors.New("supply -server, -node, -workspace, -provider, a nonempty -required-server-tag, positive -timeout, and -ttl greater than 0 and at most 30s; positional arguments are not accepted; use herdr-mesh ctl agent start -help or herdr-mesh ctl agent stop -help")
 	}
 	if *key != "" && !protocol.ValidIdempotencyKey(*key) {
-		return errors.New("invalid idempotency key")
+		return errors.New("invalid idempotency key (-idempotency-key); use 1..128 ASCII letters, digits, underscores, colons, or hyphens; preserve the original key for retries")
 	}
 	op, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()

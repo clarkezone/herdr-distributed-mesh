@@ -48,7 +48,6 @@ func Agent(ctx context.Context, options Options, query *pb.AgentQueryRequest, ac
 		if !protocol.ValidIdempotencyKey(key) || ttl <= 0 || ttl > protocol.MaxCommandTTL {
 			return errors.New("agent input requires a bounded idempotency key and a TTL in (0,30s]")
 		}
-		log.Printf("command type=%s idempotency_key=%s target_node=%s", protocol.AgentControlCommandType, key, selection.NodeInstanceId)
 	}
 	return withFleet(ctx, options, func(client pb.FleetClient, _ transport.SelfStatus) error {
 		return agentWithClient(ctx, options, client, selection, lookup, control, key, ttl)
@@ -83,7 +82,6 @@ func agentWithClient(ctx context.Context, options Options, client pb.FleetClient
 	if err != nil {
 		return err
 	}
-	log.Printf("agent target pane=%s terminal=%s agent_session=%s session=%s session_incarnation=%s", control.Target.PaneId, control.Target.TerminalId, control.Target.AgentSessionId, control.Target.SessionName, control.Target.SessionIncarnation)
 	return submitAndWaitWithClient(ctx, options, client, request)
 }
 
@@ -96,7 +94,7 @@ func queryAgent(ctx context.Context, client pb.FleetClient, request *pb.AgentQue
 		return nil, fmt.Errorf("invalid server agent response: %w", err)
 	}
 	if result.ErrorCode != "" {
-		return nil, fmt.Errorf("agent query: %s", result.ErrorCode)
+		return nil, fmt.Errorf("agent query: %s", HumanDetail(result.ErrorCode))
 	}
 	return result, nil
 }
@@ -118,7 +116,13 @@ func writeAgent(options Options, kind pb.AgentQueryKind, result *pb.AgentQueryRe
 		return err
 	}
 	value := result.Agent
-	_, err := fmt.Fprintf(options.Output, "agent=%s terminal=%s provider=%s status=%s ready=%t workspace=%s tab=%s state_change_seq=%d session=%s session_incarnation=%s agent_session=%s\n",
-		value.Target.PaneId, value.Target.TerminalId, value.Provider, value.Status, value.InteractiveReady, value.WorkspaceId, value.TabId, value.StateChangeSeq, value.Target.SessionName, value.Target.SessionIncarnation, value.Target.AgentSessionId)
+	var view humanView
+	view.target(value.Target)
+	view.field("Provider", value.Provider)
+	view.field("Observed status", readable(value.Status))
+	view.field("Input readiness", readyText(value.InteractiveReady))
+	view.field("Workspace", value.WorkspaceId)
+	view.field("Tab", value.TabId)
+	_, err := fmt.Fprint(options.Output, view.String())
 	return err
 }

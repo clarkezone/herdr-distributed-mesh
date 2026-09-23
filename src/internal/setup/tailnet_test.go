@@ -95,6 +95,7 @@ func TestSetupSanitizesRemoteOutputAndPreservesUncertainty(t *testing.T) {
 		if !errors.As(err, &setupError) || setupError.Code != test.code || setupError.RemoteEffectsUnknown != test.started || strings.Contains(err.Error(), "tskey-") {
 			t.Fatalf("err=%v", err)
 		}
+
 	}
 	o.Apply = false
 	_, err := run(context.Background(), o, func(context.Context, scripthost.Request) (scripthost.Result, error) {
@@ -103,6 +104,38 @@ func TestSetupSanitizesRemoteOutputAndPreservesUncertainty(t *testing.T) {
 	var setupError *Error
 	if !errors.As(err, &setupError) || setupError.RemoteEffectsUnknown {
 		t.Fatal("preview must not imply remote writes")
+	}
+}
+
+func TestEverySetupErrorHasSafeGuidance(t *testing.T) {
+	for code, guidance := range map[string]string{
+		"prerequisite_missing": "PowerShell", "prerequisite_version": "7.3",
+		"output_unavailable": "private permissions", "token_missing": "environment variable",
+		"token_kind": "not an enrollment key", "token_rejected": "current",
+		"invalid_options": "-help", "api_read_failed": "permissions",
+		"api_update_failed": "compare", "key_creation_failed": "revoke",
+		"key_response_invalid": "revoke", "key_revocation_unconfirmed": "admin console",
+		"key_cleanup_failed": "admin console", "policy_invalid": "review",
+		"policy_changed": "fresh preview", "output_exists": "new private -output-directory",
+		"etag_missing": "safe update", "cleanup_failed": "temporary files",
+		"temporary_io": "disk space", "local_failure": "permissions",
+		"invalid_request": "compatible release", "output_limit": "unverified receipt",
+		"invalid_result": "unverified receipt", "timeout": "deadline",
+		"canceled": "canceled", "execution_failed": "PowerShell",
+	} {
+		t.Run(code, func(t *testing.T) {
+			for _, unknown := range []bool{false, true} {
+				failure := &Error{Code: code, RemoteEffectsUnknown: unknown}
+				text := failure.Error()
+				if !strings.Contains(strings.ToLower(text), strings.ToLower(guidance)) ||
+					!strings.Contains(text, code) || failure.Code != code || failure.RemoteEffectsUnknown != unknown {
+					t.Fatalf("missing guidance or changed contract: %s", text)
+				}
+				if strings.Contains(text, "do not blindly retry") != unknown {
+					t.Fatalf("uncertainty not preserved: %s", text)
+				}
+			}
+		})
 	}
 }
 

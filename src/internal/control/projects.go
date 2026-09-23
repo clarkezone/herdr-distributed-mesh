@@ -110,17 +110,37 @@ func writeProject(options Options, record *pb.ProjectRecord) error {
 		return writeProjectJSON(options, record)
 	}
 	desired := record.Desired
-	if _, err := fmt.Fprintf(options.Output, "node=%s project=%s readiness=%s adoption_status=%s\n  desired generation=%d checkout_path=%q worktree_root=%q\n",
-		desired.NodeInstanceId, desired.ProjectId, record.Readiness, record.AdoptionStatus,
-		desired.Generation, desired.CheckoutPath, desired.WorktreeRoot); err != nil {
-		return err
+	var view humanView
+	view.field("Project", desired.ProjectId)
+	view.field("Target node", desired.NodeInstanceId)
+	view.field("Readiness", readable(record.Readiness))
+	view.field("Adoption", readable(record.AdoptionStatus))
+	switch record.Readiness {
+	case "pending":
+		view.field("Next", "wait for the node to apply the desired configuration, then inspect this project again")
+	case "offline":
+		view.field("Next", "restore the node connection; the applied configuration is not a current readiness check")
+	case "invalid":
+		view.field("Next", "check the applied issue and project paths on the execution node, then correct the registration")
+	case "unsupported":
+		view.field("Next", "check compatible node and Herdr versions before using this project")
 	}
+	view.field("Desired generation", fmt.Sprint(desired.Generation))
+	view.field("Desired checkout", desired.CheckoutPath)
+	view.field("Desired worktree root", desired.WorktreeRoot)
 	if applied := record.Applied; applied != nil {
-		_, err := fmt.Fprintf(options.Output, "  applied generation=%d status=%s checkout_path=%q worktree_root=%q error_code=%s\n",
-			applied.Generation, applied.Status, applied.CheckoutPath, applied.WorktreeRoot, applied.ErrorCode)
-		return err
+		view.field("Applied generation", fmt.Sprint(applied.Generation))
+		view.field("Applied status", readable(applied.Status))
+		view.field("Applied checkout", applied.CheckoutPath)
+		view.field("Applied worktree root", applied.WorktreeRoot)
+		view.field("Applied issue", HumanDetail(applied.ErrorCode))
+		if applied.Generation != desired.Generation {
+			view.field("Configuration", "desired and applied generations differ; wait for the node to apply the current registration")
+		}
+	} else {
+		view.field("Applied configuration", "none reported; wait for the connected node to acknowledge the registration")
 	}
-	_, err := fmt.Fprintln(options.Output, "  applied=none")
+	_, err := fmt.Fprintln(options.Output, view.String())
 	return err
 }
 

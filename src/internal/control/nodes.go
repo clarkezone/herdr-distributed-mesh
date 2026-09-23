@@ -32,15 +32,39 @@ func writeNodes(options Options, list *agentflowv1.NodeList) error {
 		return err
 	}
 	if len(list.Nodes) == 0 {
-		_, err := fmt.Fprintln(options.Output, "no nodes registered")
+		_, err := fmt.Fprintln(options.Output, "No nodes registered. Check that an execution node is running and connected to this coordinator.")
 		return err
 	}
 	for _, node := range list.Nodes {
 		state := node.GetHerdr()
-		if _, err := fmt.Fprintf(options.Output, "node=%s connected=%t herdr=%s stale=%t workspaces=%d tabs=%d panes=%d agents=%d error=%s sessions=%d sessions_ready=%t sessions_error=%s\n",
-			node.InstanceId, node.Connected, state.GetStatus(), node.Stale,
-			len(state.GetWorkspaces()), len(state.GetTabs()), len(state.GetPanes()), len(state.GetAgents()), state.GetErrorCode(),
-			len(node.Sessions), node.SessionsReady, node.SessionsErrorCode); err != nil {
+		var view humanView
+		view.field("Node", node.Hostname)
+		view.field("Node ID", node.InstanceId)
+		connection := "connected to coordinator"
+		if !node.Connected {
+			connection = "disconnected; check that the node is running and has tailnet access"
+		}
+		view.field("Connection", connection)
+		herdr := readable(state.GetStatus())
+		if herdr == "" {
+			herdr = "not reported"
+		}
+		view.field("Default-session Herdr", herdr)
+		view.freshness(node.Stale || !node.Connected)
+		view.field("Default-session inventory", fmt.Sprintf("workspaces: %d; tabs: %d; panes: %d; agents: %d",
+			len(state.GetWorkspaces()), len(state.GetTabs()), len(state.GetPanes()), len(state.GetAgents())))
+		view.field("Herdr issue", HumanDetail(state.GetErrorCode()))
+		view.field("Named sessions", fmt.Sprint(len(node.Sessions)))
+		manager := "ready"
+		if !node.SessionsReady {
+			manager = "unavailable; check the node's managed-session configuration"
+		}
+		view.field("Session manager", manager)
+		view.field("Session manager issue", HumanDetail(node.SessionsErrorCode))
+		if !node.Connected || node.Stale || state.GetStatus() != "ready" || !node.SessionsReady {
+			view.field("Next", "inspect this node's sessions before starting work; connection alone does not confirm execution readiness")
+		}
+		if _, err := fmt.Fprintln(options.Output, view.String()); err != nil {
 			return err
 		}
 	}

@@ -72,7 +72,7 @@ func Run(ctx context.Context, options Options) (result error) {
 	}
 	listener, err := net.Listen("tcp", options.ListenAddress)
 	if err != nil {
-		return fmt.Errorf("listen for dashboard: %w", err)
+		return fmt.Errorf("cannot open dashboard at %s; check whether the port is already in use or choose another loopback address with -listen (for example 127.0.0.1:8788): %w", options.ListenAddress, err)
 	}
 	defer listener.Close()
 	if options.FleetClient != nil {
@@ -99,7 +99,7 @@ func Run(ctx context.Context, options Options) (result error) {
 	}
 	connection, err := network.DialGRPC(options.ServerAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot connect dashboard to coordinator %s; check -server, coordinator availability, and tailnet access: %w", options.ServerAddress, err)
 	}
 	defer connection.Close()
 	return serve(ctx, listener, agentflowv1.NewFleetClient(connection), options.Output)
@@ -143,7 +143,7 @@ func serveHandler(ctx context.Context, listener net.Listener, handler http.Handl
 		}
 		return err
 	case err := <-done:
-		return fmt.Errorf("serve dashboard: %w", err)
+		return fmt.Errorf("dashboard listener at %s stopped; check local network availability or choose another port with -listen: %w", listener.Addr(), err)
 	}
 }
 

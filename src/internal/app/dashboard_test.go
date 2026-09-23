@@ -22,7 +22,7 @@ func TestDashboardRejectsUnsafeConfiguration(t *testing.T) {
 func TestDashboardRequiresManagedConfigurationWithoutServer(t *testing.T) {
 	isolatedManagedConfig(t)
 	err := Run(context.Background(), []string{"dashboard"}, IO{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
-	if err == nil || !strings.Contains(err.Error(), "run init or join first") {
+	if err == nil || !strings.Contains(err.Error(), "herdr-mesh init --tailnet") || !strings.Contains(err.Error(), "herdr-mesh join --server") {
 		t.Fatalf("expected missing managed configuration: %v", err)
 	}
 }

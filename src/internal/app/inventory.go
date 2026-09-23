@@ -29,7 +29,7 @@ func runAgentInventory(ctx context.Context, args []string, streams IO) error {
 		return err
 	}
 	if *server == "" || *timeout <= 0 || flags.NArg() != 0 {
-		return errors.New("agents requires -server, a positive -timeout, and no positional arguments")
+		return errors.New("agents requires -server <coordinator:port> and a positive -timeout (for example 1m); positional arguments are not accepted; use herdr-mesh ctl agents -help for filters")
 	}
 	operation, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()

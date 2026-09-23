@@ -102,9 +102,43 @@ func (e *Error) Error() string {
 		message += "; cannot create, lock, or secure the policy output directory; use a writable ordinary directory with private permissions"
 	case "token_missing", "token_kind", "token_rejected":
 		message += "; provide a current tskey-api- access token through the configured environment variable, not an enrollment key"
+	case "invalid_options":
+		message += "; check flag values and limits with herdr-mesh setup tailnet -help"
+	case "api_read_failed":
+		message += "; check the tailnet name, network access to the Tailscale API, and API token permissions"
+	case "api_update_failed":
+		message += "; inspect the current tailnet policy and compare it with the saved proposal before attempting another apply"
+	case "key_creation_failed", "key_response_invalid":
+		message += "; inspect recently created keys in the Tailscale admin console and revoke unwanted keys before creating replacements"
+	case "key_revocation_unconfirmed", "key_cleanup_failed":
+		message += "; key revocation was not confirmed; inspect and revoke unwanted keys in the Tailscale admin console"
+	case "policy_invalid":
+		message += "; review the saved proposal and existing tailnet policy for invalid rules before applying changes"
+	case "policy_changed":
+		message += "; the policy changed since preview; create a fresh preview in a new output directory and review it before applying"
+	case "output_exists":
+		message += "; preserve the existing artifacts and choose a new private -output-directory"
+	case "etag_missing":
+		message += "; the API did not supply a policy version for a safe update; check Tailscale API availability before obtaining a fresh preview"
+	case "cleanup_failed":
+		message += "; temporary-file cleanup failed; secure and remove leftover setup temporary files after checking whether setup changed remote state"
+	case "temporary_io", "local_failure":
+		message += "; check free disk space and permissions on private temporary and output directories; preserve existing recovery artifacts"
+	case "invalid_request":
+		message += "; the embedded setup request was rejected; check setup options with herdr-mesh setup tailnet -help and use a compatible release"
+	case "output_limit", "invalid_result":
+		message += "; setup returned an unverified receipt; inspect saved artifacts and remote policy/keys before any further apply"
+	case "timeout":
+		message += "; setup exceeded its deadline; inspect policy, keys, and saved artifacts before deciding whether another run is safe"
+	case "canceled":
+		message += "; setup was canceled; inspect policy, keys, and saved artifacts before deciding whether another run is safe"
+	case "execution_failed":
+		message += "; the setup runtime failed; check PowerShell availability and local permissions, then inspect policy and keys before another apply"
+	default:
+		message += "; inspect saved setup artifacts and the current tailnet policy/keys before further changes"
 	}
 	if e.RemoteEffectsUnknown {
-		message += "; remote effects are unknown: inspect policy and newly created keys before retrying"
+		message += "; remote effects are unknown: do not blindly retry; inspect policy and newly created keys first"
 	}
 	return message
 }

@@ -18,7 +18,7 @@ func TestManagedHelpExplainsNamesAndRelevantOptions(t *testing.T) {
 		text := output.String()
 		for _, want := range []string{
 			"agent " + verb + " <agent-name> --node <node-name>",
-			"name chosen with agent start", "not the Windows hostname",
+			"name chosen with agent start", "defaults to the hostname unless --name overrides it",
 			"Agents started directly in the TUI", "Example: herdr-mesh agent " + verb,
 		} {
 			if !strings.Contains(text, want) {

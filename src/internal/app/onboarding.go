@@ -34,7 +34,7 @@ func runOnboardingWith(ctx context.Context, command string, args []string, strea
 	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintf(streams.Out, "herdr-mesh %s: one shared managed daemon and identity per state directory.\nPortable state beside the executable; no automatic login or boot startup.\nHerdr, Git and provider CLI must already be installed.\n", command)
+			fmt.Fprintf(streams.Out, "Usage: herdr-mesh %s [options]\nConnect this computer to the mesh. Configuration is saved beside the executable.\nHerdr and Git must already be installed; install and authenticate a provider CLI before starting agents.\n", command)
 			flags.SetOutput(streams.Out)
 			flags.PrintDefaults()
 			return flag.ErrHelp
@@ -59,14 +59,14 @@ func runStart(ctx context.Context, args []string, streams IO) error {
 	flags.SetOutput(streams.Err)
 	timeout := flags.Duration("timeout", 2*time.Minute, "readiness wait; cancellation leaves the background daemon running")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: herdr-mesh [--state-dir <absolute-directory>] start [--timeout 2m]\nResume saved mesh configuration using this executable. No enrollment setup or login startup changes.")
+		fmt.Fprintln(flags.Output(), "Usage: herdr-mesh [--state-dir <absolute-directory>] start [--timeout 2m]\nStart this computer's saved mesh connection. No need to repeat init or join.")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || *timeout <= 0 || *timeout > 10*time.Minute {
-		return errors.New("start accepts no positional arguments; timeout must be in (0,10m]")
+		return errors.New("start accepts no positional arguments; --timeout must be greater than zero and at most 10m")
 	}
 	op, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
