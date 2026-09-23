@@ -33,14 +33,15 @@ import (
 // Only the encrypted network boundary is replaced. Journals, both production
 // roles, generic Fleet forwarding, and platform IPC run unchanged.
 type localNetwork struct {
-	mu       sync.Mutex
-	self     transport.SelfStatus
-	listener net.Listener
-	starts   atomic.Int32
-	closes   atomic.Int32
-	active   atomic.Int32
-	leaked   atomic.Bool
-	peerTags []string
+	mu        sync.Mutex
+	self      transport.SelfStatus
+	listener  net.Listener
+	listening chan struct{}
+	starts    atomic.Int32
+	closes    atomic.Int32
+	active    atomic.Int32
+	leaked    atomic.Bool
+	peerTags  []string
 }
 
 func (n *localNetwork) SelfStatus() transport.SelfStatus { return n.self }
@@ -55,6 +56,12 @@ func (n *localNetwork) Listen(_ string) (net.Listener, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	n.mu.Lock()
 	n.listener = listener
+	if err == nil {
+		if n.listening == nil {
+			n.listening = make(chan struct{})
+		}
+		close(n.listening)
+	}
 	n.mu.Unlock()
 	return listener, err
 }
@@ -77,15 +84,54 @@ func (n *localNetwork) DialGRPCWithPeerTag(_ string, tag string) (*grpc.ClientCo
 		return nil, errors.New("mock peer is missing required role")
 	}
 	return grpc.NewClient("passthrough:///mock-coordinator", grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			n.mu.Lock()
-			listener := n.listener
-			n.mu.Unlock()
-			if listener == nil {
-				return nil, errors.New("mock coordinator not yet listening")
-			}
-			return (&net.Dialer{}).DialContext(ctx, "tcp", listener.Addr().String())
-		}))
+		grpc.WithContextDialer(n.dial))
+}
+
+func (n *localNetwork) dial(ctx context.Context, _ string) (net.Conn, error) {
+	n.mu.Lock()
+	if n.listening == nil {
+		n.listening = make(chan struct{})
+	}
+	listening := n.listening
+	n.mu.Unlock()
+	// Disk-backed role startup may publish the listener after the first dial.
+	// Do not turn that fixture scheduling order into exponential gRPC backoff.
+	select {
+	case <-listening:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	n.mu.Lock()
+	listener := n.listener
+	n.mu.Unlock()
+	return (&net.Dialer{}).DialContext(ctx, "tcp", listener.Addr().String())
+}
+
+func TestLocalNetworkDialBeforeListenHonorsCancellation(t *testing.T) {
+	network := &localNetwork{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	connection, err := network.dial(ctx, "")
+	if connection != nil {
+		_ = connection.Close()
+		t.Fatal("dial connected before listener publication")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("unpublished listener must wait for publication or cancellation, not trigger gRPC reconnect backoff: %v", err)
+	}
+	// A canceled wait must not poison publication or subsequent real dialing.
+	listener, err := network.Listen(":50052")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	connection, err = network.dial(ctx, "")
+	if err != nil {
+		t.Fatalf("dial after listener publication: %v", err)
+	}
+	defer connection.Close()
 }
 
 type remoteFleet struct {
@@ -401,6 +447,8 @@ func testManagedRuntimeAssignedDNS(t *testing.T, assignedDNS, dir string) {
 func waitStatus(t *testing.T, dir, want string, done chan error) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
+	var value Status
+	var readErr error
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-done:
@@ -408,13 +456,13 @@ func waitStatus(t *testing.T, dir, want string, done chan error) {
 			t.Fatalf("managed runtime stopped before %s: %v", want, err)
 		default:
 		}
-		value, err := ReadStatus(dir)
-		if err == nil && value.State == want {
+		value, readErr = ReadStatus(dir)
+		if readErr == nil && value.State == want {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("managed runtime did not reach %s", want)
+	t.Fatalf("managed runtime did not reach %s; last state=%q details=%q read error=%v", want, value.State, value.Error, readErr)
 }
 
 func TestConfigCreateOnlyAndBoundedPrivateStatus(t *testing.T) {
