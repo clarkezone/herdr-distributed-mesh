@@ -25,10 +25,12 @@ func TestWindowsLiteralDatabasePathAndRepeatedClose(t *testing.T) {
 	var sequence int
 	var name, databasePath string
 	requireOK(t, first.conn.QueryRowContext(ctx, "PRAGMA database_list").Scan(&sequence, &name, &databasePath))
-	canonicalPath, err := filepath.EvalSymlinks(path)
+	expectedFile, err := os.Stat(path)
 	requireOK(t, err)
-	if name != "main" || !strings.EqualFold(filepath.Clean(databasePath), canonicalPath) {
-		t.Fatalf("SQLite opened %q instead of literal path %q", databasePath, canonicalPath)
+	actualFile, err := os.Stat(databasePath)
+	requireOK(t, err)
+	if name != "main" || !os.SameFile(expectedFile, actualFile) {
+		t.Fatalf("SQLite opened %q instead of literal path %q", databasePath, path)
 	}
 	requireOK(t, first.Close())
 	requireOK(t, first.Close())
