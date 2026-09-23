@@ -1,0 +1,103 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"path/filepath"
+	"time"
+
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/onboard"
+)
+
+func runOnboarding(ctx context.Context, command string, args []string, streams IO) error {
+	return runOnboardingWith(ctx, command, args, streams, onboard.Run)
+}
+
+func runOnboardingWith(ctx context.Context, command string, args []string, streams IO,
+	run func(context.Context, onboard.Options, io.Writer, onboard.Dependencies) error) error {
+	if command != "init" && command != "join" {
+		return errors.New("guided onboarding requires init or join")
+	}
+	options := onboard.Options{Coordinator: command == "init", HerdrExecutable: "herdr"}
+	flags := flag.NewFlagSet(command, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&options.Name, "name", "", "override the mesh node label (default: normalized machine hostname)")
+	flags.StringVar(&options.HerdrExecutable, "herdr", "herdr", "existing Herdr executable (default: herdr from PATH)")
+	if options.Coordinator {
+		flags.StringVar(&options.Tailnet, "tailnet", "", "Tailscale tailnet (required); policy API token is prompted once, hidden")
+	} else {
+		flags.StringVar(&options.Server, "server", "", "actual full coordinator MagicDNS name printed by init (required); port 50052 is implicit")
+	}
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintf(streams.Out, "Usage: herdr-mesh %s [options]\nConnect this computer to the mesh. Configuration is saved beside the executable.\nHerdr and Git must already be installed; install and authenticate a provider CLI before starting agents.\n", command)
+			flags.SetOutput(streams.Out)
+			flags.PrintDefaults()
+			return flag.ErrHelp
+		}
+		return fmt.Errorf("invalid %s flags; use herdr-mesh %s --help", command, command)
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("%s does not accept positional arguments", command)
+	}
+	var err error
+	options, err = options.Normalize()
+	if err != nil {
+		return err
+	}
+	deps := onboard.DefaultDependencies(streams.In, streams.Out)
+	deps.Dir = func() (string, error) { return meshlocal.StateDir(ctx) }
+	return run(ctx, options, streams.Out, deps)
+}
+
+func runStart(ctx context.Context, args []string, streams IO) error {
+	flags := flag.NewFlagSet("start", flag.ContinueOnError)
+	flags.SetOutput(streams.Err)
+	timeout := flags.Duration("timeout", 2*time.Minute, "readiness wait; cancellation leaves the background daemon running")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: herdr-mesh [--state-dir <absolute-directory>] start [--timeout 2m]\nStart this computer's saved mesh connection. No need to repeat init or join.")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *timeout <= 0 || *timeout > 10*time.Minute {
+		return errors.New("start accepts no positional arguments; --timeout must be greater than zero and at most 10m")
+	}
+	op, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+	deps := onboard.DefaultDependencies(streams.In, streams.Out)
+	deps.Dir = func() (string, error) { return meshlocal.StateDir(op) }
+	return onboard.Start(op, streams.Out, deps)
+}
+
+func runManagedDaemon(ctx context.Context, args []string, streams IO) error {
+	return runManagedDaemonWith(ctx, args, streams, func(ctx context.Context, dir string, output io.Writer) error {
+		if err := onboard.ClearDaemonSecrets(); err != nil {
+			return err
+		}
+		return meshlocal.Run(ctx, dir, output)
+	})
+}
+
+func runManagedDaemonWith(ctx context.Context, args []string, streams IO, run func(context.Context, string, io.Writer) error) error {
+	flags := flag.NewFlagSet("managed-run", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	dir := flags.String("state-dir", "", "private managed root (internal launcher only)")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			flags.SetOutput(streams.Out)
+			flags.PrintDefaults()
+			return flag.ErrHelp
+		}
+		return errors.New("invalid internal managed-run flags")
+	}
+	if flags.NArg() != 0 || !filepath.IsAbs(*dir) {
+		return errors.New("managed-run requires one absolute --state-dir and no positional arguments")
+	}
+	return run(ctx, *dir, streams.Err)
+}

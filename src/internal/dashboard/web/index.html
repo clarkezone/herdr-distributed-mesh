@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Herdr · Mesh overview</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#inventory">Skip to inventory</a>
+  <header class="site-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">H</span><span>herdr <span class="brand-detail">/ mesh</span></span></div>
+    <span class="read-only"><span aria-hidden="true">◉</span> Read-only monitor</span>
+  </header>
+  <main>
+    <section class="overview" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Distributed work, one view</p>
+        <h1 id="page-title">Mesh overview</h1>
+        <p class="intro">Follow active agents, spot blockers, and inspect your fleet.</p>
+      </div>
+      <div class="refresh-controls">
+        <button id="refresh-button" type="button">Refresh now</button>
+        <label class="auto-control"><input id="auto-refresh" type="checkbox" checked> Auto-refresh · 3s</label>
+      </div>
+    </section>
+
+    <div id="connection-banner" class="connection-banner" data-state="loading">
+      <span id="connection-dot" class="connection-dot" aria-hidden="true"></span>
+      <div><p id="connection-status" role="status" aria-live="polite" aria-atomic="true">Connecting to the mesh…</p><p id="connection-detail" class="muted">Fetching the first snapshot. No live data yet.</p></div>
+      <span id="last-updated" class="last-updated">Awaiting first snapshot</span>
+    </div>
+
+    <section aria-labelledby="summary-title">
+      <div class="section-heading"><h2 id="summary-title">Fleet pulse</h2><span id="summary-scope" class="muted">Waiting for data</span></div>
+      <div id="summary" class="summary-grid" aria-label="Fleet summary"></div>
+    </section>
+
+    <section id="inventory" class="inventory" aria-labelledby="inventory-title" tabindex="-1">
+      <div class="section-heading"><h2 id="inventory-title">Inventory</h2><span id="result-count" class="muted"></span></div>
+      <div class="inventory-toolbar">
+        <div class="view-switcher" role="group" aria-label="Inventory view">
+          <button type="button" id="view-agents" data-view="agents" aria-pressed="true">Agents</button>
+          <button type="button" id="view-workspaces" data-view="workspaces" aria-pressed="false">Workspaces</button>
+          <button type="button" id="view-nodes" data-view="nodes" aria-pressed="false">Nodes</button>
+        </div>
+        <div class="filters">
+          <label class="search-field">Search names, directories, or IDs<input id="search-input" type="search" placeholder="Agent, workspace, tab, node, directory…" autocomplete="off" spellcheck="false"></label>
+          <label>Session<input id="session-filter" type="search" placeholder="All sessions" autocomplete="off" spellcheck="false"></label>
+          <label>Project<input id="project-filter" type="search" placeholder="All projects" autocomplete="off" spellcheck="false"></label>
+          <label>Provider<input id="provider-filter" type="search" placeholder="All providers" autocomplete="off" spellcheck="false"></label>
+          <label>Readiness<select id="readiness-filter">
+            <option value="all">All readiness</option>
+            <option value="ready">Ready</option>
+            <option value="not-ready">Not ready</option>
+            <option value="unknown">Not reported</option>
+          </select></label>
+          <label>Agent status<select id="status-filter">
+            <option value="all">All statuses</option>
+            <option value="working">Working</option>
+            <option value="blocked">Blocked</option>
+            <option value="done">Done</option>
+            <option value="idle">Idle</option>
+            <option value="unknown">Unknown</option>
+          </select></label>
+          <button id="clear-filters" class="quiet-button" type="button">Clear filters</button>
+        </div>
+      </div>
+      <p id="view-description" class="view-description"></p>
+      <div id="empty-state" class="empty-state" hidden><h3 id="empty-title"></h3><p id="empty-description"></p></div>
+      <div id="agents-view" class="view-panel">
+        <div class="table-scroll" role="region" aria-label="Agent inventory, scroll horizontally for names, directories, and identifiers" tabindex="0">
+          <table>
+            <caption class="sr-only">Agent, workspace and tab names, reported or workspace fallback directories, session-qualified identifiers, project, provider, readiness, focus, and snapshot freshness</caption>
+            <thead><tr><th scope="col">Agent / status</th><th scope="col">Workspace</th><th scope="col">Tab</th><th scope="col">Directory</th><th scope="col">Node</th><th scope="col">Session</th><th scope="col">Project</th><th scope="col">Provider</th><th scope="col">Readiness</th><th scope="col">Pane</th><th scope="col">Focus</th><th scope="col">Data freshness</th></tr></thead>
+            <tbody id="agents-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="workspaces-view" class="view-panel" hidden><div id="workspace-list" class="card-list"></div></div>
+      <div id="nodes-view" class="view-panel" hidden><div id="node-list" class="node-grid"></div></div>
+    </section>
+    <footer><strong>Observe, never control.</strong> This dashboard cannot change remote work. Configured names and reported directories are shown alongside operational IDs, provider, readiness and status; prompts and terminal output are excluded. Unnamed agents use their scoped pane label when available. A workspace directory fallback is context, not a reported agent working directory. Pane IDs are scoped by node and Herdr session incarnation; missing references are labeled unresolved. An observed done/idle state is not proof of task success.</footer>
+    <noscript><p class="noscript">JavaScript is required to fetch mesh status. This page does not contain a live snapshot.</p></noscript>
+  </main>
+</body>
+</html>
