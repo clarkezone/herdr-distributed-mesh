@@ -50,8 +50,11 @@ Activation happens only after the runtime owns its journal and tsnet identity.
 The guard remains held until network shutdown and all state writers finish;
 acquisition, activation, and close failures are propagated.
 
-`AcquireRoleState` requires an existing absolute local directory with no linked
-ancestors. It creates a private, kernel-locked `role-state.lock` containing a
+`AcquireRoleState` requires an existing absolute local directory. Normal runtime
+startup accepts linked parent installation directories; the state root and
+private state files must remain ordinary directories/files. Offline maintenance
+retains stricter ancestor-link checks, so select a physical path for it.
+Acquisition creates a private, kernel-locked `role-state.lock` containing a
 versioned **pending** role marker. Acquisition alone does not confirm that an
 older transport-only process has relinquished its tsnet identity. If startup
 aborts before activation, closing the guard leaves the marker pending and backup

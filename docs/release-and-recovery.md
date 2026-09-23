@@ -49,9 +49,17 @@ Herdr, Git, provider installation/authentication, and existing checkouts remain
 independent prerequisites. Never put enrollment keys in an archive or copy an
 enrolled tsnet identity to another node.
 
-Choose a persistent, private state directory for each server, node, and
-controller role. A dashboard or concurrent controller process needs separate
-state; two live tsnet processes cannot share an identity directory.
+For managed `init`/`join`, keep the executable and its `herdr-mesh-state`
+directory together in a writable, private local installation. CLI, dashboard,
+and MCP share that computer's running connection; they do not need separate
+enrollment or state. Use the same global `--state-dir` before commands if you
+selected a different directory. Run `shutdown`, replace the binary in place,
+then `start` to resume the saved identity. No login/boot startup is installed.
+
+For advanced explicit roles, choose a persistent, private state directory for
+each server, node, and client. An independently enrolled dashboard or concurrent
+client needs separate state; two live tsnet processes cannot share an identity
+directory.
 
 Before an upgrade:
 
@@ -83,7 +91,9 @@ Do not remove database rows, clear a journal, change project IDs, or generate
 new request keys to bypass an indeterminate outcome or a capacity error.
 Those actions can duplicate effects. Preserve the error and receipt, inspect
 the actual target, and use the local `maintenance inspect`, `backup`, and
-`verify-backup` commands described in [Offline journal maintenance](journal-maintenance.md).
+`verify-backup` commands described in [Offline journal maintenance](journal-maintenance.md)
+for advanced per-role state. Those commands do not back up the shared managed
+installation; preserve its complete state directory while stopped.
 They preserve uncertainty and retry identities; they do not prune, force an
 outcome, or automatically restore old execution state.
 
@@ -100,5 +110,6 @@ an explicitly matched existing Scheduled Task. It does not create that runner
 or establish credentials. PowerShell 7.4+ and OpenSSH remain prerequisites.
 
 An optional [coordinator-hosted dashboard](coordinator-dashboard.md) shares the
-coordinator's enrolled identity and in-process inventory. The standalone
-loopback dashboard remains available and still requires its own client state.
+coordinator's enrolled identity and in-process inventory. The loopback dashboard
+shares local IPC in managed mode; only explicit `dashboard --server` mode
+requires its own enrolled client state.

@@ -1,6 +1,9 @@
 # herdr-distributed-mesh
 
-Distributed mesh support for Herdr.
+Connect computers over embedded Tailscale, discover headless Herdr sessions,
+and run and observe agents against centrally registered project checkouts.
+The mesh is designed for one trusted operator; it is not a multi-tenant service
+or a sandbox for untrusted repositories.
 
 ## Start here
 
@@ -23,6 +26,13 @@ On the second computer, use the exact full MagicDNS address printed by setup:
 herdr-mesh join --server herdr-mesh-desktop.example.ts.net
 ```
 
+The address above is an example, not an address to invent from the hostname.
+On the controller, **`herdr-mesh help`** and **`herdr-mesh status`** show its
+actual assigned join command, including any nondefault port. Help reads saved
+state without starting or enrolling anything. If browser sign-in or device
+approval finishes after setup stops waiting, check `status`, then retrieve
+the join command with `help`; do not recreate the mesh.
+
 From either computer afterward:
 
 ```powershell
@@ -30,6 +40,23 @@ herdr-mesh nodes
 herdr-mesh doctor
 herdr-mesh dashboard
 ```
+
+Register an existing checkout on the execution computer and launch a task:
+
+```powershell
+herdr-mesh project add demo --node laptop --path C:\src\demo
+herdr-mesh agent start smoke --node laptop --project demo --prompt "Say hello"
+herdr-mesh agent follow smoke --node laptop
+herdr-mesh agent stop smoke --node laptop
+```
+
+Replace `laptop` with its label from `nodes`. Checkout paths belong to that
+computer. Start ensures a headless `main` Herdr session and an existing-checkout
+workspace, then launches Copilot by default; it does not create a worktree.
+No attached Herdr terminal is required. Canceling follow stops watching, not
+the agent. An agent name remains bound to its original launch: repeat the exact
+start to inspect/retry that request, not to launch a replacement.
+Prompt receipt and provider readiness do not establish task completion or success.
 
 First-time tailnet configuration prompts for an API access token privately.
 Device connection uses browser sign-in; normal setup does not require counting
@@ -53,11 +80,16 @@ override goes **before** the command:
 herdr-mesh --state-dir C:\private\mesh-state start
 ```
 
-Use the same absolute override for `init`, `join`, `shutdown`, `status`, `nodes`,
+Use the same absolute override for `help`, `init`, `join`, `shutdown`, `status`, `nodes`,
 `dashboard`, `mcp`, `project`, and `agent` when selecting that installation.
 Do not sync or run copies of tsnet state on multiple computers. A OneDrive copy
 of the binary is a delivery artifact, not a recommended live installation;
 install outside synced folders.
+
+Normal startup and policy setup support installer-managed parent-directory
+links, including Herdr's Windows `bin` junction. The actual state directory and
+private files must remain ordinary directories/files. Destructive maintenance
+keeps stricter checks: select the physical, non-aliased state path for cleanup.
 
 Stop the managed daemon without destroying any state:
 
@@ -91,9 +123,25 @@ remove tailnet policy. There is no silent AppData migration: shut down and
 destroy an old installation with its old version before a clean setup. This
 version does not read, migrate, or delete old startup registration.
 
+## Validation and release scope
+
+CI runs production and archived-experiment tests, vet, dashboard model tests,
+and CLI builds on Windows, Linux, and macOS; Linux also runs race checks.
+Windows runs the mocked policy/bootstrap automation boundaries. Releases are
+six single-binary archives (amd64/arm64 for each OS), with checksums.
+
+Windows browser enrollment, managed restart, native Herdr discovery, and
+read-only live controller/dashboard access have been exercised. Automated
+coverage and cross-builds do **not** establish all-platform live acceptance:
+the full two-host disruption/provider matrix, destructive live Tailscale API
+cleanup, and release signing remain release gates. See
+[Windows operational acceptance](docs/windows-live-validation.md).
+Unknown mutation outcomes retain their retry and reconciliation fences; never
+clear journals or change identities/keys to force a retry.
+
 ## Advanced and developer reference
 
-The remainder describes explicit legacy roles and implementation-level
+The remainder describes advanced explicit roles and implementation-level
 validation. It is not a sequence of extra steps required after `init`/`join`.
 See the [advanced operator guide](docs/advanced-operator-guide.md) for those modes.
 
@@ -141,20 +189,20 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 ## Monitoring dashboard
 
 The read-only dashboard uses the existing fleet inventory. It is embedded in
-the Go binary; no frontend server, npm install, system Tailscale client, or
-server/node upgrade is needed for the dashboard itself.
+the Go binary; no frontend server, npm install, or system Tailscale client is
+needed. Use the same mesh build on the controller and execution nodes.
 
-Keep the mesh server and Herdr-enabled nodes running. Start the dashboard with
-its own default client state, then open **http://127.0.0.1:8787**:
+Keep the mesh controller and execution nodes running. After `init` or `join`,
+start the dashboard and open **http://127.0.0.1:8787**:
 
 ```powershell
-herdr-mesh dashboard -server herdr-mesh-server:50052
+herdr-mesh dashboard
 ```
 
-Use the coordinator's actual assigned MagicDNS name if different. Keep that
-process running; initial enrollment uses its own `TS_AUTHKEY_CLIENT` key and
-`tag:herdr-mesh-client`. Do not run another process with the dashboard's state
-directory while it owns that identity.
+Keep the dashboard process running. The normal command shares this computer's
+saved mesh connection and does not enroll another Tailscale identity.
+Explicit `dashboard --server <address>` is an advanced, separately enrolled
+client mode; see the advanced operator guide before using it.
 
 The page shows fleet connectivity, per-session Herdr readiness/freshness, agent
 statuses, provider/readiness metadata, and workspace/tab/pane inventory. It
@@ -172,17 +220,19 @@ links it to the matching pane within the same node, Herdr session/incarnation,
 workspace, and tab. Optional metadata requires a node that reports it; unknown
 readiness is not treated as false.
 
-The local web gateway connects to the coordinator using embedded tsnet and the
-same authenticated `Fleet.ListNodes` RPC as `ctl nodes`. It binds only to a
+The local web gateway uses the same authenticated fleet inventory RPC as the
+CLI, through shared local IPC in managed mode and embedded tsnet in explicit
+client mode. It binds only to a
 literal loopback IP (`-listen 127.0.0.1:8787` by default), checks the browser's
 Host/Origin, disables caching and cross-origin API access, and exposes no
 mutation endpoints. It trusts local processes/users on that host; it is not a
 public HTTP service or a substitute for OS user isolation. If the port is
 occupied, choose another loopback port with `-listen`.
 
-Delivery order: **dashboard first**, then durability/command safety and
-orchestration, then a **fuller standalone CLI**, then **MCP as a separate
-integration**. CLI functionality must not depend on MCP.
+CLI, dashboard, and MCP are independent interfaces over the same control
+protocol; CLI functionality does not depend on MCP. Human CLI output uses
+readable labels and recovery guidance. Automation should use the documented
+JSON or MCP interfaces rather than parse human text.
 
 Dashboard checks (frontend tests use only Node's built-in test runner):
 
@@ -204,7 +254,8 @@ modifying sessions and reports counts only, never names, paths or raw snapshots.
 
 The node uses `ping`, `events.subscribe`, and `session.snapshot` against
 a local Herdr instance. Without either `-herdr-socket` or `-herdr-executable`,
-it remains transport-only.
+an advanced explicit-role node remains transport-only. Managed `init`/`join`
+configure discovery through the installed Herdr executable automatically.
 **Supplying `-herdr-socket` also enables authenticated existing-agent control**
 and its durable journal, described below. There is no additional agent
 allowlist or project policy to configure.
@@ -366,8 +417,8 @@ This stores **latest observations, not event history**. The existing retention
 policy is unchanged: disconnected observations expire after 15 minutes without
 a heartbeat, even across restarts. Expiry never removes the durable identity
 binding. Admitted command transitions have a separate durable journal, described
-below. Project bindings and mutation-specific execution safety currently cover
-only the scoped workspace-ensure and worktree-create operations below.
+below. Durable execution includes the scoped workspace/worktree operations,
+headless session startup, and agent lifecycle/control described below.
 
 The dedicated coordinator directory is private to the current user (plus
 SYSTEM on Windows), including database sidecars. Keep it on a local filesystem.
@@ -392,10 +443,10 @@ go test ./src/internal/herdr ./src/internal/node ./src/internal/server -run Live
 Remove-Item Env:\HERDR_MESH_TEST_SOCKET
 ```
 
-The remaining two-host restart/NIC/sleep/hostname-collision runbook is
-`docs\windows-live-validation.md`. That gate is deferred, not passed, and remains
-required before the two-machine demo. Broader mutations,
-durable event history, the fuller standalone CLI, and MCP remain later phases.
+The full two-host restart/NIC/sleep/hostname-collision runbook is
+`docs\windows-live-validation.md`. That release-acceptance gate is not claimed
+complete. Durable event history and automatic reconciliation of unknown effects
+are not implemented; standalone CLI and MCP control are available.
 
 ## Journaled command-safety probe
 
@@ -470,9 +521,11 @@ instead of assuming a fresh idempotency key is a safe retry for future mutations
 
 Each coordinator and node journal retains at most **4,096 commands**, including
 deduplication tombstones. Capacity failures are explicit; records are never
-silently evicted. Retention/maintenance tooling remains future work. Do not
+silently evicted. Offline inspection and full-role backup are available through
+`maintenance`; automatic pruning and uncertainty reconciliation are not. Do not
 delete or replace journals to recover capacity: that discards retry protection.
-Back up the whole node state offline, just as for the coordinator.
+See [journal maintenance](docs/journal-maintenance.md) for advanced role backups.
+For managed installations, preserve the complete stopped installation instead.
 
 The durable audit covers **admitted command transitions**, not all denied
 requests. Denials are not a durable security audit. Probe-only nodes cannot
@@ -876,9 +929,9 @@ hostile local processes or exactly-once Herdr execution.
 
 Windows integration coverage uses isolated temporary Git repositories, fake
 local Herdr IPC, the real node runtime, and both SQLite journals. Actual Herdr
-worktree mutation on the live mesh and the deferred two-host disruption gate
-remain unvalidated. Fuller independent CLI functionality comes next; MCP follows
-the CLI rather than being its dependency.
+worktree mutation on the live mesh and the full two-host disruption gate
+remain unvalidated. CLI and MCP expose these operations without changing their
+targeting, retry, or uncertainty guarantees.
 
 ## Archived developer experiment
 
