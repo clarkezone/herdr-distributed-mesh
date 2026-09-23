@@ -319,6 +319,13 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 			return fmt.Errorf("cannot verify managed daemon liveness: %w", err)
 		}
 		if !running {
+			status, statusErr := d.Status(dir)
+			if statusErr != nil && !errors.Is(statusErr, os.ErrNotExist) {
+				return fmt.Errorf("managed daemon stopped before readiness; cannot read its final status: %w", statusErr)
+			}
+			if statusErr == nil && (status.State == "failed" || status.State == "error") && status.Error != "" {
+				fmt.Fprintf(output, "Managed daemon: %s\n%s\n", status.State, status.Error)
+			}
 			return fmt.Errorf("managed daemon stopped before readiness; inspect %s and rerun the same command after resolving the failure (saved identity retained)", filepath.Join(dir, "daemon.log"))
 		}
 		status, err := d.Status(dir)

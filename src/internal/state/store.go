@@ -44,6 +44,20 @@ type Store struct {
 	closeErr error
 }
 
+// canceledOperation proves that no transaction committed and any rollback
+// completed synchronously. A plain context error does not establish that.
+type canceledOperation struct{ cause error }
+
+func (e *canceledOperation) Error() string { return e.cause.Error() }
+func (e *canceledOperation) Unwrap() error { return e.cause }
+
+// RetryableCancellation excludes wrapped/joined failures: a rollback or commit
+// failure must never become retryable just because it includes cancellation.
+func RetryableCancellation(err error) bool {
+	_, ok := err.(*canceledOperation)
+	return ok
+}
+
 // Open accepts a filesystem path, not a SQLite URI. The exact parent directory
 // must be dedicated to coordinator state: its permissions are made private.
 // The startup context does not own the returned store's lifetime.
@@ -240,11 +254,11 @@ func (s *Store) enter(ctx context.Context) error {
 	select {
 	case s.gate <- struct{}{}:
 	case <-ctx.Done():
-		return ctx.Err()
+		return &canceledOperation{ctx.Err()}
 	}
 	if err := ctx.Err(); err != nil {
 		s.leave()
-		return err
+		return &canceledOperation{err}
 	}
 	if s.closed {
 		s.leave()
@@ -257,7 +271,7 @@ func (s *Store) leave() { <-s.gate }
 
 func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return &canceledOperation{err}
 	}
 	// Keep rollback synchronous with ownership of the pinned connection.
 	// Caller cancellation still governs SQL operations and the commit decision,
@@ -266,9 +280,13 @@ func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err er
 	if err != nil {
 		return err
 	}
+	commitAttempted := false
 	defer func() {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			err = errors.Join(err, rollbackErr)
+		} else if rollbackErr == nil && !commitAttempted && err != nil && err == ctx.Err() {
+			err = &canceledOperation{err}
 		}
 	}()
 	if err := fn(tx); err != nil {
@@ -277,6 +295,7 @@ func (s *Store) transaction(ctx context.Context, fn func(*sql.Tx) error) (err er
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	commitAttempted = true
 	return tx.Commit()
 }
 

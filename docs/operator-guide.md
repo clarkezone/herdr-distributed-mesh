@@ -130,6 +130,21 @@ messages alone do not explain a native discovery failure. Before sharing logs,
 remove browser sign-in URLs, credentials, and any private paths you do not want
 to disclose; do not send managed databases or tsnet state.
 
+### Dashboard cannot connect to the managed daemon
+
+A missing private named pipe after a previous **Ready** means the runtime is no
+longer listening; readiness is not a promise that the process cannot fail later.
+Check `herdr-mesh status` and the daemon log before attempting another enrollment.
+If the coordinator is down, other computers may finish browser enrollment but
+cannot complete `join`. Preserve their saved identity and repeat the same join
+command once the coordinator is healthy; do not destroy/recreate the nodes.
+
+Persistence failures include an operation and attempt in the daemon log. The
+coordinator retries a timed-out local database operation once only when the
+store proves that no commit was attempted and any rollback completed. Unknown
+commit outcomes, disk errors and repeated timeouts still stop the coordinator
+rather than publish uncommitted state. This does not retry agent actions.
+
 ## 4. Register an existing project
 
 Prepare an existing Git checkout on each computer where you want to run work.

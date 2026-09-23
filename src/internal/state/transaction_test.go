@@ -41,7 +41,7 @@ func TestTransactionCancellationRollsBackBeforeReturning(t *testing.T) {
 					})
 					want := ctx.Err()
 					cancel()
-					if want == nil || err != want {
+					if want == nil || !errors.Is(err, want) || !RetryableCancellation(err) {
 						t.Fatalf("iteration %d: canceled transaction returned %v, want %v", i, err, want)
 					}
 					if count := rowCount(t, s, "SELECT count(*) FROM bindings"); count != 0 {
@@ -67,7 +67,7 @@ func TestTransactionCancellationPreservesOtherErrors(t *testing.T) {
 			return original
 		})
 		cancel()
-		if err != original || errors.Is(err, context.Canceled) {
+		if err != original || errors.Is(err, context.Canceled) || RetryableCancellation(err) {
 			t.Fatalf("cancellation masked storage error: %v", err)
 		}
 	}
@@ -76,6 +76,39 @@ func TestTransactionCancellationPreservesOtherErrors(t *testing.T) {
 	})
 	if err != sql.ErrTxDone {
 		t.Fatalf("uncanceled double completion was masked: %v", err)
+	}
+}
+
+func TestRetryableCancellationRequiresVerifiedRollback(t *testing.T) {
+	s := openTestStore(t, testPath(t))
+	for _, manualCompletion := range []string{"none", "rollback", "commit", "joined-error"} {
+		t.Run(manualCompletion, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			err := s.transaction(ctx, func(tx *sql.Tx) error {
+				if err := bind(ctx, tx, Binding{StableID: manualCompletion, InstanceID: manualCompletion}); err != nil {
+					return err
+				}
+				switch manualCompletion {
+				case "rollback":
+					if err := tx.Rollback(); err != nil {
+						return err
+					}
+				case "commit":
+					if err := tx.Commit(); err != nil {
+						return err
+					}
+				}
+				cancel()
+				if manualCompletion == "joined-error" {
+					return errors.Join(ctx.Err(), errors.New("injected storage error"))
+				}
+				return ctx.Err()
+			})
+			if RetryableCancellation(err) != (manualCompletion == "none") {
+				t.Fatalf("unsafe retry certification after %s: %v", manualCompletion, err)
+			}
+		})
 	}
 }
 

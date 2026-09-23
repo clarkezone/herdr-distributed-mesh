@@ -108,9 +108,9 @@ func (f *fleetStore) loseCommands(nodeID string, now time.Time) error {
 	if f.commands == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := f.commands.LoseNodeCommands(ctx, nodeID, now); err != nil {
+	if err := persistCoordinator("lose_node_commands", func(ctx context.Context) error {
+		return f.commands.LoseNodeCommands(ctx, nodeID, now)
+	}); err != nil {
 		return f.failLocked(err)
 	}
 	return nil
@@ -125,9 +125,9 @@ func (f *fleetStore) expireCommands(now time.Time) error {
 	if f.commands == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := f.commands.ExpireCommands(ctx, now); err != nil {
+	if err := persistCoordinator("expire_commands", func(ctx context.Context) error {
+		return f.commands.ExpireCommands(ctx, now)
+	}); err != nil {
 		return f.failLocked(err)
 	}
 	return nil
@@ -167,9 +167,9 @@ func (f *fleetStore) save(view *agentflowv1.NodeView) error {
 	if f.storage == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := f.storage.SaveNode(ctx, view); err != nil {
+	if err := persistCoordinator("save_node", func(ctx context.Context) error {
+		return f.storage.SaveNode(ctx, view)
+	}); err != nil {
 		return f.failLocked(err)
 	}
 	return nil
@@ -189,9 +189,9 @@ func (f *fleetStore) prune(now time.Time) error {
 		return nil
 	}
 	if f.storage != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := f.storage.DeleteNodes(ctx, expired); err != nil {
+		if err := persistCoordinator("delete_nodes", func(ctx context.Context) error {
+			return f.storage.DeleteNodes(ctx, expired)
+		}); err != nil {
 			return f.failLocked(err)
 		}
 	}
