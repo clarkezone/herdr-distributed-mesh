@@ -25,8 +25,7 @@ type Options struct {
 	Coordinator                            bool
 }
 
-// Dependencies keeps network, interactive, process and registration effects
-// injectable; tests never enroll devices or change login entries.
+// Dependencies keeps network, interactive and process effects injectable.
 type Dependencies struct {
 	Dir           func() (string, error)
 	Load          func(string) (meshlocal.Config, error)
@@ -36,7 +35,6 @@ type Dependencies struct {
 	Verify        func(context.Context, string) error
 	Prerequisites func(string) error
 	Executable    func() (string, error)
-	Register      func(string, string) error
 	Start         func(string, string, []string) error
 	Browser       func(string) error
 	Token         func(context.Context) ([]byte, error)
@@ -48,10 +46,36 @@ type Dependencies struct {
 
 var portableName = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+var reservedNodeName = regexp.MustCompile(`^(con|prn|aux|nul|com[0-9]|lpt[0-9])$`)
+var hostnameSeparators = regexp.MustCompile(`[^a-z0-9]+`)
+
+func nameFromHostname(hostname string) (string, error) {
+	name := strings.Trim(hostnameSeparators.ReplaceAllString(strings.ToLower(hostname), "-"), "-")
+	if name == "" {
+		return "", errors.New("machine hostname has no usable letters or digits; supply --name")
+	}
+	if name[0] < 'a' || name[0] > 'z' || reservedNodeName.MatchString(name) {
+		name = "node-" + name
+	}
+	if len(name) > 40 {
+		name = strings.TrimRight(name[:40], "-")
+	}
+	return name, nil
+}
 
 func (o Options) Normalize() (Options, error) {
+	if o.Name == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			return o, fmt.Errorf("read machine hostname; supply --name to override: %w", err)
+		}
+		o.Name, err = nameFromHostname(hostname)
+		if err != nil {
+			return o, err
+		}
+	}
 	if len(o.Name) > 40 || !portableName.MatchString(o.Name) ||
-		regexp.MustCompile(`^(con|prn|aux|nul|com[0-9]|lpt[0-9])$`).MatchString(o.Name) {
+		reservedNodeName.MatchString(o.Name) {
 		return o, errors.New("--name (this computer's mesh node label) must be 1..40 lowercase letters, digits or single hyphens, start with a letter, and not be a reserved Windows name")
 	}
 	if o.HerdrExecutable == "" {
@@ -115,6 +139,7 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(output, "Mesh node label: %s\n", o.Name)
 	exe, err := d.Executable()
 	if err != nil {
 		return err
@@ -140,7 +165,7 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("cannot inspect managed configuration; refusing replacement: %w", err)
 		}
-		if err := checkAdvanced(filepath.Dir(dir)); err != nil {
+		if err := checkAdvanced(filepath.Join(dir, "advanced")); err != nil {
 			return err
 		}
 		if entries, readErr := os.ReadDir(dir); readErr == nil && len(entries) != 0 {
@@ -172,10 +197,12 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := d.Register(exe, dir); err != nil {
-		return fmt.Errorf("managed Windows sign-in registration: %w", err)
-	}
-	fmt.Fprintln(output, "Per-user Windows sign-in startup configured (not a boot service).")
+	return launchAndWait(ctx, exe, dir, o.Coordinator, output, d)
+}
+
+func launchAndWait(ctx context.Context, exe, dir string, coordinator bool, output io.Writer, d Dependencies) error {
+	fmt.Fprintf(output, "Mesh state: %s\n", dir)
+	fmt.Fprintln(output, "Background runtime only; no login or boot startup is installed.")
 	running, err := d.Running(dir)
 	if err != nil {
 		return fmt.Errorf("cannot inspect existing managed daemon; refusing duplicate launch: %w", err)
@@ -201,7 +228,7 @@ func Run(ctx context.Context, options Options, output io.Writer, d Dependencies)
 			}
 		}
 	}
-	return waitReady(ctx, dir, o.Coordinator, output, d)
+	return waitReady(ctx, dir, coordinator, output, d)
 }
 
 func checkAdvanced(root string) error {
@@ -374,7 +401,7 @@ func waitReady(ctx context.Context, dir string, coordinator bool, output io.Writ
 				}
 				fmt.Fprintf(output, "Ready: %s\n", status.DNSName)
 				if coordinator {
-					fmt.Fprintf(output, "On another computer run:\nherdr-mesh join --server %s --name <choose-node-name>\n", endpoint)
+					fmt.Fprintf(output, "On another computer run:\nherdr-mesh join --server %s\n", endpoint)
 				}
 				return nil
 			case "error", "failed", "stopped":
@@ -404,7 +431,7 @@ func DaemonEnvironment(environment []string) []string {
 	return result
 }
 
-// ClearDaemonSecrets also covers Windows sign-in launches, which inherit the
+// ClearDaemonSecrets also covers direct managed-run launches, which inherit the
 // login environment rather than the initial onboarding process environment.
 func ClearDaemonSecrets() error {
 	keep := make(map[string]bool)

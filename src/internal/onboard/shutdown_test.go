@@ -44,9 +44,8 @@ func shutdownFixture(t *testing.T) (string, ShutdownDependencies, *cleanupFixtur
 		Identity: func(context.Context, string) (meshlocal.ManagedIdentity, error) {
 			return meshlocal.ManagedIdentity{DeviceID: "nPinned", DNSName: "desktop.tail.ts.net"}, nil
 		},
-		Stop:       func(context.Context, string) error { f.calls = append(f.calls, "stop"); return nil },
-		Unregister: func(string) error { f.calls = append(f.calls, "startup"); return nil },
-		Confirm:    func(context.Context, string) (bool, error) { return true, nil },
+		Stop:    func(context.Context, string) error { f.calls = append(f.calls, "stop"); return nil },
+		Confirm: func(context.Context, string) (bool, error) { return true, nil },
 		Token:   func(context.Context, string) ([]byte, error) { return []byte("tskey-api-private-test"), nil },
 		Remote: func(context.Context, string, meshlocal.Config, meshlocal.ManagedIdentity, bool, []byte) (RemoteCleanup, error) {
 			f.calls = append(f.calls, "preflight")
@@ -82,7 +81,7 @@ func TestShutdownDestroyPreflightsBeforeEffectsAndPurgesLast(t *testing.T) {
 	if err := Shutdown(context.Background(), ShutdownOptions{Destroy: true, RemovePolicy: true, Yes: true}, io.Discard, d); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(f.calls, []string{"preflight", "startup", "stop", "device", "policy", "purge"}) {
+	if !reflect.DeepEqual(f.calls, []string{"preflight", "stop", "device", "policy", "purge"}) {
 		t.Fatal("unsafe teardown order", f.calls)
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {

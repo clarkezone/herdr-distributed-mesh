@@ -12,7 +12,10 @@ import (
 func runAgentInventory(ctx context.Context, args []string, streams IO) error {
 	flags := flag.NewFlagSet("agents", flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return err
+	}
 	server := flags.String("server", "", "coordinator MagicDNS name or tailnet IP with port")
 	timeout := flags.Duration("timeout", 20*time.Second, "overall inventory timeout")
 	jsonOutput := flags.Bool("json", false, "write redacted inventory with independent source freshness")

@@ -48,7 +48,10 @@ func parseProjectQuery(command string, args []string, streams IO) (*projectQuery
 	}
 	flags := flag.NewFlagSet(flagName, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return nil, err
+	}
 	server := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	serverTag := flags.String("required-server-tag", "tag:herdr-mesh-server", "Tailscale tag required on the actual coordinator connection")
 	jsonOutput := flags.Bool("json", false, "write project configuration JSON, including node-local paths")

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
 )
 
 func isolatedManagedConfig(t *testing.T) string {
@@ -29,10 +31,15 @@ func TestManagedHelpDoesNotCreateStateOrRequireEnrollment(t *testing.T) {
 	t.Setenv("TS_AUTHKEY", "")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	ctx, err := meshlocal.WithStateDir(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, args := range [][]string{
 		{"init", "--help"},
 		{"join", "--help"},
+		{"start", "--help"},
 		{"nodes", "--help"},
 		{"status", "--help"},
 		{"doctor", "--help"},

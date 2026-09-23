@@ -16,11 +16,11 @@ import (
 )
 
 type fixture struct {
-	d                                                                                Dependencies
-	dir                                                                              string
-	cfg                                                                              meshlocal.Config
-	saved, starts, registrations, prompts, confirms, policyCalls, verified, browsers int
-	token                                                                            []byte
+	d                                                                 Dependencies
+	dir                                                               string
+	cfg                                                               meshlocal.Config
+	saved, starts, prompts, confirms, policyCalls, verified, browsers int
+	token                                                             []byte
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -42,7 +42,6 @@ func newFixture(t *testing.T) *fixture {
 			return nil
 		},
 		Executable: func() (string, error) { return filepath.Join(t.TempDir(), "herdr-mesh.exe"), nil },
-		Register:   func(string, string) error { f.registrations++; return nil },
 		Start: func(_ string, _ string, env []string) error {
 			f.starts++
 			if !reflect.DeepEqual(env, []string{"PATH=provider", "ANTHROPIC_API_KEY=provider-secret"}) {
@@ -105,7 +104,7 @@ func TestInitPolicyOnlyThenActualDNSAndExactResume(t *testing.T) {
 	if strings.Trim(string(f.token), "\x00") != "" {
 		t.Fatal("prompt token buffer retained")
 	}
-	want := "herdr-mesh join --server herdr-mesh-desktop.actual-tail.ts.net --name <choose-node-name>"
+	want := "herdr-mesh join --server herdr-mesh-desktop.actual-tail.ts.net"
 	if !strings.Contains(out.String(), want) || strings.Contains(out.String(), ":50052") || strings.Contains(out.String(), "tskey-api-hidden-test") {
 		t.Fatalf("bad output: %s", &out)
 	}
@@ -158,7 +157,7 @@ func TestPolicyRefusalAndUnknownApplyPreserveState(t *testing.T) {
 				f.d.Confirm = func(context.Context) (bool, error) { return false, nil }
 			}
 			err := Run(context.Background(), initOptions(), io.Discard, f.d)
-			if err == nil || f.starts != 0 || f.registrations != 0 {
+			if err == nil || f.starts != 0 {
 				t.Fatalf("err=%v %+v", err, f)
 			}
 			if uncertain {
@@ -188,7 +187,7 @@ func TestConfigurationConflictAndAdvancedStateRefused(t *testing.T) {
 		t.Fatal("conflict had effects")
 	}
 	f.saved = 0
-	if err := os.Mkdir(filepath.Join(filepath.Dir(f.dir), "ctl"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(f.dir, "advanced", "ctl"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := Run(context.Background(), joinOptions(), io.Discard, f.d); err == nil || !strings.Contains(err.Error(), "advanced mesh state") {
@@ -237,7 +236,7 @@ func TestCancellationAndFalseReadiness(t *testing.T) {
 }
 
 func TestNamesServerAndRedirectedSecretValidation(t *testing.T) {
-	for _, name := range []string{"", "Desktop", "a--b", "../bad", "con", "a-", strings.Repeat("a", 41)} {
+	for _, name := range []string{"Desktop", "a--b", "../bad", "con", "a-", strings.Repeat("a", 41)} {
 		o := joinOptions()
 		o.Name = name
 		if _, err := o.Normalize(); err == nil {

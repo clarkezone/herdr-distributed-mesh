@@ -20,7 +20,7 @@ herdr-mesh init --tailnet example.com --name desktop
 On the second computer, use the exact full MagicDNS address printed by setup:
 
 ```powershell
-herdr-mesh join --server herdr-mesh-desktop.example.ts.net --name laptop
+herdr-mesh join --server herdr-mesh-desktop.example.ts.net
 ```
 
 From either computer afterward:
@@ -34,14 +34,49 @@ herdr-mesh dashboard
 First-time tailnet configuration prompts for an API access token privately.
 Device connection uses browser sign-in; normal setup does not require counting
 or distributing enrollment keys. Herdr, Git, and the intended authenticated
-provider must be installed. Managed background startup currently targets Windows
-sign-in, not a boot-before-sign-in system service.
+provider must be installed. Managed `init`, `join`, and `start` run a background
+process on Windows, Linux, and macOS that survives closing the launching terminal.
+Mesh does not use the Windows registry or install sign-in autostart, boot
+services, or scheduled tasks. After reboot or shutdown, start it explicitly.
+
+`--name` is optional for `init` and `join`. By default, the OS hostname is
+normalized to lowercase letters, digits, and hyphens, with a prefix if needed
+to start with a letter and a 40-character cap. Use `--name` to override it;
+the printed join command does not require a name.
+
+Configuration, databases, journals, tsnet identity, and logs live in
+**`herdr-mesh-state` beside the executable**, not in the working directory or
+AppData. Install into a writable, private local directory. An optional global
+override goes **before** the command:
+
+```powershell
+herdr-mesh --state-dir C:\private\mesh-state start
+```
+
+Use the same absolute override for `init`, `join`, `shutdown`, `status`, `nodes`,
+`dashboard`, `mcp`, `project`, and `agent` when selecting that installation.
+Do not sync or run copies of tsnet state on multiple computers. A OneDrive copy
+of the binary is a delivery artifact, not a recommended live installation;
+install outside synced folders.
 
 Stop the managed daemon without destroying any state:
 
 ```powershell
 herdr-mesh shutdown
 ```
+
+Resume the saved installation without repeating join, name, or server flags:
+
+```powershell
+herdr-mesh start
+```
+
+`start` reads the selected saved configuration and launches the current
+executable. After shutdown, replace the binary in place and run `start` to
+upgrade. Copying only the binary elsewhere selects fresh default state; to
+relocate an installation on the same computer, move the whole installation
+directory while stopped or explicitly select its state with the global
+override. The saved state does not depend on the previous executable location.
 
 For deliberate deinitialization and a clean start, use
 `herdr-mesh shutdown --destroy`; add `--remove-policy` on the coordinator to
@@ -51,6 +86,10 @@ private Tailscale API authorization. Local identity/recovery data is retained
 until remote cleanup is confirmed. Herdr sessions, agents, repositories,
 worktrees and other computers are not deleted. See the operator guide for
 partial-cleanup recovery and the distinction from `agent stop`.
+Deleting a local folder alone does not unregister remote Tailscale devices or
+remove tailnet policy. There is no silent AppData migration: shut down and
+destroy an old installation with its old version before a clean setup. This
+version does not read, migrate, or delete old startup registration.
 
 ## Advanced and developer reference
 
@@ -68,8 +107,10 @@ PowerShell, OpenSSH, and provider runtimes remain explicit dependencies where
 needed; their existence does not create another mesh CLI product.
 
 `server`, `node`, and `dashboard` are long-running processes. `ctl` and `doctor` are
-short-lived clients. Each role uses a separate persistent local state directory
-by default. Initial enrollment uses a role-specific environment variable:
+short-lived clients. Each advanced role uses a separate persistent local state
+directory under `<executable-directory>\herdr-mesh-state\advanced\<role>` by
+default. These are separate from the shared managed installation. Initial
+enrollment uses a role-specific environment variable:
 `TS_AUTHKEY_SERVER`, `TS_AUTHKEY_NODE`, or `TS_AUTHKEY_CLIENT`. Server/controller
 credentials must not be distributed to nodes.
 
@@ -277,8 +318,12 @@ Get-Command herdr | Select-Object -ExpandProperty Source
 herdr --version
 herdr session list --json
 herdr status server --json
-Get-Content "$env:APPDATA\herdr-mesh\managed\daemon.log" -Tail 200
+$meshDirectory = Split-Path -Parent (Get-Command herdr-mesh -CommandType Application).Source
+Get-Content (Join-Path $meshDirectory 'herdr-mesh-state\daemon.log') -Tail 200
 ```
+
+If you selected a global `--state-dir`, read `daemon.log` in that directory
+instead; the current working directory does not select the managed log.
 
 For a named session, also use `herdr --session main status server --json`,
 replacing `main` with its actual name. The default session omits `--session`.

@@ -1,13 +1,15 @@
-//go:build !windows
+//go:build !windows && !linux && !darwin
 
 package onboard
 
-import "errors"
+import (
+	"errors"
+	"os/exec"
+)
 
 func supportedPlatform() error {
-	return errors.New("guided persistent onboarding currently supports Windows per-user sign-in startup only; on this OS use the documented advanced foreground commands (no autostart was installed)")
+	return errors.New("managed background launch supports Windows, Linux and macOS; use the advanced foreground commands on this OS")
 }
-func loginCommand(string, string) (string, error) { return "", supportedPlatform() }
-func registerLogin(string, string) error          { return supportedPlatform() }
-func startDaemon(string, string, []string) error  { return supportedPlatform() }
-func openBrowser(string) error                    { return supportedPlatform() }
+func configureDaemonCommand(*exec.Cmd)  {}
+func daemonLaunchError(err error) error { return err }
+func openBrowser(string) error          { return supportedPlatform() }

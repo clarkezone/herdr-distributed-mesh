@@ -29,7 +29,7 @@ import (
 )
 
 func managedFleet(ctx context.Context) (pb.FleetClient, func(), string, error) {
-	dir, err := meshlocal.DefaultDir()
+	dir, err := meshlocal.StateDir(ctx)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -76,7 +76,7 @@ func runManagedCommands(ctx context.Context, args []string, streams IO) (bool, e
 	client, closeClient, dir, err := managedFleet(op)
 	if err != nil {
 		if parsed.root == "doctor" || parsed.root == "status" {
-			localDir, dirErr := meshlocal.DefaultDir()
+			localDir, dirErr := meshlocal.StateDir(ctx)
 			if dirErr != nil {
 				return true, errors.Join(err, dirErr)
 			}
@@ -118,7 +118,7 @@ func parseManaged(args []string, streams IO) (managedArgs, error) {
 	flags.SetOutput(streams.Err)
 	flags.BoolVar(&a.json, "json", false, "write JSON")
 	flags.DurationVar(&a.timeout, "timeout", 2*time.Minute, "bounded operation/follow budget; cancellation never relaunches")
-	flags.StringVar(&a.node, "node", "", "mesh node label set by init/join --name (see herdr-mesh nodes); exact node ID also accepted")
+	flags.StringVar(&a.node, "node", "", "mesh node label shown by nodes (hostname by default, --name overrides); exact node ID also accepted")
 	flags.StringVar(&a.project, "project", "", "registered project name")
 	flags.StringVar(&a.path, "path", "", "existing checkout path on the selected node; never creates a worktree")
 	flags.StringVar(&a.session, "session", "main", "named Herdr session")

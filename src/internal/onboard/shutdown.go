@@ -23,14 +23,13 @@ type RemoteCleanup interface {
 }
 
 type ShutdownDependencies struct {
-	Dir        func() (string, error)
-	Stop       func(context.Context, string) error
-	Unregister func(string) error
-	Identity   func(context.Context, string) (meshlocal.ManagedIdentity, error)
-	Confirm    func(context.Context, string) (bool, error)
-	Token      func(context.Context, string) ([]byte, error)
-	Remote     func(context.Context, string, meshlocal.Config, meshlocal.ManagedIdentity, bool, []byte) (RemoteCleanup, error)
-	Purge      func(context.Context, string) error
+	Dir      func() (string, error)
+	Stop     func(context.Context, string) error
+	Identity func(context.Context, string) (meshlocal.ManagedIdentity, error)
+	Confirm  func(context.Context, string) (bool, error)
+	Token    func(context.Context, string) ([]byte, error)
+	Remote   func(context.Context, string, meshlocal.Config, meshlocal.ManagedIdentity, bool, []byte) (RemoteCleanup, error)
+	Purge    func(context.Context, string) error
 }
 
 func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d ShutdownDependencies) (result error) {
@@ -62,17 +61,17 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 		fmt.Fprintln(output, "This is the coordinator: other nodes lose mesh control until a coordinator is available. They are not deleted.")
 	}
 	if !o.Destroy {
-		fmt.Fprintln(output, "Shutdown only: preserve databases, Tailscale enrollment, startup entry, Herdr sessions, agents and repositories.")
+		fmt.Fprintln(output, "Shutdown only: preserve databases, Tailscale enrollment, Herdr sessions, agents and repositories.")
 		if o.DryRun {
 			return nil
 		}
 		if err := d.Stop(ctx, dir); err != nil {
 			return err
 		}
-		fmt.Fprintln(output, "Managed daemon stopped. State and enrollment retained; Windows sign-in startup remains enabled if previously configured.")
+		fmt.Fprintln(output, "Managed daemon stopped. State and enrollment retained; use herdr-mesh start to resume.")
 		return nil
 	}
-	fmt.Fprintln(output, "DESTROY: stop the managed daemon, remove its sign-in entry and exact Tailscale device, and delete all managed databases, journals, configuration and tsnet state.")
+	fmt.Fprintln(output, "DESTROY: stop the managed daemon, remove its exact Tailscale device, and delete all managed databases, journals, configuration and tsnet state.")
 	fmt.Fprintln(output, "Herdr sessions, provider processes, checkouts, Git worktrees and other computers are NOT destroyed.")
 	if o.RemovePolicy {
 		fmt.Fprintln(output, "Also remove provably owned policy additions, only when no other device depends on them. Unrelated policy is preserved.")
@@ -85,7 +84,7 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 	}
 	fmt.Fprintf(output, "Pinned Tailscale device: %s (%s)\n", identity.DeviceID, identity.DNSName)
 	if o.DryRun {
-		fmt.Fprintln(output, "Dry run: no startup, process, remote policy/device or local data changes. Remote authorization/conflicts are checked before actual teardown.")
+		fmt.Fprintln(output, "Dry run: no process, remote policy/device or local data changes. Remote authorization/conflicts are checked before actual teardown.")
 		return nil
 	}
 	if !o.Yes {
@@ -101,7 +100,7 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 	lock := filepath.Join(dir, "onboarding.lock")
 	file, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return errors.New("init/join/shutdown is already active or was interrupted; inspect the retained onboarding.lock before retrying")
+		return errors.New("init/join/start/shutdown is already active or was interrupted; inspect the retained onboarding.lock before retrying")
 	}
 	if err := file.Close(); err != nil {
 		return err
@@ -120,8 +119,7 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 	if err != nil {
 		return fmt.Errorf("remote cleanup authorization unavailable; no teardown performed: %w", err)
 	}
-	// Authenticate and resolve every requested remote change before disabling
-	// startup or erasing the identity needed to reconcile a partial teardown.
+	// Resolve remote changes before stopping or erasing recovery identity.
 	remote, err := d.Remote(ctx, dir, cfg, identity, o.RemovePolicy, token)
 	if err != nil {
 		return fmt.Errorf("remote cleanup preflight failed; no teardown performed: %w", err)
@@ -141,9 +139,6 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 	}
 	if err := meshlocal.SaveDestroyState(dir, record); err != nil {
 		return err
-	}
-	if err := d.Unregister(dir); err != nil {
-		return fmt.Errorf("remove managed startup: %w; destroy intent retained, state not purged", err)
 	}
 	if err := d.Stop(ctx, dir); err != nil {
 		return fmt.Errorf("stop managed daemon: %w; destroy intent retained, state not purged", err)
@@ -167,6 +162,6 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 	if err := d.Purge(ctx, dir); err != nil {
 		return fmt.Errorf("remote cleanup completed but local purge is incomplete: %w", err)
 	}
-	fmt.Fprintln(output, "Managed installation destroyed: daemon stopped, startup removed, exact Tailscale device absent, and managed local state deleted. You can run init/join from clean state.")
+	fmt.Fprintln(output, "Managed installation destroyed: daemon stopped, exact Tailscale device absent, and managed local state deleted. You can run init/join from clean state.")
 	return nil
 }

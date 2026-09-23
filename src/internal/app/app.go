@@ -14,6 +14,7 @@ import (
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/buildinfo"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/control"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/node"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/server"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/transport"
@@ -36,6 +37,30 @@ type networkFlags struct {
 }
 
 func Run(ctx context.Context, args []string, streams IO) error {
+	if len(args) > 0 && (args[0] == "--state-dir" || strings.HasPrefix(args[0], "--state-dir=")) {
+		flags := flag.NewFlagSet("herdr-mesh", flag.ContinueOnError)
+		flags.SetOutput(streams.Err)
+		dir := flags.String("state-dir", "", "absolute managed state directory; default: herdr-mesh-state beside the executable")
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		var err error
+		ctx, err = meshlocal.WithStateDir(ctx, *dir)
+		if err != nil {
+			return err
+		}
+		args = flags.Args()
+		if len(args) > 0 {
+			switch args[0] {
+			case "init", "join", "start", "shutdown", "nodes", "status", "doctor", "dashboard", "mcp", "project", "agent":
+				if managedExplicitServer(args[1:]) && args[0] != "join" {
+					return errors.New("global --state-dir selects managed state; do not combine it with advanced --server")
+				}
+			default:
+				return errors.New("global --state-dir is for managed commands; advanced commands take their own --state-dir after the command")
+			}
+		}
+	}
 	if len(args) == 0 {
 		printUsage(streams.Err)
 		return flag.ErrHelp
@@ -44,6 +69,8 @@ func Run(ctx context.Context, args []string, streams IO) error {
 	switch args[0] {
 	case "init", "join":
 		return runOnboarding(ctx, args[0], args[1:], streams)
+	case "start":
+		return runStart(ctx, args[1:], streams)
 	case "managed-run":
 		return runManagedDaemon(ctx, args[1:], streams)
 	case "shutdown":
@@ -99,7 +126,10 @@ func Run(ctx context.Context, args []string, streams IO) error {
 func runServer(ctx context.Context, args []string, streams IO) error {
 	flags := flag.NewFlagSet("server", flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-server", "server", "TS_AUTHKEY_SERVER", "tag:herdr-mesh-server")
+	network, err := addNetworkFlags(flags, "herdr-mesh-server", "server", "TS_AUTHKEY_SERVER", "tag:herdr-mesh-server")
+	if err != nil {
+		return err
+	}
 	listen := flags.String("listen", ":"+defaultPort, "tsnet TCP listen address")
 	dashboardListen := flags.String("dashboard-listen", "", "optional tsnet-only dashboard port, such as :8787")
 	dashboardOrigin := flags.String("dashboard-origin", "", "exact HTTP(S) dashboard origin; HTTPS uses the full coordinator Tailscale DNS name")
@@ -138,7 +168,10 @@ func runServer(ctx context.Context, args []string, streams IO) error {
 func runNode(ctx context.Context, args []string, streams IO) error {
 	flags := flag.NewFlagSet("node", flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, defaultNodeHostname(), "node", "TS_AUTHKEY_NODE", "tag:herdr-mesh-node")
+	network, err := addNetworkFlags(flags, defaultNodeHostname(), "node", "TS_AUTHKEY_NODE", "tag:herdr-mesh-node")
+	if err != nil {
+		return err
+	}
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	heartbeat := flags.Duration("heartbeat", 15*time.Second, "heartbeat interval")
 	herdrSocket := flags.String("herdr-socket", "", "local Herdr socket marker path; enables observation, managed projects, and authenticated existing-agent control")
@@ -236,7 +269,10 @@ func runFleetQuery(ctx context.Context, args []string, streams IO, doctor, nodes
 	if doctor {
 		role = "doctor"
 	}
-	network := addNetworkFlags(flags, "herdr-mesh-"+role, role, "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-"+role, role, "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return err
+	}
 	serverAddress := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	jsonOutput := flags.Bool("json", false, "write machine-readable JSON")
 	timeout := flags.Duration("timeout", 20*time.Second, "overall operation timeout")
@@ -272,14 +308,18 @@ func runFleetQuery(ctx context.Context, args []string, streams IO, doctor, nodes
 	return control.ServerInfo(operationContext, options)
 }
 
-func addNetworkFlags(flags *flag.FlagSet, hostname, stateName, authKeyEnv, defaultTags string) *networkFlags {
+func addNetworkFlags(flags *flag.FlagSet, hostname, stateName, authKeyEnv, defaultTags string) (*networkFlags, error) {
+	root, err := meshlocal.DefaultDir()
+	if err != nil {
+		return nil, err
+	}
 	network := &networkFlags{}
 	flags.StringVar(&network.authKeyEnv, "auth-key-env", authKeyEnv, "environment variable containing a Tailscale auth key")
 	flags.BoolVar(&network.debug, "debug", false, "enable verbose tsnet logs")
 	flags.StringVar(&network.hostname, "hostname", hostname, "Tailscale hostname for this embedded node")
-	flags.StringVar(&network.stateDir, "state-dir", filepath.Join(configRoot(), stateName), "directory for local identity and tsnet state")
+	flags.StringVar(&network.stateDir, "state-dir", filepath.Join(root, "advanced", stateName), "directory for local identity and tsnet state")
 	flags.StringVar(&network.tags, "tags", defaultTags, "comma-separated Tailscale tags requested during enrollment")
-	return network
+	return network, nil
 }
 
 func (flags *networkFlags) config() transport.Config {
@@ -291,14 +331,6 @@ func (flags *networkFlags) config() transport.Config {
 		StateDir:     filepath.Join(flags.stateDir, "tsnet"),
 		Tags:         splitList(flags.tags),
 	}
-}
-
-func configRoot() string {
-	root, err := os.UserConfigDir()
-	if err != nil {
-		return ".herdr-mesh"
-	}
-	return filepath.Join(root, "herdr-mesh")
 }
 
 var invalidHostnameCharacter = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -331,10 +363,16 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, `Herdr distributed mesh
 
 Connect each computer once:
-  herdr-mesh init --tailnet <tailnet> --name <node-name>
-  herdr-mesh join --server <coordinator-full-magic-dns-name> --name <node-name>
+  herdr-mesh init --tailnet <tailnet> [--name <node-name>]
+  herdr-mesh join --server <coordinator-full-magic-dns-name> [--name <node-name>]
+
+Names default to this machine's hostname; --name overrides the mesh label.
+Configuration, enrollment, databases and logs live in herdr-mesh-state beside
+the executable. No registry, login startup or system service is installed.
+Use herdr-mesh --state-dir <absolute-directory> <command> to select other state.
 
 Use the saved mesh connection:
+  herdr-mesh start
   herdr-mesh nodes
   herdr-mesh status
   herdr-mesh doctor
@@ -345,7 +383,7 @@ Use the saved mesh connection:
   herdr-mesh agent follow <agent-name> --node <node-name>
   herdr-mesh agent stop <agent-name> --node <node-name>
 
-<node-name> is the mesh label chosen with init/join --name, not the Windows hostname.
+<node-name> is the mesh label shown by nodes; it defaults to the normalized hostname.
 <agent-name> is the name chosen with agent start, not a workspace, tab or session name.
 Example: herdr-mesh agent stop smoke --node laptop
 Stopping an agent does not stop the mesh daemon.

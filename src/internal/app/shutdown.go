@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/onboard"
 )
 
 func runShutdown(ctx context.Context, args []string, streams IO) error {
 	return runShutdownWith(ctx, args, streams, func(ctx context.Context, options onboard.ShutdownOptions) error {
-		return onboard.Shutdown(ctx, options, streams.Out, onboard.DefaultShutdownDependencies(streams.In, streams.Out))
+		deps := onboard.DefaultShutdownDependencies(streams.In, streams.Out)
+		deps.Dir = func() (string, error) { return meshlocal.StateDir(ctx) }
+		return onboard.Shutdown(ctx, options, streams.Out, deps)
 	})
 }
 
@@ -20,7 +23,7 @@ func runShutdownWith(ctx context.Context, args []string, streams IO, run func(co
 	flags := flag.NewFlagSet("shutdown", flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
 	var options onboard.ShutdownOptions
-	flags.BoolVar(&options.Destroy, "destroy", false, "also unregister this computer's Tailscale device, remove managed startup, and permanently delete managed local state")
+	flags.BoolVar(&options.Destroy, "destroy", false, "also unregister this computer's Tailscale device and permanently delete managed local state")
 	flags.BoolVar(&options.RemovePolicy, "remove-policy", false, "with --destroy, remove only provably owned and unused coordinator policy additions")
 	flags.BoolVar(&options.DryRun, "dry-run", false, "show the exact local target and requested actions without changing anything")
 	flags.BoolVar(&options.Yes, "yes", false, "explicitly skip typed destruction confirmation (automation only)")
@@ -30,7 +33,7 @@ func runShutdownWith(ctx context.Context, args []string, streams IO, run func(co
 		fmt.Fprintln(flags.Output(), `Usage: herdr-mesh shutdown [options]
 
 Stop this computer's managed mesh daemon, NOT a Herdr agent.
-Default: retain all state, enrollment and sign-in startup.
+Default: retain all state and enrollment; resume with herdr-mesh start.
 --destroy: permanently remove this computer's managed installation.
 --remove-policy: additionally retire its owned shared policy (coordinator only).
 Herdr sessions, provider agents, repositories and other computers are never deleted.

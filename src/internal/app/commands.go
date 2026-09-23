@@ -43,7 +43,10 @@ type commandQuery struct {
 func parseCommandQuery(command string, args []string, streams IO) (*commandQuery, error) {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return nil, err
+	}
 	server := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	requiredServerTag := flags.String("required-server-tag", "tag:herdr-mesh-server", "Tailscale tag required on the actual coordinator connection")
 	jsonOutput := flags.Bool("json", false, "write machine-readable command record")

@@ -5,6 +5,36 @@ complete offline **mesh role** backups. It is not an executor, command-history
 browser, SQL interface, pruning tool, or uncertainty-resolution service.
 It follows the restore cautions in [Release, installation, and recovery](release-and-recovery.md).
 
+These commands are for advanced, independently configured roles, whose defaults
+are `<executable-directory>\herdr-mesh-state\advanced\<role>` on all platforms,
+not AppData or the current working directory. They do not back up the shared
+managed installation, and must not be applied to individual subdirectories of it.
+
+Managed `init`/`join`/`start` run a background process on Windows, Linux, and
+macOS without registry access, sign-in autostart, boot services, or scheduled
+tasks. Its configuration, databases, journals, tsnet identity, and logs live in
+`herdr-mesh-state` beside the executable. `herdr-mesh shutdown` preserves this
+state; `herdr-mesh start` reads its saved configuration and launches the current
+executable without repeated join, name, or server flags. An optional absolute
+global override precedes the command, for example
+`herdr-mesh --state-dir C:\private\mesh-managed start`; use the same selection
+for shutdown and other managed commands.
+
+Shut down before replacing the executable in place. Moving the whole
+installation directory on the same computer, or explicitly selecting its
+existing state, allows restart independent of the old executable location;
+copying only the binary elsewhere selects fresh default state. Never store or
+sync tsnet identity to multiple computers, or use OneDrive as live state
+storage. A synced binary is a delivery artifact, not a live installation.
+
+There is no silent AppData migration or old startup-registration cleanup.
+For a clean start, shut down and destroy the old installation with its old
+version. The new version does not read, migrate, or delete old registration.
+Current managed destruction uses `shutdown --destroy`, with guarded remote
+cleanup and Tailscale API authorization; deleting a local folder alone does not
+unregister remote devices or remove policy. Offline maintenance is not an
+alternative uninstall or remote cleanup path.
+
 ## Runtime ownership
 
 The `maintenance` command is wired into the production CLI. Server, node, ctl,
@@ -67,8 +97,9 @@ herdr-mesh maintenance verify-backup -role node `
 Use `-role server` for coordinator state. Every operation requires an explicit
 absolute `-state-dir`; there is no default that could select the wrong role.
 Replace the illustrative source path with that stopped role's actual state
-directory; a node launched with Windows defaults uses
-`%APPDATA%\herdr-mesh\node`, not `C:\private\mesh-node`.
+directory; an advanced node launched with defaults uses
+`<executable-directory>\herdr-mesh-state\advanced\node`, not
+`C:\private\mesh-node`.
 For `verify-backup`, that flag names the backup container, not its nested
 `state` directory. `-destination` is accepted only for `backup` and must not
 already exist. Parent directories must already exist.

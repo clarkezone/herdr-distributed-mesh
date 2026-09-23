@@ -37,11 +37,11 @@ type Status struct {
 }
 
 func DefaultDir() (string, error) {
-	root, err := os.UserConfigDir()
+	executable, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("find managed configuration directory: %w", err)
+		return "", fmt.Errorf("locate executable for portable mesh state: %w", err)
 	}
-	return filepath.Join(root, "herdr-mesh", "managed"), nil
+	return filepath.Join(filepath.Dir(executable), "herdr-mesh-state"), nil
 }
 
 func (c Config) validate() error {

@@ -15,106 +15,10 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	"golang.org/x/sys/windows/registry"
 )
 
-// UnregisterManagedLogin removes only an entry produced by managed onboarding
-// for dir. The executable may have moved or been deleted since registration.
-func UnregisterManagedLogin(dir string) (result error) {
-	if _, err := teardownStateDir(dir); err != nil {
-		return err
-	}
-	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE|registry.SET_VALUE)
-	if errors.Is(err, registry.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("open managed sign-in registration: %w", err)
-	}
-	defer func() { result = errors.Join(result, key.Close()) }()
-	return unregisterOwnedManagedLogin(dir, func() (string, bool, error) {
-		return readManagedLoginValue(key)
-	}, func() error {
-		err := key.DeleteValue("HerdrMeshManaged")
-		if errors.Is(err, registry.ErrNotExist) {
-			return nil
-		}
-		return err
-	})
-}
-
-func unregisterOwnedManagedLogin(dir string, read func() (string, bool, error), remove func() error) error {
-	dir, err := teardownStateDir(dir)
-	if err != nil {
-		return err
-	}
-	current, exists, err := read()
-	if err != nil {
-		return fmt.Errorf("inspect managed sign-in entry: %w", err)
-	}
-	if !exists {
-		return nil
-	}
-	if _, err := ownedManagedLoginExecutable(current, dir); err != nil {
-		return err
-	}
-	// Detect a replacement during inspection; the Run API has no compare/delete.
-	latest, exists, err := read()
-	if err != nil {
-		return fmt.Errorf("recheck managed sign-in entry: %w", err)
-	}
-	if !exists {
-		return nil
-	}
-	if latest != current {
-		return errors.New("HerdrMeshManaged changed during inspection; refusing removal")
-	}
-	if err := remove(); err != nil {
-		return fmt.Errorf("remove managed sign-in entry: %w", err)
-	}
-	return nil
-}
-
-func readManagedLoginValue(key registry.Key) (string, bool, error) {
-	value, kind, err := key.GetStringValue("HerdrMeshManaged")
-	if errors.Is(err, registry.ErrNotExist) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	if kind != registry.SZ {
-		return "", true, errors.New("existing startup entry is not a plain string; refusing managed teardown")
-	}
-	return value, true, nil
-}
-
-func readManagedLoginForTeardown() (value string, exists bool, result error) {
-	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
-	if errors.Is(err, registry.ErrNotExist) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	defer func() { result = errors.Join(result, key.Close()) }()
-	return readManagedLoginValue(key)
-}
-
-func ownedManagedLoginExecutable(command, dir string) (string, error) {
-	args, err := windows.DecomposeCommandLine(command)
-	if err != nil || !managedTeardownArgs(args, dir) {
-		return "", errors.New("HerdrMeshManaged has a conflicting command; refusing managed teardown")
-	}
-	expected, err := loginCommand(args[0], args[3])
-	if err != nil || command != expected {
-		return "", errors.New("HerdrMeshManaged is not an exact managed sign-in command; refusing managed teardown")
-	}
-	return args[0], nil
-}
-
 // Paths are compared lexically, not resolved through links or short-name
-// aliases. This also permits removing startup after state has been archived.
+// aliases.
 func teardownStateDir(dir string) (string, error) {
 	if !filepath.IsAbs(dir) || !utf8.ValidString(dir) || len(dir) > 4096 ||
 		strings.ContainsFunc(dir, unicode.IsControl) || strings.ContainsAny(dir, `"<>|?*`) ||
@@ -176,8 +80,8 @@ type legacyProcessSource struct {
 // StopLegacyDaemon force-stops only the current user's single, exact managed-run
 // process for dir. Call the runtime stop RPC first; this fallback does not stop
 // descendants (Herdr/provider jobs) and never uses process-name termination.
-// Discovery considers the shipped/current executable basenames and an owned
-// sign-in executable for dir. An old renamed executable needs that evidence.
+// Discovery considers only the shipped/current executable basenames. An old
+// renamed executable matching neither basename is deliberately not inspected.
 // No match is a no-op, not proof of shutdown: callers must verify IsRunning
 // before claiming success or purging state. Candidate inspection failures error.
 func StopLegacyDaemon(ctx context.Context, dir string) error {
@@ -187,7 +91,7 @@ func StopLegacyDaemon(ctx context.Context, dir string) error {
 			if err != nil {
 				return nil, err
 			}
-			return legacyCandidatePIDs(dir, executable, readManagedLoginForTeardown, snapshotLegacyProcesses)
+			return legacyCandidatePIDs(dir, executable, snapshotLegacyProcesses)
 		},
 		open: openLegacyProcess,
 	})
@@ -281,9 +185,8 @@ type legacyProcessEntry struct {
 	name string
 }
 
-func legacyCandidateNames(dir, executable string, read func() (string, bool, error)) ([]string, error) {
-	dir, err := teardownStateDir(dir)
-	if err != nil {
+func legacyCandidateNames(dir, executable string) ([]string, error) {
+	if _, err := teardownStateDir(dir); err != nil {
 		return nil, err
 	}
 	executable = filepath.Clean(executable)
@@ -292,32 +195,14 @@ func legacyCandidateNames(dir, executable string, read func() (string, bool, err
 		return nil, errors.New("legacy daemon discovery requires an absolute current executable path")
 	}
 	names := []string{"herdr-mesh.exe"}
-	add := func(path string) {
-		name := filepath.Base(path)
-		for _, existing := range names {
-			if strings.EqualFold(existing, name) {
-				return
-			}
-		}
+	if name := filepath.Base(executable); !strings.EqualFold(name, names[0]) {
 		names = append(names, name)
-	}
-	add(executable)
-	command, exists, err := read()
-	if err != nil {
-		return nil, fmt.Errorf("inspect managed sign-in executable for legacy discovery: %w", err)
-	}
-	if exists {
-		ownedExecutable, err := ownedManagedLoginExecutable(command, dir)
-		if err != nil {
-			return nil, err
-		}
-		add(ownedExecutable)
 	}
 	return names, nil
 }
 
-func legacyCandidatePIDs(dir, executable string, read func() (string, bool, error), snapshot func() ([]legacyProcessEntry, error)) ([]uint32, error) {
-	names, err := legacyCandidateNames(dir, executable, read)
+func legacyCandidatePIDs(dir, executable string, snapshot func() ([]legacyProcessEntry, error)) ([]uint32, error) {
+	names, err := legacyCandidateNames(dir, executable)
 	if err != nil {
 		return nil, err
 	}

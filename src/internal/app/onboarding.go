@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/onboard"
@@ -24,7 +25,7 @@ func runOnboardingWith(ctx context.Context, command string, args []string, strea
 	options := onboard.Options{Coordinator: command == "init", HerdrExecutable: "herdr"}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&options.Name, "name", "", "unique mesh node label, e.g. laptop; used by --node, not the Windows hostname (required)")
+	flags.StringVar(&options.Name, "name", "", "override the mesh node label (default: normalized machine hostname)")
 	flags.StringVar(&options.HerdrExecutable, "herdr", "herdr", "existing Herdr executable (default: herdr from PATH)")
 	if options.Coordinator {
 		flags.StringVar(&options.Tailnet, "tailnet", "", "Tailscale tailnet (required); policy API token is prompted once, hidden")
@@ -33,7 +34,7 @@ func runOnboardingWith(ctx context.Context, command string, args []string, strea
 	}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintf(streams.Out, "herdr-mesh %s: one shared managed daemon and identity per computer.\nWindows per-user sign-in startup; Herdr, Git and provider CLI must already be installed.\n", command)
+			fmt.Fprintf(streams.Out, "herdr-mesh %s: one shared managed daemon and identity per state directory.\nPortable state beside the executable; no automatic login or boot startup.\nHerdr, Git and provider CLI must already be installed.\n", command)
 			flags.SetOutput(streams.Out)
 			flags.PrintDefaults()
 			return flag.ErrHelp
@@ -48,7 +49,30 @@ func runOnboardingWith(ctx context.Context, command string, args []string, strea
 	if err != nil {
 		return err
 	}
-	return run(ctx, options, streams.Out, onboard.DefaultDependencies(streams.In, streams.Out))
+	deps := onboard.DefaultDependencies(streams.In, streams.Out)
+	deps.Dir = func() (string, error) { return meshlocal.StateDir(ctx) }
+	return run(ctx, options, streams.Out, deps)
+}
+
+func runStart(ctx context.Context, args []string, streams IO) error {
+	flags := flag.NewFlagSet("start", flag.ContinueOnError)
+	flags.SetOutput(streams.Err)
+	timeout := flags.Duration("timeout", 2*time.Minute, "readiness wait; cancellation leaves the background daemon running")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: herdr-mesh [--state-dir <absolute-directory>] start [--timeout 2m]\nResume saved mesh configuration using this executable. No enrollment setup or login startup changes.")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *timeout <= 0 || *timeout > 10*time.Minute {
+		return errors.New("start accepts no positional arguments; timeout must be in (0,10m]")
+	}
+	op, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+	deps := onboard.DefaultDependencies(streams.In, streams.Out)
+	deps.Dir = func() (string, error) { return meshlocal.StateDir(op) }
+	return onboard.Start(op, streams.Out, deps)
 }
 
 func runManagedDaemon(ctx context.Context, args []string, streams IO) error {

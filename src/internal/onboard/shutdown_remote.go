@@ -13,12 +13,11 @@ import (
 func DefaultShutdownDependencies(input io.Reader, output io.Writer) ShutdownDependencies {
 	return ShutdownDependencies{
 		Dir: meshlocal.DefaultDir, Identity: meshlocal.ResolveManagedIdentity,
-		Stop:       func(ctx context.Context, dir string) error { return stopManaged(ctx, dir, output) },
-		Unregister: UnregisterManagedLogin,
-		Confirm:    func(ctx context.Context, expected string) (bool, error) { return confirmDestroy(ctx, input, expected) },
-		Token:      func(ctx context.Context, name string) ([]byte, error) { return shutdownToken(ctx, name, input, output) },
-		Remote:     prepareRemoteCleanup,
-		Purge:      meshlocal.PurgeManaged,
+		Stop:    func(ctx context.Context, dir string) error { return stopManaged(ctx, dir, output) },
+		Confirm: func(ctx context.Context, expected string) (bool, error) { return confirmDestroy(ctx, input, expected) },
+		Token:   func(ctx context.Context, name string) ([]byte, error) { return shutdownToken(ctx, name, input, output) },
+		Remote:  prepareRemoteCleanup,
+		Purge:   meshlocal.PurgeManaged,
 	}
 }
 

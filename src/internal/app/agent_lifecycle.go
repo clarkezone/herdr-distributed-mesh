@@ -43,7 +43,10 @@ func readAgentPrompt(prompt, path string, streams IO) (string, error) {
 func runAgentLifecycle(ctx context.Context, verb string, args []string, streams IO) error {
 	flags := flag.NewFlagSet("agent "+verb, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return err
+	}
 	server := flags.String("server", "", "coordinator MagicDNS name or tailnet IP with port")
 	tag := flags.String("required-server-tag", "tag:herdr-mesh-server", "expected coordinator tag")
 	node := flags.String("node", "", "target mesh node instance ID")
@@ -96,7 +99,7 @@ func runAgentLifecycle(ctx context.Context, verb string, args []string, streams 
 	if startup < 3001*time.Millisecond || startup > 5*time.Minute || startup%time.Millisecond != 0 {
 		return errors.New("-startup-timeout must be 3001ms..5m in whole milliseconds")
 	}
-	prompt, err := readAgentPrompt(prompt, promptFile, streams)
+	prompt, err = readAgentPrompt(prompt, promptFile, streams)
 	if err != nil {
 		return err
 	}

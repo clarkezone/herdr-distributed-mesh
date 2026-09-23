@@ -10,9 +10,10 @@ control the mesh.
 
 ## Before you start
 
-On both computers, install the same build of `herdr-mesh.exe`, plus Herdr and Git
-on PATH. Install and sign in to the provider you want to use; the default is
-Copilot. A Herdr terminal window does not need to be open.
+On both computers, install the same build of `herdr-mesh` (`herdr-mesh.exe` on
+Windows), plus Herdr and Git on PATH. Install and sign in to the provider you
+want to use; the default is Copilot. A Herdr terminal window does not need to
+be open.
 
 Use a mesh build supporting your installed Herdr's native protocol. This build
 supports protocols **18, 20 and 22**, including **Herdr 0.8.2 and 0.9.1**. Other native protocol
@@ -23,15 +24,42 @@ Tailscale calls that network a **tailnet**. Use its name instead of `example.com
 below. A separate system Tailscale installation is not required for the embedded
 mesh connection.
 
-This first-run experience targets Windows. The background process survives
-closing your terminal and starts again when you sign in to Windows. It is not
-a boot-before-sign-in Windows service.
+Managed setup and background startup support Windows, Linux, and macOS. The
+process survives closing the launching terminal. Mesh uses no Windows registry
+and installs no sign-in autostart, boot service, or scheduled task. After a
+reboot or shutdown, run `herdr-mesh start` explicitly.
+
+### Where this installation lives
+
+Configuration, databases, journals, tsnet identity, and logs are stored in
+**`herdr-mesh-state` beside the executable**, not beside your current working
+directory or in AppData. Choose a writable, private local installation directory.
+Do not store or sync tsnet state to multiple computers: each computer must enroll
+its own identity. A OneDrive copy of the executable is a delivery artifact;
+copy it into a local, non-synced installation directory before running it.
+
+To select a different state directory, put the optional global `--state-dir`
+**before** the command and use an absolute path:
+
+```powershell
+herdr-mesh --state-dir C:\private\mesh-state start
+```
+
+The same global override applies to `init`, `join`, `shutdown`, `status`, `nodes`,
+`dashboard`, `mcp`, `project`, and `agent`. Use it consistently for the selected
+installation; the examples below use the executable-relative default.
 
 ## 1. Create the mesh on desktop
 
 ```powershell
 herdr-mesh init --tailnet example.com --name desktop
 ```
+
+`--name` is optional on both `init` and `join`. Without it, mesh uses the OS
+hostname normalized to lowercase letters, digits, and hyphens, adding a prefix
+if needed to start with a letter and limiting the result to 40 characters.
+The example overrides the coordinator name to `desktop`; use `--name` when you
+want a different label from your normalized hostname.
 
 Follow the prompts. First-time network configuration needs a **Tailscale API
 access token**: a secret that lets setup configure the network on your behalf.
@@ -53,12 +81,16 @@ suffix. Do not construct that address yourself.
 
 ## 2. Join from laptop
 
-Copy the command printed on desktop, choosing `laptop` as this computer's name.
-For example, if desktop printed the following address:
+Copy the command printed on desktop. For example, if desktop printed the
+following address:
 
 ```powershell
-herdr-mesh join --server herdr-mesh-desktop.example.ts.net --name laptop
+herdr-mesh join --server herdr-mesh-desktop.example.ts.net
 ```
+
+The printed command has no `--name`: it uses this computer's normalized hostname.
+The remaining examples assume that label is `laptop`; append `--name laptop`
+to the join command if you want that explicit label instead.
 
 Sign in to the same tailnet in the browser when prompted. You do not need an API
 access token on laptop or an enrollment key copied from desktop.
@@ -137,12 +169,14 @@ to disclose; do not send managed databases or tsnet state.
 
 ### Dashboard cannot connect to the managed daemon
 
-A missing private named pipe after a previous **Ready** means the runtime is no
-longer listening; readiness is not a promise that the process cannot fail later.
+A missing private IPC endpoint (a named pipe on Windows) after a previous
+**Ready** means the runtime is no longer listening; readiness is not a promise
+that the process cannot fail later.
 Check `herdr-mesh status` and the daemon log before attempting another enrollment.
 If the coordinator is down, other computers may finish browser enrollment but
-cannot complete `join`. Preserve their saved identity and repeat the same join
-command once the coordinator is healthy; do not destroy/recreate the nodes.
+cannot complete `join`. For an installation with saved configuration, use
+`herdr-mesh start` once the coordinator is healthy; do not destroy/recreate the
+nodes. Repeat `join` only if initial setup did not save a configuration.
 
 Persistence failures include an operation and attempt in the daemon log. The
 coordinator retries a timed-out local database operation once only when the
@@ -193,9 +227,9 @@ the same start is a retry, not a new launch. Once the previous outcome is known,
 choose a fresh name for a genuinely new run.
 
 Here `smoke` is the mesh control name chosen by `agent start`; `laptop` is the
-mesh node label chosen with `init --name` or `join --name`, not the Windows
-hostname. Neither is a workspace, tab, or Herdr session name. Renaming a TUI
-display label does not rename the original mesh control name. Agents started
+mesh node label saved by `init` or `join`, derived from the OS hostname unless
+overridden with `--name`. Neither is a workspace, tab, or Herdr session name.
+Renaming a TUI display label does not rename the original mesh control name. Agents started
 directly in the TUI do not automatically receive one of these mesh control names.
 
 An accepted prompt is not proof the provider completed the task. Check the
@@ -211,11 +245,23 @@ herdr-mesh shutdown
 ```
 
 This **does not delete state**. It keeps enrollment, databases, configuration,
-journals and any Windows sign-in startup entry. The daemon can start again at
-the next sign-in, or by repeating the original `init`/`join` command from the
-same installed executable. Herdr sessions, provider agents, repositories and
-worktrees stay untouched. Stopping the coordinator disconnects mesh control for
-the other nodes; it does not stop their agents.
+journals, tsnet state, and logs. Herdr sessions, provider agents, repositories
+and worktrees stay untouched. Stopping the coordinator disconnects mesh control
+for the other nodes; it does not stop their agents.
+
+Resume the selected installation using its saved configuration:
+
+```powershell
+herdr-mesh start
+```
+
+There are no repeated join, name, or server flags. `start` launches the current
+executable, not a saved path to an old binary. For an upgrade, shut down, replace
+the executable in place, and run `start`. Copying only the executable elsewhere
+selects fresh default state; `start` there requires an initialized installation.
+To relocate an existing installation on the same computer, move the whole
+installation directory while stopped or select the existing state directory
+with the global override. Do not run two processes against the same state.
 
 For a clean start, preview the destructive scope, then apply:
 
@@ -224,9 +270,9 @@ herdr-mesh shutdown --destroy --remove-policy --dry-run
 herdr-mesh shutdown --destroy --remove-policy
 ```
 
-`--destroy` removes this computer's managed startup entry and exact Tailscale
-device, then deletes its managed configuration, databases, journals and tsnet
-state. It does not delete the executable or anything outside the managed state
+`--destroy` removes this computer's exact Tailscale device, then deletes its
+managed configuration, databases, journals and tsnet state. It does not delete
+the executable or anything outside the managed state
 directory. You must type the displayed **mesh node label** to confirm.
 `--yes` is an explicit confirmation bypass for controlled automation.
 
@@ -245,20 +291,31 @@ remote authorization.
 
 Local recovery data is retained when remote cleanup is incomplete or uncertain.
 Resume with the same flags; do not delete the retained destroy record or change
-identity to bypass an unknown result. A destroy intent prevents `init`/`join`
+identity to bypass an unknown result. A destroy intent prevents `init`/`join`/`start`
 from restarting the retiring installation. Once completed, run `init`/`join`
 normally to create a fresh identity. Destroying journals intentionally discards
 retry history; do not reuse old command receipts or retry old work afterward.
 
-New daemons shut down cooperatively. Older daemons use a verified same-user,
-exact-command-line process stop, never a process-name or process-tree kill.
-Inspect any interrupted work before retrying it.
+New daemons shut down cooperatively on all supported platforms. The Windows
+legacy fallback uses a verified same-user, exact-command-line process stop,
+never a process-name or process-tree kill; unsupported or unverified fallback
+stops fail closed. Inspect any interrupted work before retrying it.
+Deleting only the local state folder does not unregister remote Tailscale
+devices or remove policy; use the guarded destroy flow for remote cleanup.
 
 ## Existing installations and advanced operations
 
-Do not delete identity directories to make setup run again. Existing managed
-configuration is checked rather than silently overwritten; older independently
-running roles need an explicit migration decision.
+There is no silent AppData migration and no automatic cleanup of old startup
+registration. For a clean start, shut down and destroy an old installation with
+its old version before installing this version. The new version does not read,
+migrate, or delete the old registration. A clean installation enrolls fresh
+state beside its executable.
+
+Current managed configuration is checked rather than silently overwritten.
+Do not delete identity directories to bypass an incomplete remote cleanup.
+Advanced role defaults are separate directories under
+`<executable-directory>\herdr-mesh-state\advanced\<role>`; they are not additional
+setup steps for the shared managed installation.
 
 `agent stop` stops an agent, not the daemon. Use `shutdown` for the daemon and
 explicitly opt into `shutdown --destroy` for managed deinitialization.

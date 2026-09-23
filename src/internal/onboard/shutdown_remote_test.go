@@ -49,7 +49,7 @@ func TestShutdownRemoteIntegrationUsesExactIdentityAndOwnedArtifacts(t *testing.
 					code, body = 404, `{}`
 				}
 			case "DELETE /api/v2/device/nPinned":
-				if len(f.calls) != 2 || f.calls[0] != "startup" || f.calls[1] != "stop" {
+				if len(f.calls) != 1 || f.calls[0] != "stop" {
 					t.Fatal("remote deletion preceded local quiescence", f.calls)
 				}
 				deleted, body = true, `{}`

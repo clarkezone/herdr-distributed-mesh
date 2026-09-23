@@ -50,7 +50,10 @@ func runAgent(ctx context.Context, args []string, streams IO) error {
 	}
 	flags := flag.NewFlagSet("agent "+verb, flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-ctl", "ctl", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return err
+	}
 	server := flags.String("server", "", "server MagicDNS name or tailnet IP with port")
 	tag := flags.String("required-server-tag", "tag:herdr-mesh-server", "required tag on the actual coordinator connection")
 	nodeID := flags.String("node", "", "target mesh node instance ID")

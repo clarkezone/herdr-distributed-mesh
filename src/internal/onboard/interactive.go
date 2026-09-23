@@ -51,7 +51,7 @@ func DefaultDependencies(input io.Reader, output io.Writer) Dependencies {
 			fmt.Fprintln(output, "Use an already-installed, authenticated provider CLI with Herdr; onboarding does not install or authenticate provider tools.")
 			return nil
 		},
-		Executable: os.Executable, Register: registerLogin, Start: startDaemon, Browser: openBrowser,
+		Executable: os.Executable, Start: startDaemon, Browser: openBrowser,
 		Token:   func(ctx context.Context) ([]byte, error) { return ReadToken(ctx, input, output) },
 		Confirm: func(ctx context.Context) (bool, error) { return confirm(ctx, input) },
 		Policy:  setup.RunWithToken, Wait: wait, Environment: os.Environ,
@@ -126,23 +126,4 @@ func validAuthURL(raw string) bool {
 	return err == nil && u.Scheme == "https" && u.User == nil &&
 		u.Port() == "" && (u.Hostname() == "login.tailscale.com" || u.Hostname() == "controlplane.tailscale.com") &&
 		strings.HasPrefix(u.Path, "/a/") && !strings.ContainsAny(raw, "\x00\r\n")
-}
-
-// RegisterOwnedLogin refuses to take over another program's startup value.
-func RegisterOwnedLogin(executable, dir string, read func() (string, bool, error), write func(string) error) error {
-	command, err := loginCommand(executable, dir)
-	if err != nil {
-		return err
-	}
-	current, exists, err := read()
-	if err != nil {
-		return err
-	}
-	if exists {
-		if current != command {
-			return errors.New("the HerdrMeshManaged login entry already has a different command; inspect and explicitly remove the conflicting entry before retrying (it was not overwritten)")
-		}
-		return nil
-	}
-	return write(command)
 }

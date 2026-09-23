@@ -35,7 +35,10 @@ func parseMCPFlags(args []string, streams IO) (mcpConfig, error) {
 	var config mcpConfig
 	flags := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	flags.SetOutput(streams.Err)
-	network := addNetworkFlags(flags, "herdr-mesh-mcp", "mcp", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	network, err := addNetworkFlags(flags, "herdr-mesh-mcp", "mcp", "TS_AUTHKEY_CLIENT", "tag:herdr-mesh-client")
+	if err != nil {
+		return config, err
+	}
 	flags.StringVar(&config.control.ServerAddress, "server", "", "server MagicDNS name or tailnet IP with port")
 	flags.StringVar(&config.control.RequiredServerTag, "required-server-tag", "tag:herdr-mesh-server", "required tag on the actual coordinator connection")
 	flags.DurationVar(&config.timeout, "timeout", 0, "whole MCP session timeout; zero runs until disconnect or cancellation")

@@ -23,82 +23,7 @@ const teardownOldExe = `C:\Old Mesh Install\herdr-mesh.exe`
 
 func teardownTestCommand(t *testing.T, exe, dir string) string {
 	t.Helper()
-	command, err := loginCommand(exe, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return command
-}
-
-func TestUnregisterOwnedManagedLogin(t *testing.T) {
-	owned := teardownTestCommand(t, teardownOldExe, teardownTestDir)
-	failure := errors.New("registry unavailable")
-	for _, tt := range []struct {
-		name, value string
-		exists      bool
-		readErr     error
-		removeErr   error
-		wantErr     bool
-		wantDeletes int
-	}{
-		{name: "absent"},
-		{name: "old executable need not exist", value: owned, exists: true, wantDeletes: 1},
-		{name: "other state", value: teardownTestCommand(t, teardownOldExe, teardownTestDir+"-other"), exists: true, wantErr: true},
-		{name: "other role", value: strings.Replace(owned, "managed-run", "server", 1), exists: true, wantErr: true},
-		{name: "extra arguments", value: owned + " --other", exists: true, wantErr: true},
-		{name: "empty existing entry", exists: true, wantErr: true},
-		{name: "foreign entry", value: `"C:\Other\other.exe"`, exists: true, wantErr: true},
-		{name: "noncanonical command formatting", value: strings.Replace(owned, " managed-run ", "  managed-run ", 1), exists: true, wantErr: true},
-		{name: "read or registry type failure", readErr: failure, wantErr: true},
-		{name: "delete failure", value: owned, exists: true, removeErr: failure, wantErr: true, wantDeletes: 1},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			deletes := 0
-			err := unregisterOwnedManagedLogin(teardownTestDir, func() (string, bool, error) {
-				return tt.value, tt.exists, tt.readErr
-			}, func() error {
-				deletes++
-				return tt.removeErr
-			})
-			if (err != nil) != tt.wantErr || deletes != tt.wantDeletes {
-				t.Fatalf("err=%v deletes=%d; want error=%v deletes=%d", err, deletes, tt.wantErr, tt.wantDeletes)
-			}
-			if (tt.readErr != nil || tt.removeErr != nil) && !errors.Is(err, failure) {
-				t.Fatalf("lost registry failure: %v", err)
-			}
-		})
-	}
-}
-
-func TestUnregisterOwnedManagedLoginRechecksBeforeDeletion(t *testing.T) {
-	owned := teardownTestCommand(t, teardownOldExe, teardownTestDir)
-	for _, tt := range []struct {
-		name, latest string
-		exists       bool
-		err          error
-		wantErr      bool
-	}{
-		{name: "concurrently removed"},
-		{name: "concurrently replaced", latest: "foreign.exe", exists: true, wantErr: true},
-		{name: "recheck denied", err: windows.ERROR_ACCESS_DENIED, wantErr: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			reads := 0
-			err := unregisterOwnedManagedLogin(teardownTestDir, func() (string, bool, error) {
-				reads++
-				if reads == 1 {
-					return owned, true, nil
-				}
-				return tt.latest, tt.exists, tt.err
-			}, func() error {
-				t.Fatal("deleted changed or uninspectable entry")
-				return nil
-			})
-			if (err != nil) != tt.wantErr || reads != 2 {
-				t.Fatalf("err=%v reads=%d", err, reads)
-			}
-		})
-	}
+	return windows.ComposeCommandLine([]string{exe, "managed-run", "--state-dir", dir})
 }
 
 func TestManagedTeardownRejectsUnsafeStateDirBeforeSideEffects(t *testing.T) {
@@ -107,15 +32,11 @@ func TestManagedTeardownRejectsUnsafeStateDirBeforeSideEffects(t *testing.T) {
 			if _, err := teardownStateDir(dir); err == nil {
 				t.Fatal("accepted unsafe state directory")
 			}
-			err := unregisterOwnedManagedLogin(dir, func() (string, bool, error) {
-				t.Fatal("read registry for unsafe path")
-				return "", false, nil
-			}, func() error {
-				t.Fatal("removed registry for unsafe path")
-				return nil
-			})
-			if err == nil {
-				t.Fatal("unregister accepted unsafe path")
+			if _, err := legacyCandidatePIDs(dir, teardownOldExe, func() ([]legacyProcessEntry, error) {
+				t.Fatal("enumerated processes for unsafe path")
+				return nil, nil
+			}); err == nil {
+				t.Fatal("discovery accepted unsafe path")
 			}
 			if err := stopLegacyDaemon(context.Background(), dir, legacyProcessSource{}); err == nil {
 				t.Fatal("stop accepted unsafe path")
@@ -251,52 +172,20 @@ func TestStopLegacyDaemonSelectionIsFailClosed(t *testing.T) {
 	}
 }
 
-func TestLegacyCandidateNamesRequireBoundedOwnedEvidence(t *testing.T) {
+func TestLegacyCandidateNamesOnlyShippedAndCurrentExecutable(t *testing.T) {
 	current := `C:\New Install\mesh-renamed.exe`
-	retired := `C:\Old Install\mesh-retired.exe`
-	owned := teardownTestCommand(t, retired, teardownTestDir)
 	for _, tt := range []struct {
-		name, executable, command string
-		exists                    bool
-		readErr                   error
-		want                      []string
-		wantErr                   bool
+		name, executable string
+		want             []string
+		wantErr          bool
 	}{
 		{
-			name: "no startup entry", executable: current,
+			name: "renamed current executable", executable: current,
 			want: []string{"herdr-mesh.exe", "mesh-renamed.exe"},
 		},
 		{
-			name: "owned retired executable", executable: current, command: owned, exists: true,
-			want: []string{"herdr-mesh.exe", "mesh-renamed.exe", "mesh-retired.exe"},
-		},
-		{
 			name: "case insensitive duplicate names", executable: `C:\New\HERDR-MESH.EXE`,
-			command: teardownTestCommand(t, teardownOldExe, teardownTestDir), exists: true,
 			want: []string{"herdr-mesh.exe"},
-		},
-		{
-			name: "same canonical state with case and trailing slash", executable: current,
-			command: teardownTestCommand(t, retired, strings.ToUpper(teardownTestDir)+`\`), exists: true,
-			want: []string{"herdr-mesh.exe", "mesh-renamed.exe", "mesh-retired.exe"},
-		},
-		{
-			name: "startup for another state is not evidence", executable: current,
-			command: teardownTestCommand(t, retired, teardownTestDir+"-other"), exists: true, wantErr: true,
-		},
-		{
-			name: "other role is not evidence", executable: current,
-			command: strings.Replace(owned, "managed-run", "server", 1), exists: true, wantErr: true,
-		},
-		{
-			name: "extra flags are not evidence", executable: current, command: owned + " --other", exists: true, wantErr: true,
-		},
-		{
-			name: "nonexact command is not evidence", executable: current,
-			command: strings.Replace(owned, " managed-run ", "  managed-run ", 1), exists: true, wantErr: true,
-		},
-		{
-			name: "registry failure or wrong value type", executable: current, readErr: windows.ERROR_ACCESS_DENIED, wantErr: true,
 		},
 		{
 			name: "relative current executable", executable: "mesh.exe", wantErr: true,
@@ -304,23 +193,25 @@ func TestLegacyCandidateNamesRequireBoundedOwnedEvidence(t *testing.T) {
 		{
 			name: "root is not current executable", executable: `C:\`, wantErr: true,
 		},
+		{
+			name: "quoted current executable", executable: `"C:\New\mesh.exe"`, wantErr: true,
+		},
+		{
+			name: "invalid current executable", executable: "C:\\New\\mesh\x00.exe", wantErr: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			read := func() (string, bool, error) { return tt.command, tt.exists, tt.readErr }
-			names, err := legacyCandidateNames(teardownTestDir, tt.executable, read)
+			names, err := legacyCandidateNames(teardownTestDir, tt.executable)
 			if (err != nil) != tt.wantErr || !slices.Equal(names, tt.want) {
 				t.Fatalf("names=%v err=%v; want names=%v error=%v", names, err, tt.want, tt.wantErr)
 			}
-			if tt.readErr != nil && !errors.Is(err, tt.readErr) {
-				t.Fatalf("lost registry error: %v", err)
-			}
 			snapshots := 0
-			_, err = legacyCandidatePIDs(teardownTestDir, tt.executable, read, func() ([]legacyProcessEntry, error) {
+			_, err = legacyCandidatePIDs(teardownTestDir, tt.executable, func() ([]legacyProcessEntry, error) {
 				snapshots++
 				return nil, nil
 			})
 			if tt.wantErr && (err == nil || snapshots != 0) {
-				t.Fatalf("enumerated despite uncertain startup evidence: snapshots=%d err=%v", snapshots, err)
+				t.Fatalf("enumerated despite invalid executable: snapshots=%d err=%v", snapshots, err)
 			}
 		})
 	}
@@ -328,9 +219,8 @@ func TestLegacyCandidateNamesRequireBoundedOwnedEvidence(t *testing.T) {
 
 func TestLegacyCandidatePIDsNarrowBeforeOwnershipInspection(t *testing.T) {
 	current := `C:\New Install\mesh-renamed.exe`
-	retired := `C:\Old Install\mesh-retired.exe`
 	entries := []legacyProcessEntry{
-		{pid: 236, name: "Registry"},
+		{pid: 236, name: "System"},
 		{pid: 1364, name: "arbitrary-protected-system-process.exe"},
 		{pid: 3000, name: "herdr.exe"},
 		{pid: 3001, name: "copilot.exe"},
@@ -340,24 +230,14 @@ func TestLegacyCandidatePIDsNarrowBeforeOwnershipInspection(t *testing.T) {
 		{pid: 4001, name: "mesh-renamed.exe"},
 		{pid: 4002, name: "MESH-RETIRED.EXE"},
 	}
-	for _, registered := range []bool{false, true} {
-		read := func() (string, bool, error) {
-			return teardownTestCommand(t, retired, teardownTestDir), registered, nil
-		}
-		pids, err := legacyCandidatePIDs(teardownTestDir, current, read, func() ([]legacyProcessEntry, error) {
-			return entries, nil
-		})
-		want := []uint32{4000, 4001}
-		if registered {
-			want = append(want, 4002)
-		}
-		if err != nil || !slices.Equal(pids, want) {
-			t.Fatalf("registered=%v pids=%v err=%v; want %v", registered, pids, err, want)
-		}
+	pids, err := legacyCandidatePIDs(teardownTestDir, current, func() ([]legacyProcessEntry, error) {
+		return entries, nil
+	})
+	want := []uint32{4000, 4001}
+	if err != nil || !slices.Equal(pids, want) {
+		t.Fatalf("pids=%v err=%v; want %v", pids, err, want)
 	}
-	_, err := legacyCandidatePIDs(teardownTestDir, current, func() (string, bool, error) {
-		return "", false, nil
-	}, func() ([]legacyProcessEntry, error) {
+	_, err = legacyCandidatePIDs(teardownTestDir, current, func() ([]legacyProcessEntry, error) {
 		return nil, windows.ERROR_ACCESS_DENIED
 	})
 	if !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
@@ -385,8 +265,9 @@ func TestStopLegacyDaemonBoundedCandidatesRemainFailClosed(t *testing.T) {
 				candidate.info.sameUser = false
 			}
 			entries := []legacyProcessEntry{
-				{pid: 236, name: "Registry"},
+				{pid: 236, name: "System"},
 				{pid: 1364, name: "arbitrary-protected-system-process.exe"},
+				{pid: 1365, name: "mesh-retired.exe"},
 				{pid: 1000, name: "herdr-mesh.exe"},
 			}
 			if scenario != "unrelated inaccessible" {
@@ -394,9 +275,7 @@ func TestStopLegacyDaemonBoundedCandidatesRemainFailClosed(t *testing.T) {
 			}
 			err := stopLegacyDaemon(context.Background(), teardownTestDir, legacyProcessSource{
 				list: func() ([]uint32, error) {
-					return legacyCandidatePIDs(teardownTestDir, teardownOldExe, func() (string, bool, error) {
-						return "", false, nil
-					}, func() ([]legacyProcessEntry, error) { return entries, nil })
+					return legacyCandidatePIDs(teardownTestDir, teardownOldExe, func() ([]legacyProcessEntry, error) { return entries, nil })
 				},
 				open: func(pid uint32) (legacyTeardownProcess, error) {
 					switch pid {
@@ -568,12 +447,10 @@ func TestLegacyDaemonDisposableHelperProcess(t *testing.T) {
 		t.Fatalf("helper identity mismatch: match=%v sameUser=%v err=%v", match, identity.sameUser, err)
 	}
 	// Intentionally inject the ONLY disposable PID. Never enumerate, inspect,
-	// terminate, or modify the startup registry of the user's running mesh.
+	// or terminate the user's running mesh.
 	err = stopLegacyDaemon(context.Background(), dir, legacyProcessSource{
 		list: func() ([]uint32, error) {
-			return legacyCandidatePIDs(dir, executable, func() (string, bool, error) {
-				return "", false, nil
-			}, func() ([]legacyProcessEntry, error) {
+			return legacyCandidatePIDs(dir, executable, func() ([]legacyProcessEntry, error) {
 				return []legacyProcessEntry{{pid: pid, name: filepath.Base(executable)}}, nil
 			})
 		},

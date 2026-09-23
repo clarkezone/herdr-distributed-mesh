@@ -42,8 +42,10 @@ checkouts and prepared test accounts/hosts. If their default mesh role state is
 already in use, explicitly select a separate private `-state-dir` and retain it
 for every restart; do not delete or copy existing state to make the defaults work.
 
-Default server, node, doctor, controller and dashboard state directories are
-separate. On Windows they are under `%APPDATA%\herdr-mesh`. Ordinary commands
+Default advanced server, node, doctor, controller and dashboard state directories
+are separate, under
+`<executable-directory>\herdr-mesh-state\advanced\<role>`, not AppData or the
+working directory. Ordinary commands
 below omit redundant hostname, state, tag and timeout flags. A running watch,
 follow, or wait owns its controller state: cancel that observation before the
 next command, or use a separately enrolled controller/MCP process.
@@ -63,6 +65,46 @@ copy enrolled identities between machines. Clear consumed enrollment variables,
 remove private consumed key artifacts, and revoke unused keys. Provider
 authentication and permission decisions are separate; the mesh never approves
 dialogs automatically.
+
+## Managed portable lifecycle acceptance
+
+This is a separate managed check from the independently enrolled role matrix
+below. Managed `init`, `join`, and `start` support Windows, Linux, and macOS
+background processes; this Windows runbook is not proof of live acceptance on
+the other platforms. Mesh uses no registry and installs no sign-in autostart,
+boot service, or scheduled task.
+
+Use a disposable, private local installation directory. Managed configuration,
+databases, journals, tsnet identity, and logs belong in `herdr-mesh-state`
+beside the executable. Do not run live state from OneDrive or sync tsnet
+identities across computers; a synced binary may be used only as a delivery
+artifact. There is no silent AppData migration. Shut down and destroy old
+installations with the old version before a clean setup; this version does not
+read, migrate, or delete old startup registration.
+
+| Check | Procedure and pass condition |
+|---|---|
+| Initial names | Run `init`/`join` without `--name`; verify the OS hostname becomes a lowercase letters/digits/hyphens label, prefixed to start with a letter if needed and capped at 40 characters. Verify an explicit `--name` override and that the printed join command omits it |
+| Terminal independence | Complete setup, close the launching terminal, and verify `herdr-mesh status` still reaches the background daemon |
+| Explicit restart | Run `herdr-mesh shutdown`, then `herdr-mesh start` without repeating join, name, or server flags; saved identity and configuration remain stable |
+| No automatic startup | After a reboot, explicitly run `herdr-mesh start`; mesh itself must not have installed an OS startup mechanism |
+| Working-directory independence | Invoke the same installed binary from another working directory; it selects the same executable-relative state |
+| Binary replacement | Shut down, replace the executable in place, then run `start`; the current binary resumes saved state |
+| Relocation | While stopped, move the whole installation directory on the same computer, or select its state with an absolute global override; `start` must not depend on the prior executable location. Copying only the binary elsewhere must not silently find old state |
+| Guarded destruction | Preview `shutdown --destroy --remove-policy --dry-run` on a disposable coordinator; actual destroy requires confirmation and API authorization. Local folder deletion alone is not remote device/policy cleanup |
+
+For an alternate managed location, the global override comes before the command:
+
+```powershell
+herdr-mesh --state-dir C:\private\mesh-managed-test start
+herdr-mesh --state-dir C:\private\mesh-managed-test status
+herdr-mesh --state-dir C:\private\mesh-managed-test shutdown
+```
+
+Initialize that selected state first. Use the same override before `init`,
+`join`, `nodes`, `dashboard`, `mcp`, `project`, or `agent`; do not mix identities
+between checks. Shutdown preserves data; destruction is an explicit, guarded
+remote cleanup followed by local state removal.
 
 ## 1. Prepare the tailnet if necessary
 
@@ -267,7 +309,7 @@ do not use or copy either execution node's live state:
 ```powershell
 herdr-mesh ctl server-info -server herdr-mesh-server:50052 `
   -auth-key-env TS_AUTHKEY_NODE -tags tag:herdr-mesh-node -hostname mesh-wrong-role `
-  -state-dir "$env:APPDATA\herdr-mesh\wrong-role"
+  -state-dir C:\private\mesh-wrong-role
 ```
 
 ## Evidence and limitations

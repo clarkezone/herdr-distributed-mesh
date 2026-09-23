@@ -27,7 +27,7 @@ func TestCustomCoordinatorPortPreservedWithoutInventingDNS(t *testing.T) {
 	if err := waitReady(context.Background(), f.dir, true, &out, f.d); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "--server herdr-mesh-desktop.actual-tail.ts.net:54321 --name") {
+	if !strings.Contains(out.String(), "--server herdr-mesh-desktop.actual-tail.ts.net:54321\n") || strings.Contains(out.String(), "--name") {
 		t.Fatal(out.String())
 	}
 	f.d.Status = func(string) (meshlocal.Status, error) {

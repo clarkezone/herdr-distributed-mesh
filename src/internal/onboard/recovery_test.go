@@ -11,7 +11,7 @@ import (
 )
 
 func TestInterruptedStateAndLauncherFailureNeverReplaceIdentity(t *testing.T) {
-	for _, scenario := range []string{"orphan-state", "registration", "launch", "lock-never-acquired", "status-read"} {
+	for _, scenario := range []string{"orphan-state", "launch", "lock-never-acquired", "status-read"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newFixture(t)
 			switch scenario {
@@ -22,8 +22,6 @@ func TestInterruptedStateAndLauncherFailureNeverReplaceIdentity(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(f.dir, "identity.json"), []byte("pending"), 0600); err != nil {
 					t.Fatal(err)
 				}
-			case "registration":
-				f.d.Register = func(string, string) error { return errors.New("owned entry conflict") }
 			case "launch":
 				f.d.Start = func(string, string, []string) error { return errors.New("launch refused") }
 			case "lock-never-acquired":
