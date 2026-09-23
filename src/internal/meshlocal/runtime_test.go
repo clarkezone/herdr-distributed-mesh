@@ -339,7 +339,12 @@ func testManagedRuntimeAssignedDNS(t *testing.T, assignedDNS, dir string) {
 	if status.Code(err) == codes.Unimplemented {
 		t.Fatalf("new Fleet unary method not forwarded: %v", err)
 	}
-	cancel()
+	if running, err := IsRunning(dir); err != nil || !running {
+		t.Fatalf("ready runtime ownership: running=%v, err=%v", running, err)
+	}
+	if err := Shutdown(ctx, dir); err != nil {
+		t.Fatalf("cooperative shutdown: %v", err)
+	}
 	select {
 	case err := <-done:
 		if err != nil {
@@ -361,6 +366,9 @@ func testManagedRuntimeAssignedDNS(t *testing.T, assignedDNS, dir string) {
 	after, err := ReadStatus(dir)
 	if err != nil || after.State != "stopped" {
 		t.Fatalf("shutdown status %+v, %v", after, err)
+	}
+	if running, err := IsRunning(dir); err != nil || running {
+		t.Fatalf("stopped runtime ownership: running=%v, err=%v", running, err)
 	}
 	offline, stop := context.WithTimeout(context.Background(), time.Second)
 	defer stop()

@@ -26,7 +26,7 @@ func RoleStateInUse(ctx context.Context, stateDir, role string) (_ bool, result 
 	} else if err != nil {
 		return false, ErrMaintenancePath
 	}
-	if _, err := maintenanceDirectory(root); err != nil {
+	if _, err := runtimeDirectory(root); err != nil {
 		return false, err
 	}
 	path := filepath.Join(root, maintenanceRoleLock)
@@ -35,7 +35,7 @@ func RoleStateInUse(ctx context.Context, stateDir, role string) (_ bool, result 
 	} else if err != nil {
 		return false, ErrMaintenancePath
 	}
-	file, err := maintenanceOpenRegular(path, false)
+	file, err := runtimeOpenRegular(path, false)
 	if err != nil {
 		return false, err
 	}

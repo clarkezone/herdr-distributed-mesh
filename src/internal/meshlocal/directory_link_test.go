@@ -37,6 +37,9 @@ func TestManagedStateThroughLinkedInstallation(t *testing.T) {
 	if err := Save(dir, cfg); err != nil {
 		t.Fatalf("initialize through installation link: %v", err)
 	}
+	if running, err := IsRunning(dir); err != nil || running {
+		t.Fatalf("probe unstarted installation: running=%v, err=%v", running, err)
+	}
 	for _, selected := range []string{dir, filepath.Join(installation, "herdr-mesh-state")} {
 		if got, err := Load(selected); err != nil || got != cfg {
 			t.Fatalf("load %s: %+v, %v", selected, got, err)
@@ -67,6 +70,11 @@ func TestManagedStateThroughLinkedInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer guard.Close()
+	for _, selected := range []string{dir, filepath.Join(installation, "herdr-mesh-state")} {
+		if running, err := IsRunning(selected); err != nil || !running {
+			t.Fatalf("probe active installation %s: running=%v, err=%v", selected, running, err)
+		}
+	}
 	if other, err := state.AcquireRoleState(context.Background(), filepath.Join(installation, "herdr-mesh-state"), "client"); !errors.Is(err, state.ErrLocked) {
 		if other != nil {
 			_ = other.Close()
@@ -75,6 +83,9 @@ func TestManagedStateThroughLinkedInstallation(t *testing.T) {
 	}
 	if err := guard.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if running, err := IsRunning(dir); err != nil || running {
+		t.Fatalf("probe stopped installation: running=%v, err=%v", running, err)
 	}
 	if err := RecordStopped(context.Background(), dir); err != nil {
 		t.Fatalf("record shutdown through installation link: %v", err)

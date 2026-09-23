@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
+	"github.com/clarkezone/herdr-distributed-mesh/src/internal/state"
 )
 
 func TestHostnameDefaultAndExplicitOverride(t *testing.T) {
@@ -87,6 +89,65 @@ func TestStartReusesSavedConfigurationWithoutSetup(t *testing.T) {
 				t.Fatal("state location not reported")
 			}
 		})
+	}
+}
+
+func TestStartThroughLinkedInstallationUsesRealOwnershipProbe(t *testing.T) {
+	f := newFixture(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation, alias := filepath.Join(root, "release"), filepath.Join(root, "bin")
+	if err := os.Mkdir(installation, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		if output, err := exec.Command(os.Getenv("ComSpec"), "/d", "/c", "mklink", "/J", alias, installation).CombinedOutput(); err != nil {
+			t.Fatalf("create installation junction: %v: %s", err, output)
+		}
+	} else if err := os.Symlink(installation, alias); err != nil {
+		t.Fatal(err)
+	}
+	f.dir = filepath.Join(alias, "herdr-mesh-state")
+	cfg := meshlocal.Config{Version: 1, Name: "desktop", Coordinator: true, Tailnet: "example.com", HerdrExecutable: "herdr"}
+	if err := meshlocal.Save(f.dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := createMarker(filepath.Join(f.dir, "policy-complete"), []byte("Policy-only setup completed; no device keys created.\n")); err != nil {
+		t.Fatal(err)
+	}
+	f.d.Load, f.d.Running = meshlocal.Load, meshlocal.IsRunning
+	var guard *state.RoleStateLock
+	defer func() {
+		if guard != nil {
+			if err := guard.Close(); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	f.d.Start = func(_ string, dir string, _ []string) error {
+		var err error
+		guard, err = state.PrepareRoleState(context.Background(), dir, "client")
+		f.starts++
+		return err
+	}
+	for range 2 {
+		if err := Start(context.Background(), io.Discard, f.d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.starts != 1 {
+		t.Fatal("start launched a duplicate daemon")
+	}
+	if err := guard.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Start(context.Background(), io.Discard, f.d); err != nil {
+		t.Fatal(err)
+	}
+	if f.starts != 2 || f.prompts != 0 || f.policyCalls != 0 {
+		t.Fatal("restart did not resume saved state or repeated policy setup")
 	}
 }
 
