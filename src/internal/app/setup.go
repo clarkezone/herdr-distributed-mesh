@@ -28,10 +28,10 @@ func runSetup(ctx context.Context, args []string, streams IO, run func(context.C
 	flags.StringVar(&options.TagOwner, "tag-owner", options.TagOwner, "owner added to each role tag without removing existing owners")
 	flags.IntVar(&options.KeyExpirySeconds, "key-expiry-seconds", options.KeyExpirySeconds, "one-off enrollment key lifetime, 3600..7776000 seconds")
 	flags.IntVar(&options.KeysPerRole, "keys-per-role", options.KeysPerRole, "one-off keys per server/node/client role, 1..100")
-	port := flags.Int("dashboard-port", 0, "optional explicit client-to-server dashboard TCP grant, 1..65535")
+	port := flags.Int("dashboard-port", 0, "optional dashboard TCP grant from all Tailscale policy * sources to mesh server, 1..65535 except 50052")
 	flags.StringVar(&options.OutputDirectory, "output-directory", "", "private local artifacts directory; existing files are never overwritten")
 	flags.BoolVar(&options.Apply, "apply", false, "explicitly update remote policy and create keys; default is PREVIEW")
-	flags.DurationVar(&options.Timeout, "timeout", options.Timeout, "bounded PowerShell operation deadline, at most 30m")
+	flags.DurationVar(&options.Timeout, "timeout", options.Timeout, "bounded API operation deadline, at most 30m")
 	asJSON := flags.Bool("json", false, "emit a safe structured report without keys or remote payloads")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

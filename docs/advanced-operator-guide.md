@@ -78,8 +78,8 @@ an explicit apply with a separate artifact directory:
 herdr-mesh setup tailnet -tailnet example.com -output-directory C:\private\mesh-applied -apply -json
 ```
 
-This is embedded in the executable; no source checkout or separately distributed
-setup script is needed. PowerShell remains an internal runtime prerequisite.
+This runs in the executable through the Tailscale HTTPS API; no PowerShell or
+separately distributed setup script is needed.
 Existing policy rules are preserved, including broad wildcard rules; adding role
 grants does not remove those rules or establish network isolation by itself.
 See [Tailnet setup](tailnet-setup.md) for artifact privacy and uncertain-apply

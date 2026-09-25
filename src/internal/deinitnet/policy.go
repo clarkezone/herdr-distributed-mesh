@@ -84,6 +84,125 @@ func (c *Client) PreparePolicy(ctx context.Context, tailnet string, before, appl
 	return &PolicyPlan{client: c, tailnet: tailnet, etag: etag, desired: oldJSON, unchanged: unchanged}, nil
 }
 
+// PrepareMeshPolicyRemoval removes Herdr mesh role ownership and grants from
+// the current policy, including entries that predate this installation. It
+// refuses mixed grants and any mesh references it cannot safely classify.
+// The plan requires every other Herdr mesh role device to be absent before
+// teardown; unrelated tailnet devices may remain.
+func (c *Client) PrepareMeshPolicyRemoval(ctx context.Context, tailnet string) (*PolicyPlan, error) {
+	if !validTailnet(tailnet) {
+		return nil, errors.New("invalid Tailscale tailnet")
+	}
+	current, etag, err := c.getPolicy(ctx, tailnet)
+	if err != nil {
+		return nil, err
+	}
+	policy, _, err := parsePolicy(current)
+	if err != nil {
+		return nil, err
+	}
+	key, valid := tagOwnersKey(policy)
+	if !valid {
+		return nil, ErrInvalidPolicy
+	}
+	if key != "" {
+		owners, ok := policy[key].(map[string]any)
+		if !ok {
+			return nil, ErrInvalidPolicy
+		}
+		for tag := range owners {
+			if managedTag(tag) {
+				delete(owners, tag)
+			}
+		}
+	}
+	for _, section := range []string{"grants", "acls"} {
+		entries, exists := policy[section]
+		if !exists {
+			continue
+		}
+		list, ok := entries.([]any)
+		if !ok {
+			return nil, ErrInvalidPolicy
+		}
+		kept := make([]any, 0, len(list))
+		for _, item := range list {
+			rule, ok := item.(map[string]any)
+			if !ok {
+				return nil, ErrInvalidPolicy
+			}
+			remove := false
+			for _, field := range []string{"src", "dst"} {
+				selectors, ok := rule[field].([]any)
+				if !ok {
+					return nil, ErrInvalidPolicy
+				}
+				mesh, other := false, false
+				for _, value := range selectors {
+					selector, ok := value.(string)
+					if !ok {
+						return nil, ErrInvalidPolicy
+					}
+					if managedPolicySelector(selector) {
+						mesh = true
+					} else {
+						other = true
+					}
+				}
+				if mesh && other {
+					return nil, ErrAmbiguousMeshPolicy
+				}
+				remove = remove || mesh
+			}
+			if !remove {
+				kept = append(kept, item)
+			}
+		}
+		policy[section] = kept
+	}
+	if containsMeshReference(policy) {
+		return nil, ErrAmbiguousMeshPolicy
+	}
+	desired, err := json.Marshal(policy)
+	if err != nil {
+		return nil, ErrInvalidPolicy
+	}
+	return &PolicyPlan{client: c, tailnet: tailnet, etag: etag, desired: desired,
+		unchanged: bytes.Equal(current, desired)}, nil
+}
+
+func containsMeshReference(value any) bool {
+	switch item := value.(type) {
+	case string:
+		return strings.Contains(item, "tag:herdr-mesh-")
+	case []any:
+		for _, child := range item {
+			if containsMeshReference(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range item {
+			if containsMeshReference(key) || containsMeshReference(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func managedPolicySelector(selector string) bool {
+	if managedTag(selector) {
+		return true
+	}
+	for _, tag := range []string{"tag:herdr-mesh-server", "tag:herdr-mesh-node", "tag:herdr-mesh-client"} {
+		if strings.HasPrefix(selector, tag+":") {
+			return true // ACL destinations carry a port suffix.
+		}
+	}
+	return false
+}
+
 // PolicyResult indicates either no work or a confirmed application.
 type PolicyResult struct {
 	AlreadyClean bool
@@ -224,6 +343,12 @@ func parsePolicy(data []byte) (map[string]any, []byte, error) {
 	return object, canonical, nil
 }
 
+// ParsePolicy validates a Tailscale policy and returns its object and canonical
+// JSON. Setup uses the same strict parser as later owned-policy cleanup.
+func ParsePolicy(data []byte) (map[string]any, []byte, error) {
+	return parsePolicy(data)
+}
+
 // Reject duplicate keys instead of using encoding/json's last-key-wins
 // behavior; ownership comparisons must have only one interpretation.
 func decodeValue(d *json.Decoder, depth int) (any, error) {
@@ -282,7 +407,7 @@ func decodeValue(d *json.Decoder, depth int) (any, error) {
 
 func supportedAdditions(before, applied map[string]any) bool {
 	for key, value := range before {
-		if key != "tagOwners" && key != "grants" && !reflect.DeepEqual(value, applied[key]) {
+		if key != "tagOwners" && key != "tagowners" && key != "grants" && !reflect.DeepEqual(value, applied[key]) {
 			return false
 		}
 		if _, exists := applied[key]; !exists {
@@ -290,7 +415,7 @@ func supportedAdditions(before, applied map[string]any) bool {
 		}
 	}
 	for key := range applied {
-		if _, exists := before[key]; !exists && key != "tagOwners" && key != "grants" {
+		if _, exists := before[key]; !exists && key != "tagOwners" && key != "tagowners" && key != "grants" {
 			return false
 		}
 	}
@@ -298,10 +423,14 @@ func supportedAdditions(before, applied map[string]any) bool {
 }
 
 func supportedOwners(before, applied map[string]any) bool {
-	old, oldOK := before["tagOwners"].(map[string]any)
-	next, nextOK := applied["tagOwners"].(map[string]any)
-	_, oldPresent := before["tagOwners"]
-	_, nextPresent := applied["tagOwners"]
+	oldKey, oldValid := tagOwnersKey(before)
+	nextKey, nextValid := tagOwnersKey(applied)
+	if !oldValid || !nextValid || oldKey != "" && oldKey != nextKey {
+		return false
+	}
+	old, oldOK := before[oldKey].(map[string]any)
+	next, nextOK := applied[nextKey].(map[string]any)
+	oldPresent, nextPresent := oldKey != "", nextKey != ""
 	if !nextPresent {
 		return !oldPresent
 	}
@@ -350,6 +479,21 @@ func supportedOwners(before, applied map[string]any) bool {
 	return true
 }
 
+func tagOwnersKey(policy map[string]any) (string, bool) {
+	_, camel := policy["tagOwners"]
+	_, lower := policy["tagowners"]
+	if camel && lower {
+		return "", false
+	}
+	if camel {
+		return "tagOwners", true
+	}
+	if lower {
+		return "tagowners", true
+	}
+	return "", true
+}
+
 func managedTag(tag string) bool {
 	return tag == "tag:herdr-mesh-server" || tag == "tag:herdr-mesh-node" || tag == "tag:herdr-mesh-client"
 }
@@ -380,7 +524,7 @@ func supportedGrants(before, applied map[string]any) bool {
 		dest, dstOK := singleString(grant["dst"])
 		ip, ipOK := singleString(grant["ip"])
 		if !srcOK || !dstOK || !ipOK ||
-			(source != "tag:herdr-mesh-node" && source != "tag:herdr-mesh-client") ||
+			(source != "tag:herdr-mesh-node" && source != "tag:herdr-mesh-client" && source != "*") ||
 			dest != "tag:herdr-mesh-server" || !strings.HasPrefix(ip, "tcp:") {
 			return false
 		}
@@ -388,7 +532,8 @@ func supportedGrants(before, applied map[string]any) bool {
 		if err != nil || port < 1 || port > 65535 || ip != "tcp:"+strconv.Itoa(port) {
 			return false
 		}
-		if source == "tag:herdr-mesh-node" && port != 50052 {
+		if (source == "tag:herdr-mesh-node" && port != 50052) ||
+			(source == "*" && port == 50052) {
 			return false
 		}
 		if port != 50052 {

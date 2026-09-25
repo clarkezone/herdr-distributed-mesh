@@ -125,6 +125,32 @@ func TestClientDestroyNeedsNoTokenForRunningOrStoppedInstallation(t *testing.T) 
 	}
 }
 
+func TestDestroyDryRunExplainsMeshPolicyRemoval(t *testing.T) {
+	root, d, _ := shutdownFixture(t)
+	apply := filepath.Join(root, "policy-preview-123", "apply")
+	if err := os.MkdirAll(apply, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"policy-before-1.json": `{"tagowners":{"tag:herdr-mesh-server":[]}}`,
+		"policy-proposed.json": `{"tagowners":{"tag:herdr-mesh-server":[]}}`,
+	} {
+		if err := os.WriteFile(filepath.Join(apply, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writePolicyComplete(filepath.Join(root, "policy-complete"), "policy-preview-123"); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := Shutdown(context.Background(), ShutdownOptions{Destroy: true, RemovePolicy: true, DryRun: true}, &output, d); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "including pre-existing entries") {
+		t.Fatalf("missing mesh policy removal warning: %s", output.String())
+	}
+}
+
 func TestClientDestroyDeclineDryRunAndInvalidFlagsHaveNoEffects(t *testing.T) {
 	for _, scenario := range []string{"decline", "dry-run", "policy", "token-env"} {
 		t.Run(scenario, func(t *testing.T) {

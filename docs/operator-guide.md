@@ -137,7 +137,17 @@ herdr-mesh doctor
 Confirm both computers are connected and ready to manage Herdr sessions.
 A running background process alone is not evidence that its worker is ready.
 
-For the browser dashboard:
+The managed coordinator hosts a read-only dashboard at
+`http://<actual-coordinator-full-magic-dns-name>:8787/` over tsnet. Run
+`herdr-mesh help` on the coordinator for its exact URL. Any device allowed by
+the tailnet policy to reach TCP 8787 can use it; no mesh role tag is needed.
+Guided `init` proposes a grant for Tailscale policy `*` sources. For an existing
+restrictive policy, preview it with
+`herdr-mesh setup tailnet -tailnet <tailnet> -dashboard-port 8787`, then use a
+fresh private output directory and `-apply` after reviewing the proposal.
+This does not expose a host wildcard HTTP listener.
+
+For a browser on the same computer, use the loopback dashboard:
 
 ```powershell
 herdr-mesh dashboard
@@ -305,7 +315,7 @@ journals and enrollment state. It does not log the device out of Tailscale,
 revoke its keys, or delete its admin-console entry. A tailnet administrator can
 remove the old device separately. The controller and shared policy are untouched.
 
-For controller destruction, optionally including owned policy removal:
+For controller destruction, optionally including Herdr mesh policy removal:
 
 ```powershell
 herdr-mesh shutdown --destroy --remove-policy --dry-run
@@ -318,11 +328,20 @@ controller destruction deletes the executable or anything outside the managed st
 directory. You must type the displayed **mesh node label** to confirm.
 `--yes` is an explicit confirmation bypass for controlled automation.
 
-`--remove-policy` is optional and coordinator-only. It removes only additions
-provably owned by this installation's original policy apply, with concurrency
-protection. Existing rules and unrelated changes are preserved. If ownership
-cannot be proved, or other devices depend on those additions, cleanup stops
-rather than removing shared access. Without this flag, tailnet policy is retained.
+`--remove-policy` is optional and coordinator-only. When no other device uses
+a Herdr mesh role tag, it removes Herdr mesh role tag owners and grants or ACLs
+that use those tags, including entries that predate this installation. Other
+policy and unrelated devices are preserved. Cleanup stops if another mesh role
+device remains, a rule mixes mesh and unrelated selectors, or another policy
+section references mesh tags.
+The policy update uses the current ETag and checks the device list again before
+posting. Without this flag, tailnet policy is retained.
+
+If the managed state was already destroyed while mesh policy remained, run
+`herdr-mesh policy cleanup --tailnet <tailnet>` from a terminal. This prompts
+privately for an API token, requires no remaining mesh role device, and asks
+you to type the tailnet name before applying the cleanup. `--api-token-env <name>` is available
+for automation. Inspect the remote policy before retrying an uncertain result.
 
 Controller destruction needs a **Tailscale API access token**, prompted without echo;
 a device enrollment key is not sufficient. No token is required for ordinary

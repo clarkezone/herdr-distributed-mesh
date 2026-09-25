@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,9 +21,8 @@ func validateDashboardOptions(options Options) error {
 	if options.DashboardListenAddress == "" && options.DashboardOrigin == "" {
 		return nil
 	}
-	if options.DashboardListenAddress == "" || options.DashboardOrigin == "" ||
-		strings.TrimSpace(options.RequiredClientTag) == "" || options.Output == nil {
-		return errors.New("hosted dashboard requires listen address, origin, client role tag, and output")
+	if options.DashboardListenAddress == "" || options.DashboardOrigin == "" || options.Output == nil {
+		return errors.New("hosted dashboard requires listen address, origin, and output")
 	}
 	host, port, err := net.SplitHostPort(options.DashboardListenAddress)
 	if err != nil || host != "" {
@@ -70,17 +68,17 @@ func (r hostedFleetReader) ListNodes(ctx context.Context, _ *emptypb.Empty, _ ..
 	return r.fleet.list(time.Now())
 }
 
-func dashboardPeerAuthorizer(identify func(context.Context, string) (transport.PeerIdentity, error), tag string) dashboard.PeerAuthorizer {
+func dashboardPeerAuthorizer(identify func(context.Context, string) (transport.PeerIdentity, error)) dashboard.PeerAuthorizer {
 	return func(ctx context.Context, address string) error {
-		if identify == nil || strings.TrimSpace(tag) == "" {
+		if identify == nil {
 			return errors.New("dashboard peer authentication is not configured")
 		}
 		identity, err := identify(ctx, address)
 		if err != nil {
 			return err
 		}
-		if identity.StableID == "" || !slices.Contains(identity.Tags, tag) {
-			return errors.New("dashboard peer is not a trusted controller")
+		if identity.StableID == "" {
+			return errors.New("dashboard peer has no Tailscale identity")
 		}
 		return nil
 	}
@@ -108,7 +106,7 @@ func serveHostedCoordinator(ctx context.Context, options Options, network *trans
 		func(ctx context.Context) error {
 			return dashboard.ServeHosted(ctx, listener, hostedFleetReader{&api.fleet}, dashboard.HostedOptions{
 				Origin: options.DashboardOrigin, Output: options.Output,
-				AuthorizePeer: dashboardPeerAuthorizer(network.IdentifyPeer, options.RequiredClientTag),
+				AuthorizePeer: dashboardPeerAuthorizer(network.IdentifyPeer),
 			})
 		})
 }

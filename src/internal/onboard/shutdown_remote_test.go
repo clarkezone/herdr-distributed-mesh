@@ -39,7 +39,7 @@ func TestShutdownRemoteIntegrationUsesExactIdentityAndOwnedArtifacts(t *testing.
 			t.Fatal(err)
 		}
 	}
-	deleted, policyRead := false, false
+	deleted, policyRead, policyUpdated := false, false, false
 	d.Remote = func(ctx context.Context, dir string, cfg meshlocal.Config, identity meshlocal.ManagedIdentity, removePolicy bool, token []byte) (RemoteCleanup, error) {
 		client, err := deinitnet.New(token, deinitnet.Options{Transport: cleanupTransport(func(request *http.Request) (*http.Response, error) {
 			code, body := 200, `{"id":"123","nodeId":"nPinned"}`
@@ -54,7 +54,17 @@ func TestShutdownRemoteIntegrationUsesExactIdentityAndOwnedArtifacts(t *testing.
 				}
 				deleted, body = true, `{}`
 			case "GET /api/v2/tailnet/example.com/acl":
-				policyRead, body = true, `{"grants":[]}`
+				policyRead, body = true, `{"tagowners":{"tag:herdr-mesh-server":[]},"grants":[{"src":["tag:herdr-mesh-node"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]}]}`
+			case "GET /api/v2/tailnet/example.com/devices":
+				body = `{"devices":[]}`
+				if !deleted {
+					body = `{"devices":[{"nodeId":"nPinned","tags":["tag:herdr-mesh-server"]}]}`
+				}
+			case "POST /api/v2/tailnet/example.com/acl":
+				if !deleted || request.Header.Get("If-Match") != `"version-1"` {
+					t.Fatal("policy changed before device deletion or without ETag")
+				}
+				policyUpdated, body = true, `{"tagowners":{},"grants":[]}`
 			default:
 				t.Fatalf("unexpected remote target or policy mutation: %s %s", request.Method, request.URL.Path)
 			}
@@ -72,7 +82,7 @@ func TestShutdownRemoteIntegrationUsesExactIdentityAndOwnedArtifacts(t *testing.
 	if err := Shutdown(context.Background(), ShutdownOptions{Destroy: true, RemovePolicy: true, Yes: true}, io.Discard, d); err != nil {
 		t.Fatal(err)
 	}
-	if !deleted || !policyRead {
+	if !deleted || !policyRead || !policyUpdated {
 		t.Fatal("remote cleanup was not exercised")
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {

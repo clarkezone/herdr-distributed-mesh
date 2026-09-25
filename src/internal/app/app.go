@@ -84,6 +84,8 @@ func Run(ctx context.Context, args []string, streams IO) error {
 		return runManagedDaemon(ctx, args[1:], streams)
 	case "shutdown":
 		return runShutdown(ctx, args[1:], streams)
+	case "policy":
+		return runPolicy(ctx, args[1:], streams)
 	}
 	if handled, err := runManagedCommands(ctx, args, streams); handled {
 		return err
@@ -401,6 +403,7 @@ Stop or remove this computer's managed installation:
   herdr-mesh shutdown
   herdr-mesh shutdown --destroy --remove-policy --dry-run
   herdr-mesh shutdown --destroy --remove-policy
+  herdr-mesh policy cleanup --tailnet <tailnet>
 Shutdown preserves state by default. --destroy requires confirmation.
 Client destruction is local and token-free; controller destruction requires an API token.
 

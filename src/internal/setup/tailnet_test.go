@@ -1,381 +1,465 @@
 package setup
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/clarkezone/herdr-distributed-mesh/src/internal/scripthost"
 )
 
-func testOptions(t *testing.T) Options {
+const testAPIToken = "tskey-api-TEST-DO-NOT-USE"
+const testPolicy = "{\n // keep this policy section\n \"acls\":[{\"action\":\"accept\",\"src\":[\"*\"],\"dst\":[\"*:*\"]}], \"ssh\":[]\n}"
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func apiClientFor(f roundTripFunc) *http.Client { return &http.Client{Transport: f} }
+
+func apiReply(status int, body, etag string) *http.Response {
+	return &http.Response{StatusCode: status, Header: http.Header{"Etag": []string{etag}}, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+func nativeOptions(t *testing.T) Options {
 	t.Helper()
 	o := DefaultOptions()
 	o.Tailnet = "example.com"
-	// Keep the base fixture stable; linked installations have dedicated coverage.
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	o.OutputDirectory = filepath.Join(root, "output")
-	o.ApiTokenEnvironmentVariable = "HERDR_SETUP_TEST_TOKEN"
-	t.Setenv(o.ApiTokenEnvironmentVariable, " tskey-api-test-secret ")
+	o.OutputDirectory = filepath.Join(t.TempDir(), "artifacts")
 	return o
 }
 
-func testReport(o Options) Report {
-	report := Report{Mode: "preview", PolicyProposal: filepath.Join(o.OutputDirectory, "policy-proposed.json"),
-		PolicyBackup: filepath.Join(o.OutputDirectory, "policy-before-20260917-123456789-0123456789abcdef0123456789abcdef.json"),
-		Warnings:     []string{"policy_round_trip", "wildcard_allow_preserved"}}
-	if o.Apply {
-		report.Mode = "applied"
-		report.KeysCreated = 3 * o.KeysPerRole
-		report.Warnings = append(report.Warnings, "auth_key_secrets")
+func checkAPIRequest(t *testing.T, request *http.Request) {
+	t.Helper()
+	if request.URL.Scheme != "https" || request.URL.Host != "api.tailscale.com" ||
+		request.Header.Get("Authorization") != "Bearer "+testAPIToken || request.URL.RawQuery != "" {
+		t.Fatal("unsafe or incorrect API request")
 	}
-	return report
 }
 
-func TestSetupTypedEmbeddedPreviewAndApply(t *testing.T) {
+func setupErrorCode(t *testing.T, err error, code string, unknown bool) {
+	t.Helper()
+	var e *Error
+	if !errors.As(err, &e) || e.Code != code || e.RemoteEffectsUnknown != unknown ||
+		strings.Contains(err.Error(), testAPIToken) {
+		t.Fatalf("error=%v, want code=%s unknown=%v", err, code, unknown)
+	}
+}
+
+func TestNativePolicyOnlyPreviewAndApply(t *testing.T) {
 	for _, apply := range []bool{false, true} {
-		o := testOptions(t)
-		o.Apply = apply
-		port := 8787
-		o.DashboardPort = &port
-		report, err := run(context.Background(), o, func(_ context.Context, request scripthost.Request) (scripthost.Result, error) {
-			if len(request.Script) == 0 || len(request.Assets["configure-tailnet.ps1"]) == 0 {
-				t.Fatal("missing embedded assets")
-			}
-			data, _ := json.Marshal(request.Options)
-			if strings.Contains(string(data), "test-secret") {
-				t.Fatal("token value entered structured options")
-			}
-			var actual Options
-			if json.Unmarshal(data, &actual) != nil || actual.Apply != apply || actual.DashboardPort == nil || *actual.DashboardPort != 8787 {
-				t.Fatal("typed options changed")
-			}
-			output, _ := json.Marshal(map[string]any{"ok": true, "report": testReport(o)})
-			return scripthost.Result{Started: true, Output: output}, nil
-		})
-		if err != nil || report.Mode != testReport(o).Mode {
-			t.Fatalf("report=%+v err=%v", report, err)
-		}
-	}
-}
-
-func TestSetupSanitizesRemoteOutputAndPreservesUncertainty(t *testing.T) {
-	o := testOptions(t)
-	o.Apply = true
-	for _, test := range []struct {
-		output  string
-		hostErr error
-		started bool
-		code    string
-	}{
-		{`{"ok":false,"error_code":"key_revocation_unconfirmed"}`, nil, true, "key_revocation_unconfirmed"},
-		{`{"ok":false,"error_code":"tskey-api-secret"}`, nil, true, "invalid_result"},
-		{`{"ok":true,"secret":"tskey-api-secret"}`, nil, true, "invalid_result"},
-		{`not-json tskey-api-secret`, nil, true, "invalid_result"},
-		{"", errors.New("raw remote body tskey-api-secret"), true, "execution_failed"},
-		{"", &scripthost.Error{Code: "timeout"}, true, "timeout"},
-		{"", &scripthost.Error{Code: "prerequisite_missing"}, false, "prerequisite_missing"},
-	} {
-		_, err := run(context.Background(), o, func(context.Context, scripthost.Request) (scripthost.Result, error) {
-			return scripthost.Result{Started: test.started, Output: []byte(test.output)}, test.hostErr
-		})
-		var setupError *Error
-		if !errors.As(err, &setupError) || setupError.Code != test.code || setupError.RemoteEffectsUnknown != test.started || strings.Contains(err.Error(), "tskey-") {
-			t.Fatalf("err=%v", err)
-		}
-
-	}
-	o.Apply = false
-	_, err := run(context.Background(), o, func(context.Context, scripthost.Request) (scripthost.Result, error) {
-		return scripthost.Result{Started: true}, &scripthost.Error{Code: "timeout"}
-	})
-	var setupError *Error
-	if !errors.As(err, &setupError) || setupError.RemoteEffectsUnknown {
-		t.Fatal("preview must not imply remote writes")
-	}
-}
-
-func TestEverySetupErrorHasSafeGuidance(t *testing.T) {
-	for code, guidance := range map[string]string{
-		"prerequisite_missing": "PowerShell", "prerequisite_version": "7.3",
-		"output_unavailable": "private permissions", "token_missing": "environment variable",
-		"token_kind": "not an enrollment key", "token_rejected": "current",
-		"invalid_options": "-help", "api_read_failed": "permissions",
-		"api_update_failed": "compare", "key_creation_failed": "revoke",
-		"key_response_invalid": "revoke", "key_revocation_unconfirmed": "admin console",
-		"key_cleanup_failed": "admin console", "policy_invalid": "review",
-		"policy_changed": "fresh preview", "output_exists": "new private -output-directory",
-		"etag_missing": "safe update", "cleanup_failed": "temporary files",
-		"temporary_io": "disk space", "local_failure": "permissions",
-		"invalid_request": "compatible release", "output_limit": "unverified receipt",
-		"invalid_result": "unverified receipt", "timeout": "deadline",
-		"canceled": "canceled", "execution_failed": "PowerShell",
-	} {
-		t.Run(code, func(t *testing.T) {
-			for _, unknown := range []bool{false, true} {
-				failure := &Error{Code: code, RemoteEffectsUnknown: unknown}
-				text := failure.Error()
-				if !strings.Contains(strings.ToLower(text), strings.ToLower(guidance)) ||
-					!strings.Contains(text, code) || failure.Code != code || failure.RemoteEffectsUnknown != unknown {
-					t.Fatalf("missing guidance or changed contract: %s", text)
-				}
-				if strings.Contains(text, "do not blindly retry") != unknown {
-					t.Fatalf("uncertainty not preserved: %s", text)
-				}
-			}
-		})
-	}
-}
-
-func TestSetupRejectsUnsafeReportFields(t *testing.T) {
-	o := testOptions(t)
-	for _, change := range []func(*Report){
-		func(r *Report) { r.PolicyBackup = filepath.Join(filepath.Dir(o.OutputDirectory), "secret") },
-		func(r *Report) { r.PolicyProposal = "remote secret" },
-		func(r *Report) { r.Warnings = append(r.Warnings, "raw API body") },
-		func(r *Report) { r.KeysCreated = 1 },
-		func(r *Report) { r.Mode = "applied" },
-	} {
-		report := testReport(o)
-		change(&report)
-		output, _ := json.Marshal(map[string]any{"ok": true, "report": report})
-		_, err := run(context.Background(), o, func(context.Context, scripthost.Request) (scripthost.Result, error) {
-			return scripthost.Result{Started: true, Output: output}, nil
-		})
-		if err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "API body") {
-			t.Fatal("unsafe report accepted or leaked")
-		}
-	}
-}
-
-func TestSetupTokenValidationBeforeHost(t *testing.T) {
-	o := testOptions(t)
-	for _, token := range []string{"", "tskey-auth-wrong-kind"} {
-		t.Setenv(o.ApiTokenEnvironmentVariable, token)
-		_, err := run(context.Background(), o, func(context.Context, scripthost.Request) (scripthost.Result, error) {
-			t.Fatal("invalid token started host")
-			return scripthost.Result{}, nil
-		})
-		if err == nil || strings.Contains(err.Error(), "wrong-kind") {
-			t.Fatal("invalid token error")
-		}
-	}
-}
-
-func TestPolicyOnlyUsesPromptedTokenWithoutKeysOrParentEnvironment(t *testing.T) {
-	requirePowerShell(t)
-	for _, apply := range []bool{false, true} {
-		o := testOptions(t)
-		o.PolicyOnly, o.Apply = true, apply
-		t.Setenv(o.ApiTokenEnvironmentVariable, "parent-token-is-not-used")
-		report, err := runWithToken(context.Background(), o, "tskey-api-prompted-only", mockedSetupHost)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if report.KeysCreated != 0 || os.Getenv(o.ApiTokenEnvironmentVariable) != "parent-token-is-not-used" {
-			t.Fatal("keys created or parent environment changed")
-		}
-		for _, warning := range report.Warnings {
-			if warning == "auth_key_secrets" || warning == "primary_alias_preserved" {
-				t.Fatal("policy-only emitted key warning")
-			}
-		}
-		entries, err := os.ReadDir(o.OutputDirectory)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, entry := range entries {
-			if strings.Contains(entry.Name(), "-key") {
-				t.Fatalf("policy-only wrote key artifact %s", entry.Name())
-			}
-			data, err := os.ReadFile(filepath.Join(o.OutputDirectory, entry.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(string(data), "tskey-") {
-				t.Fatal("token saved")
-			}
-		}
-		var proposal map[string]json.RawMessage
-		data, err := os.ReadFile(report.PolicyProposal)
-		if err != nil || json.Unmarshal(data, &proposal) != nil || !strings.Contains(string(proposal["acls"]), `"*:*"`) {
-			t.Fatalf("unrelated wildcard ACL was lost: %s %v", data, err)
-		}
-	}
-}
-
-func TestPolicyOnlyApplyFencedToReviewedPolicy(t *testing.T) {
-	requirePowerShell(t)
-	for _, changed := range []bool{false, true} {
-		o := testOptions(t)
-		o.PolicyOnly, o.Apply = true, true
-		policy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
-		if changed {
-			policy = "a different policy was reviewed"
-		}
-		hash := sha256.Sum256([]byte(policy))
-		o.ExpectedPolicySHA256 = hex.EncodeToString(hash[:])
-		_, err := run(context.Background(), o, mockedSetupHost)
-		if changed {
-			var e *Error
-			if !errors.As(err, &e) || e.Code != "policy_changed" {
-				t.Fatalf("policy race accepted: %v", err)
-			}
-		} else if err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func TestSetupEmbeddedWorkflowWithMockedPowerShellAPI(t *testing.T) {
-	testEmbeddedWorkflow(t, func(path string) string { return path })
-}
-
-func TestSetupPreviewAndApplyThroughLinkedInstallation(t *testing.T) {
-	requirePowerShell(t)
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	installation := filepath.Join(root, "release")
-	if err := os.Mkdir(installation, 0700); err != nil {
-		t.Fatal(err)
-	}
-	alias := filepath.Join(root, "bin")
-	if runtime.GOOS == "windows" {
-		if output, err := exec.Command(os.Getenv("ComSpec"), "/d", "/c", "mklink", "/J", alias, installation).CombinedOutput(); err != nil {
-			t.Fatalf("create installation junction: %v: %s", err, output)
-		}
-	} else if err := os.Symlink(installation, alias); err != nil {
-		t.Fatal(err)
-	}
-	for _, policyOnly := range []bool{false, true} {
-		for _, apply := range []bool{false, true} {
-			o := testOptions(t)
-			o.Apply, o.PolicyOnly = apply, policyOnly
-			operation, err := os.MkdirTemp(alias, "policy-")
-			if err != nil {
-				t.Fatal(err)
-			}
-			o.OutputDirectory = filepath.Join(operation, "artifacts")
+		t.Run(map[bool]string{false: "preview", true: "apply"}[apply], func(t *testing.T) {
+			o := nativeOptions(t)
+			o.PolicyOnly, o.Apply = true, apply
+			hash := sha256.Sum256([]byte(testPolicy))
 			if apply {
-				hash := sha256.Sum256([]byte(`{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`))
 				o.ExpectedPolicySHA256 = hex.EncodeToString(hash[:])
 			}
-			report, err := runWithToken(context.Background(), o, "tskey-api-fake-fixture", mockedSetupHost)
-			if err != nil {
-				t.Fatalf("policyOnly=%v apply=%v: %v", policyOnly, apply, err)
+			reads, writes := 0, 0
+			client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+				checkAPIRequest(t, request)
+				if request.URL.Path != "/api/v2/tailnet/example.com/acl" {
+					t.Fatal("unexpected API path")
+				}
+				switch request.Method {
+				case http.MethodGet:
+					reads++
+					return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+				case http.MethodPost:
+					writes++
+					if !apply || request.Header.Get("If-Match") != `"etag-1"` || request.Header.Get("Content-Type") != "application/json" {
+						t.Fatal("unfenced policy mutation")
+					}
+					body, _ := io.ReadAll(request.Body)
+					if !bytes.Contains(body, []byte(`"tag:herdr-mesh-node"`)) || !bytes.Contains(body, []byte(`"ssh"`)) {
+						t.Fatal("policy additions or existing section missing")
+					}
+					return apiReply(http.StatusOK, "{}", ""), nil
+				}
+				t.Fatal("unexpected API method")
+				return nil, nil
+			})
+			report, err := runNative(context.Background(), o, testAPIToken, client)
+			if err != nil || reads != 1 || writes != map[bool]int{false: 0, true: 1}[apply] {
+				t.Fatalf("report=%+v err=%v reads=%d writes=%d", report, err, reads, writes)
 			}
-			expectedKeys := 0
-			if apply && !policyOnly {
-				expectedKeys = 3 * o.KeysPerRole
+			if report.KeysCreated != 0 || report.Mode != map[bool]string{false: "preview", true: "applied"}[apply] ||
+				!containsString(report.Warnings, "wildcard_allow_preserved") {
+				t.Fatalf("wrong policy-only report: %+v", report)
 			}
-			if report.Mode != testReport(o).Mode || report.KeysCreated != expectedKeys {
-				t.Fatalf("incorrect report: %+v", report)
+			backup, err := os.ReadFile(report.PolicyBackup)
+			if err != nil || string(backup) != testPolicy {
+				t.Fatal("original policy backup lost")
 			}
 			entries, err := os.ReadDir(o.OutputDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, entry := range entries {
-				data, err := os.ReadFile(filepath.Join(o.OutputDirectory, entry.Name()))
-				if err != nil {
-					t.Fatal(err)
+				path := filepath.Join(o.OutputDirectory, entry.Name())
+				info, err := entry.Info()
+				if err != nil || strings.Contains(entry.Name(), "-key") || !info.Mode().IsRegular() {
+					t.Fatal("policy-only created key or unsafe artifact")
 				}
-				if strings.Contains(string(data), "tskey-api-") || (policyOnly && strings.Contains(entry.Name(), "-key")) {
-					t.Fatal("API token persisted or policy-only setup created key artifacts")
+				if info.Mode().Perm()&0077 != 0 && os.PathSeparator == '/' {
+					t.Fatal("policy artifact is not private")
+				}
+				data, _ := os.ReadFile(path)
+				if bytes.Contains(data, []byte(testAPIToken)) {
+					t.Fatal("API token was saved")
 				}
 			}
-			if _, err := os.Stat(report.PolicyBackup); err != nil {
-				t.Fatal(err)
+			if !pathAbsent(filepath.Join(o.OutputDirectory, ".configure-tailnet.lock")) {
+				t.Fatal("lock leaked")
 			}
-		}
-	}
-	o := testOptions(t)
-	o.OutputDirectory = alias
-	_, err = run(context.Background(), o, mockedSetupHost)
-	var setupError *Error
-	if !errors.As(err, &setupError) || setupError.Code != "output_unavailable" {
-		t.Fatalf("linked output directory itself accepted: %v", err)
+		})
 	}
 }
 
-func requirePowerShell(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("pwsh"); err != nil {
-		if _, err := exec.LookPath("powershell.exe"); err != nil {
-			t.Skip("PowerShell prerequisite absent")
+func TestNativeDashboardGrantAllowsPolicyWildcardSources(t *testing.T) {
+	o := nativeOptions(t)
+	o.PolicyOnly = true
+	port := 8787
+	o.DashboardPort = &port
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		return apiReply(http.StatusOK, `{"grants":[]}`, `"etag-1"`), nil
+	})
+	report, err := runNative(context.Background(), o, testAPIToken, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := os.ReadFile(report.PolicyProposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Grants []struct {
+			Src []string `json:"src"`
+			Dst []string `json:"dst"`
+			IP  []string `json:"ip"`
+		} `json:"grants"`
+	}
+	if err := json.Unmarshal(proposal, &policy); err != nil {
+		t.Fatal(err)
+	}
+	for _, grant := range policy.Grants {
+		if len(grant.Src) == 1 && grant.Src[0] == "*" &&
+			len(grant.Dst) == 1 && grant.Dst[0] == "tag:herdr-mesh-server" &&
+			len(grant.IP) == 1 && grant.IP[0] == "tcp:8787" {
+			return
+		}
+	}
+	t.Fatal("dashboard wildcard grant missing")
+}
+
+func TestNativeApplyRecognizesExistingLowercaseTagOwners(t *testing.T) {
+	policy := `{"tagowners":{"tag:herdr-mesh-server":["autogroup:admin"],"tag:herdr-mesh-node":["autogroup:admin"],"tag:herdr-mesh-client":["autogroup:admin"]},"grants":[{"src":["tag:herdr-mesh-node"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]},{"src":["tag:herdr-mesh-client"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]}]}`
+	o := nativeOptions(t)
+	o.PolicyOnly, o.Apply = true, true
+	writes := 0
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodGet {
+			writes++
+			t.Fatal("unchanged policy was posted")
+		}
+		return apiReply(http.StatusOK, policy, `"etag-1"`), nil
+	})
+	report, err := runNative(context.Background(), o, testAPIToken, client)
+	if err != nil || report.Mode != "applied" || writes != 0 {
+		t.Fatalf("report=%+v err=%v writes=%d", report, err, writes)
+	}
+	proposal, err := os.ReadFile(report.PolicyProposal)
+	if err != nil || bytes.Contains(proposal, []byte(`"tagOwners"`)) || !bytes.Contains(proposal, []byte(`"tagowners"`)) {
+		t.Fatal("existing tag owner spelling was not preserved")
+	}
+}
+
+func TestNativeMergeAddsToExistingLowercaseTagOwners(t *testing.T) {
+	o := nativeOptions(t)
+	o.PolicyOnly = true
+	policy := `{"tagowners":{"tag:other":[]}}`
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		return apiReply(http.StatusOK, policy, `"etag-1"`), nil
+	})
+	report, err := runNative(context.Background(), o, testAPIToken, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := os.ReadFile(report.PolicyProposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(proposal, &object); err != nil {
+		t.Fatal(err)
+	}
+	owners, ok := object["tagowners"].(map[string]any)
+	if !ok || len(owners) != 4 {
+		t.Fatalf("missing merged tag owners: %v", owners)
+	}
+	if _, duplicate := object["tagOwners"]; duplicate {
+		t.Fatal("duplicate case-variant section")
+	}
+}
+
+func TestNativeAdvancedSetupCreatesScopedKeys(t *testing.T) {
+	o := nativeOptions(t)
+	o.Apply, o.KeysPerRole = true, 1
+	keys := 0
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		checkAPIRequest(t, request)
+		switch {
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/acl"):
+			return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/acl"):
+			return apiReply(http.StatusOK, "{}", ""), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/keys"):
+			keys++
+			body, _ := io.ReadAll(request.Body)
+			if !bytes.Contains(body, []byte(`"preauthorized":true`)) || !bytes.Contains(body, []byte(`"reusable":false`)) {
+				t.Fatal("key capabilities changed")
+			}
+			return apiReply(http.StatusOK, `{"id":"key-`+string(rune('0'+keys))+`","key":"tskey-auth-fake-`+string(rune('0'+keys))+`"}`, ""), nil
+		}
+		t.Fatal("unexpected API request")
+		return nil, nil
+	})
+	report, err := runNative(context.Background(), o, testAPIToken, client)
+	if err != nil || keys != 3 || report.KeysCreated != 3 || !containsString(report.Warnings, "auth_key_secrets") {
+		t.Fatalf("report=%+v err=%v keys=%d", report, err, keys)
+	}
+	for _, role := range roleTags {
+		data, err := os.ReadFile(filepath.Join(o.OutputDirectory, role.name+"-key-1.ps1"))
+		if err != nil || !bytes.Contains(data, []byte("TS_AUTHKEY_"+strings.ToUpper(role.name))) || bytes.Contains(data, []byte(testAPIToken)) {
+			t.Fatal("scoped key file missing or unsafe")
+		}
+		if _, err := os.Stat(filepath.Join(o.OutputDirectory, role.name+"-key.ps1")); err != nil {
+			t.Fatal("primary alias missing")
 		}
 	}
 }
 
-func mockedSetupHost(ctx context.Context, request scripthost.Request) (scripthost.Result, error) {
-	const mockedEntry = `param([string]$OptionsPath)
-		$ErrorActionPreference='Stop'
-		$global:sequence=0
-		function global:Invoke-WebRequest {
-		    param($Method,$Uri,$Headers,[switch]$UseBasicParsing)
-		    if ($Method -ne 'Get' -or $Uri -ne 'https://api.tailscale.com/api/v2/tailnet/example.com/acl') { throw 'unexpected mocked read' }
-		    return @{Headers=@{ETag='"test-etag"'};Content='{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}'}
+func TestNativeKeyFailureRevokesKnownKeys(t *testing.T) {
+	o := nativeOptions(t)
+	o.Apply, o.KeysPerRole = true, 1
+	created, revoked := 0, 0
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.Method == http.MethodGet:
+			return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/acl"):
+			return apiReply(http.StatusOK, "{}", ""), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/keys"):
+			created++
+			if created == 2 {
+				return apiReply(http.StatusInternalServerError, "remote-secret", ""), nil
+			}
+			return apiReply(http.StatusOK, `{"id":"key-1","key":"tskey-auth-fake-1"}`, ""), nil
+		case request.Method == http.MethodDelete && strings.HasSuffix(request.URL.Path, "/keys/key-1"):
+			revoked++
+			return apiReply(http.StatusNoContent, "", ""), nil
 		}
-		function global:Invoke-RestMethod {
-		    param($Method,$Uri,$Headers,$ContentType,$Body)
-		    if ($Method -eq 'Post' -and $Uri.EndsWith('/acl')) {
-		        if ($Headers['If-Match'] -ne '"test-etag"') { throw 'missing ETag fence' }
-		        return
-		    }
-		    if ($Method -eq 'Post' -and $Uri.EndsWith('/keys')) {
-		        $global:sequence++
-		        return @{id="fake-$global:sequence";key="tskey-auth-fake-$global:sequence"}
-		    }
-		    if ($Method -eq 'Delete') { return }
-		    throw 'unexpected mocked write'
-		}
-		& (Join-Path $PSScriptRoot 'actual-entry.ps1') -OptionsPath $OptionsPath
-		`
-	request.Assets["actual-entry.ps1"] = request.Script
-	request.Script = []byte(mockedEntry)
-	return scripthost.Run(ctx, request)
+		t.Fatal("unexpected API request")
+		return nil, nil
+	})
+	_, err := runNative(context.Background(), o, testAPIToken, client)
+	setupErrorCode(t, err, "key_creation_failed", true)
+	if created != 2 || revoked != 1 || !pathAbsent(filepath.Join(o.OutputDirectory, "server-key-1.ps1")) ||
+		!pathAbsent(filepath.Join(o.OutputDirectory, "server-key.ps1")) {
+		t.Fatal("known key was not revoked and cleaned up")
+	}
 }
 
-func testEmbeddedWorkflow(t *testing.T, outputPath func(string) string) {
-	t.Helper()
-	requirePowerShell(t)
-	for _, apply := range []bool{false, true} {
-		o := testOptions(t)
-		o.OutputDirectory = outputPath(o.OutputDirectory)
-		o.Apply = apply
-		o.Timeout = 20 * time.Second
-		report, err := run(context.Background(), o, mockedSetupHost)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if report.Mode != testReport(o).Mode || report.KeysCreated != testReport(o).KeysCreated {
-			t.Fatalf("report=%+v", report)
-		}
-		if _, err := os.Stat(report.PolicyBackup); err != nil {
-			t.Fatal(err)
-		}
-		for _, role := range []string{"server", "node", "client"} {
-			_, err := os.Stat(filepath.Join(o.OutputDirectory, role+"-key-1.ps1"))
-			if apply && err != nil {
-				t.Fatal(err)
+func TestNativeKeyCleanupSurvivesSetupCancellation(t *testing.T) {
+	o := nativeOptions(t)
+	o.Apply, o.KeysPerRole = true, 1
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	created, revoked := 0, 0
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.Method == http.MethodGet:
+			return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/acl"):
+			return apiReply(http.StatusOK, "{}", ""), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/keys"):
+			created++
+			if created == 2 {
+				cancel()
+				return nil, context.Canceled
 			}
-			if !apply && !errors.Is(err, os.ErrNotExist) {
-				t.Fatal("preview created keys")
+			return apiReply(http.StatusOK, `{"id":"key-1","key":"tskey-auth-fake-1"}`, ""), nil
+		case request.Method == http.MethodDelete && strings.HasSuffix(request.URL.Path, "/keys/key-1"):
+			if request.Context().Err() != nil {
+				t.Fatal("revocation inherited the expired setup context")
 			}
+			revoked++
+			return apiReply(http.StatusNoContent, "", ""), nil
 		}
+		t.Fatal("unexpected API request")
+		return nil, nil
+	})
+	_, err := runNative(ctx, o, testAPIToken, client)
+	setupErrorCode(t, err, "key_creation_failed", true)
+	if created != 2 || revoked != 1 || !pathAbsent(filepath.Join(o.OutputDirectory, "server-key-1.ps1")) {
+		t.Fatalf("cleanup after cancellation: created=%d revoked=%d", created, revoked)
+	}
+}
+
+func TestNativeSetupRejectsBadInputBeforeMutation(t *testing.T) {
+	for _, test := range []struct {
+		name, token, policy, etag, hash, code string
+		status                                int
+	}{
+		{"missing token", "", testPolicy, `"etag-1"`, "", "token_missing", 200},
+		{"wrong token", "tskey-auth-wrong", testPolicy, `"etag-1"`, "", "token_kind", 200},
+		{"rejected token", testAPIToken, testPolicy, `"etag-1"`, "", "token_rejected", 401},
+		{"missing etag", testAPIToken, testPolicy, "", "", "etag_missing", 200},
+		{"invalid policy", testAPIToken, `{"acls":`, `"etag-1"`, "", "policy_invalid", 200},
+		{"changed policy", testAPIToken, testPolicy, `"etag-1"`, strings.Repeat("0", 64), "policy_changed", 200},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			o := nativeOptions(t)
+			o.PolicyOnly, o.Apply, o.ExpectedPolicySHA256 = true, true, test.hash
+			writes := 0
+			client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+				if request.Method != http.MethodGet {
+					writes++
+				}
+				return apiReply(test.status, test.policy, test.etag), nil
+			})
+			_, err := runNative(context.Background(), o, test.token, client)
+			setupErrorCode(t, err, test.code, false)
+			if writes != 0 {
+				t.Fatal("invalid input caused a remote mutation")
+			}
+		})
+	}
+}
+
+func TestNativeApplyPreservesETagAndUnknownOutcome(t *testing.T) {
+	for _, test := range []struct {
+		name, code string
+		response   *http.Response
+		transport  error
+	}{
+		{"concurrent policy change", "policy_changed", apiReply(http.StatusPreconditionFailed, "", ""), nil},
+		{"lost update response", "api_update_failed", nil, errors.New("remote response contained a secret")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			o := nativeOptions(t)
+			o.PolicyOnly, o.Apply = true, true
+			writes := 0
+			client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+				if request.Method == http.MethodGet {
+					return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+				}
+				writes++
+				if request.Header.Get("If-Match") != `"etag-1"` {
+					t.Fatal("policy update lost its ETag fence")
+				}
+				return test.response, test.transport
+			})
+			_, err := runNative(context.Background(), o, testAPIToken, client)
+			setupErrorCode(t, err, test.code, true)
+			if writes != 1 || strings.Contains(err.Error(), "remote response contained") {
+				t.Fatalf("unsafe update result: %v writes=%d", err, writes)
+			}
+		})
+	}
+}
+
+func TestNativeUpdateErrorReportsStatusWithoutResponseBody(t *testing.T) {
+	o := nativeOptions(t)
+	o.PolicyOnly, o.Apply = true, true
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		if request.Method == http.MethodGet {
+			return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+		}
+		return apiReply(http.StatusForbidden, `{"message":"private policy detail"}`, ""), nil
+	})
+	_, err := runNative(context.Background(), o, testAPIToken, client)
+	var setupErr *Error
+	if !errors.As(err, &setupErr) || setupErr.Code != "api_update_failed" || setupErr.HTTPStatus != http.StatusForbidden ||
+		!strings.Contains(err.Error(), "HTTP 403") || strings.Contains(err.Error(), "private policy detail") {
+		t.Fatalf("unsafe or ambiguous error: %v", err)
+	}
+}
+
+func TestCurrentPolicyRecoveryOnlyReads(t *testing.T) {
+	reads := 0
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		checkAPIRequest(t, request)
+		if request.Method != http.MethodGet || request.URL.Path != "/api/v2/tailnet/example.com/acl" {
+			t.Fatal("recovery attempted a mutation or read a different resource")
+		}
+		reads++
+		return apiReply(http.StatusOK, testPolicy, ""), nil
+	})
+	current, err := readCurrentPolicy(context.Background(), "example.com", testAPIToken, client)
+	if err != nil || reads != 1 || !json.Valid(current) {
+		t.Fatalf("read-only recovery failed: reads=%d err=%v", reads, err)
+	}
+}
+
+func TestNativeSetupRejectsLinkedOutputAndExistingProposal(t *testing.T) {
+	o := nativeOptions(t)
+	if err := prepareOutputDirectory(o.OutputDirectory); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(o.OutputDirectory, "policy-proposed.json"), []byte("existing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runNative(context.Background(), o, testAPIToken, apiClientFor(func(*http.Request) (*http.Response, error) {
+		t.Fatal("existing artifact caused a request")
+		return nil, nil
+	}))
+	setupErrorCode(t, err, "output_exists", false)
+	if err := os.Symlink(o.OutputDirectory, filepath.Join(filepath.Dir(o.OutputDirectory), "linked")); err == nil {
+		o.OutputDirectory = filepath.Join(filepath.Dir(o.OutputDirectory), "linked")
+		_, err = runNative(context.Background(), o, testAPIToken, nil)
+		setupErrorCode(t, err, "output_unavailable", false)
+	}
+}
+
+func TestPromptedTokenNormalizationAndGuidance(t *testing.T) {
+	if got := normalizePromptedToken([]byte("\x1b[200~" + testAPIToken + "\x1b[201~")); got != testAPIToken {
+		t.Fatal("bracketed paste was not normalized")
+	}
+	if got := normalizePromptedToken([]byte("\x1b[200~" + testAPIToken)); got == testAPIToken {
+		t.Fatal("incomplete paste wrapper accepted")
+	}
+	o := nativeOptions(t)
+	_, err := RunWithToken(context.Background(), o, []byte("tskey-auth-wrong-kind"))
+	setupErrorCode(t, err, "token_kind", false)
+	if !strings.Contains(err.Error(), "hidden prompt") || strings.Contains(err.Error(), "environment variable") {
+		t.Fatal("prompted credential guidance names the wrong input")
+	}
+	t.Setenv(o.ApiTokenEnvironmentVariable, "tskey-auth-wrong-kind")
+	_, err = Run(context.Background(), o)
+	setupErrorCode(t, err, "token_kind", false)
+	if !strings.Contains(err.Error(), "environment variable") {
+		t.Fatal("advanced credential guidance names the wrong input")
+	}
+}
+
+func TestNativeSetupOptions(t *testing.T) {
+	o := nativeOptions(t)
+	o.PolicyOnly = true
+	o.KeysPerRole = 99
+	normalized, err := o.Normalize()
+	if err != nil || normalized.KeysPerRole != 0 {
+		t.Fatalf("policy-only normalization: %+v %v", normalized, err)
+	}
+	o.Tailnet = "tskey-api-secret"
+	if _, err := o.Normalize(); err == nil {
+		t.Fatal("token accepted as tailnet")
 	}
 }

@@ -80,6 +80,21 @@ func prepare(t *testing.T, c *Client) *PolicyPlan {
 	return plan
 }
 
+func TestOwnedPolicyAllowsWildcardDashboardPortButNotRPCPort(t *testing.T) {
+	before := []byte(`{"grants":[]}`)
+	old, _, _ := parsePolicy(before)
+	for _, tc := range []struct {
+		port string
+		want bool
+	}{{"8787", true}, {"50052", false}} {
+		applied := []byte(`{"grants":[{"src":["*"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:` + tc.port + `"]}]}`)
+		next, _, _ := parsePolicy(applied)
+		if got := supportedAdditions(old, next); got != tc.want {
+			t.Fatalf("wildcard grant on %s accepted=%v, want %v", tc.port, got, tc.want)
+		}
+	}
+}
+
 func TestPolicyPreviewAndApplyExactAdditions(t *testing.T) {
 	c := scriptedClient(t, getPolicy(appliedJSON), emptyDevices(), postPolicy(200, beforeJSON))
 	plan := prepare(t, c)
@@ -111,6 +126,24 @@ func TestPolicyPreviewAndApplyExactAdditions(t *testing.T) {
 	}
 	if _, err := c.ApplyPolicy(t.Context(), plan); !errors.Is(err, ErrPlanUsed) {
 		t.Fatalf("plan was reusable: %v", err)
+	}
+}
+
+func TestSupportedAdditionsWithLowercaseTagOwners(t *testing.T) {
+	old, _, err := parsePolicy([]byte(strings.ReplaceAll(beforeJSON, `"tagOwners"`, `"tagowners"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _, err := parsePolicy([]byte(strings.ReplaceAll(appliedJSON, `"tagOwners"`, `"tagowners"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !supportedAdditions(old, next) {
+		t.Fatal("lowercase tagowners from Tailscale API was rejected")
+	}
+	next["tagOwners"] = next["tagowners"]
+	if supportedAdditions(old, next) {
+		t.Fatal("ambiguous case-variant tag owner sections were accepted")
 	}
 }
 

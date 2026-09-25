@@ -108,6 +108,9 @@ func printControllerInstructions(dir string, output io.Writer) error {
 	if err := onboard.PrintJoinInstructions(output, local); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(output, "The controller must be running when another computer joins.")
+	if _, err := fmt.Fprintf(output, "Tailnet dashboard: http://%s:8787/\n", local.DNSName); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(output, "The controller must be running when another computer joins or opens the hosted dashboard.")
 	return err
 }

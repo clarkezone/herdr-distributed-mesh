@@ -115,7 +115,8 @@ override. The saved state does not depend on the previous executable location.
 
 For deliberate deinitialization and a clean start, use
 `herdr-mesh shutdown --destroy`; add `--remove-policy` on the coordinator to
-request removal of provably owned, unused policy additions. Preview with
+remove Herdr mesh policy entries, including pre-existing entries, when no other
+mesh role devices remain. Preview with
 `--dry-run`. Destruction requires typed confirmation (or explicit `--yes`).
 **Client destruction needs no API token:** it stops the client and deletes only
 its local mesh state. It does not revoke the Tailscale device or remove its
@@ -156,9 +157,9 @@ Tailnet setup (`herdr-mesh setup tailnet`) and prepared-endpoint Windows bootstr
 uses installed CLI commands; source build/test examples below are developer
 instructions, not additional product entrypoints. Durable agent launch/stop is
 available through `ctl agent start` and `ctl agent stop`; real operator/provider
-and platform acceptance remain separate gates. Herdr, Git,
-PowerShell, OpenSSH, and provider runtimes remain explicit dependencies where
-needed; their existence does not create another mesh CLI product.
+and platform acceptance remain separate gates. Herdr, Git, and provider
+runtimes remain execution prerequisites; optional Windows bootstrap requires
+PowerShell and OpenSSH. Tailnet setup uses native Go on every platform.
 
 `server`, `node`, and `dashboard` are long-running processes. `ctl` and `doctor` are
 short-lived clients. Each advanced role uses a separate persistent local state
@@ -198,8 +199,16 @@ The read-only dashboard uses the existing fleet inventory. It is embedded in
 the Go binary; no frontend server, npm install, or system Tailscale client is
 needed. Use the same mesh build on the controller and execution nodes.
 
-Keep the mesh controller and execution nodes running. After `init` or `join`,
-start the dashboard and open **http://127.0.0.1:8787**:
+The managed coordinator also serves the dashboard on its Tailscale identity at
+`http://<actual-coordinator-full-magic-dns-name>:8787/`. `herdr-mesh help` on
+the coordinator prints the exact address. Any peer allowed to reach that port
+by the tailnet policy can use the read-only dashboard; no mesh role tag is
+required. Guided `init` proposes a TCP 8787 grant for Tailscale policy `*`
+sources. The
+service uses tsnet; it does not bind a host wildcard interface.
+
+For a browser on the same computer, keep the mesh controller running, start the
+local dashboard, and open **http://127.0.0.1:8787**:
 
 ```powershell
 herdr-mesh dashboard

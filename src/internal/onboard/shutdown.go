@@ -54,7 +54,7 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 		return fmt.Errorf("cannot inspect managed installation; refusing cleanup: %w", err)
 	}
 	if o.RemovePolicy && !cfg.Coordinator {
-		return errors.New("--remove-policy must run on the managed coordinator that owns the policy receipt")
+		return errors.New("--remove-policy must run on the managed coordinator")
 	}
 	if o.TokenEnv != "" && !cfg.Coordinator {
 		return errors.New("--api-token-env is for controller destruction; client destruction needs no API token and does not delete the Tailscale device entry")
@@ -83,7 +83,7 @@ func Shutdown(ctx context.Context, o ShutdownOptions, output io.Writer, d Shutdo
 	}
 	fmt.Fprintln(output, "Herdr sessions, provider processes, checkouts, Git worktrees and other computers are NOT destroyed.")
 	if o.RemovePolicy {
-		fmt.Fprintln(output, "Also remove provably owned policy additions, only when no other device depends on them. Unrelated policy is preserved.")
+		fmt.Fprintln(output, "Also remove Herdr mesh policy entries, including pre-existing entries, only when no other mesh role devices remain. Unrelated devices and policy are preserved.")
 	} else if !localOnly {
 		fmt.Fprintln(output, "Tailnet policy is retained; use --remove-policy only when retiring the coordinator's shared mesh policy.")
 	} else {

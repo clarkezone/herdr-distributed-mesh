@@ -37,13 +37,14 @@ const (
 )
 
 var (
-	ErrDeviceAbsent   = errors.New("Tailscale managed device is absent")
-	ErrOutcomeUnknown = errors.New("Tailscale mutation outcome is unknown; retain pending state and reconcile before another mutation")
-	ErrPolicyConflict = errors.New("Tailscale policy differs from the retained snapshots; automatic cleanup refused")
-	ErrInvalidPolicy  = errors.New("Tailscale policy artifacts are invalid or do not describe supported init additions")
-	ErrPlanUsed       = errors.New("Tailscale policy plan has already been attempted; reconcile before preparing another plan")
-	ErrClosed         = errors.New("Tailscale teardown client is closed")
-	ErrPolicyInUse    = errors.New("Tailscale mesh roles are still used by other devices; policy cleanup refused")
+	ErrDeviceAbsent        = errors.New("Tailscale managed device is absent")
+	ErrOutcomeUnknown      = errors.New("Tailscale mutation outcome is unknown; retain pending state and reconcile before another mutation")
+	ErrPolicyConflict      = errors.New("Tailscale policy differs from the retained snapshots; automatic cleanup refused")
+	ErrInvalidPolicy       = errors.New("Tailscale policy artifacts are invalid or do not describe supported init additions")
+	ErrPlanUsed            = errors.New("Tailscale policy plan has already been attempted; reconcile before preparing another plan")
+	ErrClosed              = errors.New("Tailscale teardown client is closed")
+	ErrPolicyInUse         = errors.New("Tailscale mesh roles are still used by other devices; policy cleanup refused")
+	ErrAmbiguousMeshPolicy = errors.New("Herdr mesh policy is mixed with unrelated access or contains unsupported references; review it manually")
 )
 
 var deviceIDPattern = regexp.MustCompile(`^(?:[0-9]{1,32}|n[A-Za-z0-9]{1,127})$`)

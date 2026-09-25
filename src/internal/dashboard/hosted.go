@@ -106,6 +106,6 @@ func (h *handler) authorizeRequest(w http.ResponseWriter, r *http.Request) bool 
 		return false
 	}
 	log.Printf("dashboard peer denied")
-	writeError(w, http.StatusForbidden, "authorization_denied", "This dashboard requires a trusted controller peer.")
+	writeError(w, http.StatusForbidden, "authorization_denied", "This dashboard requires an identifiable Tailscale peer.")
 	return false
 }

@@ -4,32 +4,21 @@ package setup
 
 import (
 	"context"
-	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestSetupEmbeddedWorkflowWithLinkedTempRoot(t *testing.T) {
-	requirePowerShell(t)
-	o := testOptions(t)
-	root := filepath.Dir(o.OutputDirectory)
-	link := filepath.Join(root, "linked")
-	if err := os.Symlink(root, link); err != nil {
+func TestNativeSetupCreatesPrivateUnixArtifacts(t *testing.T) {
+	o := nativeOptions(t)
+	client := apiClientFor(func(*http.Request) (*http.Response, error) {
+		return apiReply(200, testPolicy, `"etag-1"`), nil
+	})
+	if _, err := runNative(context.Background(), o, testAPIToken, client); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TMPDIR", link)
-	testEmbeddedWorkflow(t, func(path string) string { return path })
-}
-
-func TestSetupCreatesPrivateUnixArtifacts(t *testing.T) {
-	requirePowerShell(t)
-	o := testOptions(t)
-	o.Apply = true
-	if _, err := run(context.Background(), o, mockedSetupHost); err != nil {
-		t.Fatal(err)
-	}
-	err := filepath.WalkDir(o.OutputDirectory, func(path string, entry os.DirEntry, err error) error {
+	if err := filepath.WalkDir(o.OutputDirectory, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -45,43 +34,38 @@ func TestSetupCreatesPrivateUnixArtifacts(t *testing.T) {
 			t.Errorf("%s: permissions %o, want %o", filepath.Base(path), info.Mode().Perm(), want)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestSetupRejectsLinkedOutputDirectory(t *testing.T) {
-	requirePowerShell(t)
-	o := testOptions(t)
-	root := filepath.Dir(o.OutputDirectory)
-	link := filepath.Join(root, "linked")
-	if err := os.Symlink(root, link); err != nil {
-		t.Fatal(err)
-	}
-	o.OutputDirectory = link
-	_, err := run(context.Background(), o, mockedSetupHost)
-	var setupError *Error
-	if !errors.As(err, &setupError) || setupError.Code != "output_unavailable" {
-		t.Fatalf("linked output was not rejected before API access: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "output")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("rejected output was created")
-	}
-}
-
-func TestSetupRejectsNonPrivateOutput(t *testing.T) {
-	requirePowerShell(t)
-	o := testOptions(t)
-	if err := os.Mkdir(o.OutputDirectory, 0700); err != nil {
+func TestNativeSetupRejectsNonPrivateOutput(t *testing.T) {
+	o := nativeOptions(t)
+	if err := os.Mkdir(o.OutputDirectory, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(o.OutputDirectory, 0755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := run(context.Background(), o, mockedSetupHost)
-	var setupError *Error
-	if !errors.As(err, &setupError) || setupError.Code != "output_unavailable" {
-		t.Fatalf("non-private output was not rejected before API access: %v", err)
+	_, err := runNative(context.Background(), o, testAPIToken, apiClientFor(func(*http.Request) (*http.Response, error) {
+		t.Fatal("non-private output caused API access")
+		return nil, nil
+	}))
+	setupErrorCode(t, err, "output_unavailable", false)
+}
+
+func TestNativeSetupAllowsInstallerLinkedParent(t *testing.T) {
+	o := nativeOptions(t)
+	root := filepath.Dir(o.OutputDirectory)
+	alias := filepath.Join(t.TempDir(), "linked-parent")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	o.OutputDirectory = filepath.Join(alias, "artifacts")
+	report, err := runNative(context.Background(), o, testAPIToken, apiClientFor(func(*http.Request) (*http.Response, error) {
+		return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+	}))
+	if err != nil || filepath.Dir(report.PolicyBackup) != o.OutputDirectory {
+		t.Fatalf("installer-linked parent rejected: %+v %v", report, err)
 	}
 }
