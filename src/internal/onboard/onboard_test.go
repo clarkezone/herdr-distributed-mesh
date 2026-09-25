@@ -64,7 +64,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f.d.Policy = func(_ context.Context, o setup.Options, token []byte) (setup.Report, error) {
 		f.policyCalls++
-		if !o.PolicyOnly || o.Tailnet != "example.com" || string(token) != "tskey-api-hidden-test" {
+		if !o.PolicyOnly || o.Tailnet != "example.com" || o.DashboardPort == nil || *o.DashboardPort != 8787 || string(token) != "tskey-api-hidden-test" {
 			t.Fatalf("unsafe policy options=%+v token len=%d", o, len(token))
 		}
 		if err := os.MkdirAll(o.OutputDirectory, 0700); err != nil {

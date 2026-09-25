@@ -199,8 +199,15 @@ The read-only dashboard uses the existing fleet inventory. It is embedded in
 the Go binary; no frontend server, npm install, or system Tailscale client is
 needed. Use the same mesh build on the controller and execution nodes.
 
-Keep the mesh controller and execution nodes running. After `init` or `join`,
-start the dashboard and open **http://127.0.0.1:8787**:
+The managed coordinator also serves the dashboard on its Tailscale identity at
+`http://<actual-coordinator-full-magic-dns-name>:8787/`. `herdr-mesh help` on
+the coordinator prints the exact address. The browser's Tailscale device must
+have the `tag:herdr-mesh-client` role. Guided `init` proposes the corresponding
+TCP 8787 policy grant. The service uses tsnet; it does not bind a host wildcard
+interface.
+
+For a browser on the same computer, keep the mesh controller running, start the
+local dashboard, and open **http://127.0.0.1:8787**:
 
 ```powershell
 herdr-mesh dashboard

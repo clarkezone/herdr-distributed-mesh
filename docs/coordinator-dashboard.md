@@ -3,7 +3,8 @@
 The coordinator can host the existing dashboard directly on its embedded
 Tailscale network. It shares the coordinator's inventory, assets, and enrolled
 identity; it does not create another controller identity or execution engine.
-The default remains disabled.
+Managed `init` enables this tsnet listener on port 8787 by default. Explicit
+advanced `server` mode leaves it disabled unless configured below.
 
 ```powershell
 herdr-mesh server `
@@ -54,6 +55,7 @@ network and state. Request time, concurrency, output size, and peer lookups are
 bounded.
 
 The standalone `herdr-mesh dashboard` command is unchanged: it binds only to a
-literal loopback address and uses a separate client state directory. Neither
+literal loopback address. In managed mode it uses the existing daemon's local
+gateway; advanced `-server` mode uses a separate client state directory. Neither
 mode adds mutation controls, stores terminal transcripts, or interprets a
 delivery receipt or an observed `done` state as semantic task success.

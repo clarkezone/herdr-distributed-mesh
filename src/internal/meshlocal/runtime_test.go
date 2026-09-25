@@ -44,6 +44,20 @@ type localNetwork struct {
 	peerTags  []string
 }
 
+func TestManagedCoordinatorHostsDashboardOnTSNet(t *testing.T) {
+	options := server.Options{ListenAddress: ":50052"}
+	configureManagedDashboard(&options, "herdr-mesh-host.example.ts.net", &transport.Network{})
+	if options.DashboardListenAddress != ":8787" ||
+		options.DashboardOrigin != "http://herdr-mesh-host.example.ts.net:8787" {
+		t.Fatalf("managed dashboard not configured on tsnet: %+v", options)
+	}
+	fixture := server.Options{ListenAddress: ":50052"}
+	configureManagedDashboard(&fixture, "herdr-mesh-host.example.ts.net", &localNetwork{})
+	if fixture.DashboardListenAddress != "" || fixture.DashboardOrigin != "" {
+		t.Fatal("test host network accidentally exposed a dashboard")
+	}
+}
+
 func (n *localNetwork) SelfStatus() transport.SelfStatus { return n.self }
 func (n *localNetwork) Close() error {
 	n.closes.Add(1)

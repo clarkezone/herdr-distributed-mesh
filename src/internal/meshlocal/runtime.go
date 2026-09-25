@@ -25,9 +25,10 @@ import (
 )
 
 const (
-	serverTag = "tag:herdr-mesh-server"
-	nodeTag   = "tag:herdr-mesh-node"
-	clientTag = "tag:herdr-mesh-client"
+	serverTag            = "tag:herdr-mesh-server"
+	nodeTag              = "tag:herdr-mesh-node"
+	clientTag            = "tag:herdr-mesh-client"
+	managedDashboardPort = "8787"
 )
 
 type runtimeDependencies struct {
@@ -213,6 +214,7 @@ func run(ctx context.Context, dir string, output io.Writer, deps runtimeDependen
 		options := server.Options{Transport: role, ListenAddress: ":" + port,
 			DatabasePath:      filepath.Join(role.RoleStateDir, "coordinator.db"),
 			RequiredClientTag: clientTag, RequiredCommandTag: clientTag, RequiredNodeTag: nodeTag, Output: output}
+		configureManagedDashboard(&options, dnsName, network)
 		group.Go(func() error {
 			err := deps.server(groupCtx, options, network)
 			if err == nil && groupCtx.Err() == nil {
@@ -295,6 +297,16 @@ func run(ctx context.Context, dir string, output io.Writer, deps runtimeDependen
 	}
 	<-groupCtx.Done()
 	return nil
+}
+
+func configureManagedDashboard(options *server.Options, dnsName string, network transport.RuntimeNetwork) {
+	// The managed coordinator owns a real embedded tsnet network. Host its
+	// authenticated dashboard on that network, never on a host wildcard
+	// socket. Test networks keep the independent server fixture unchanged.
+	if _, embedded := network.(*transport.Network); embedded {
+		options.DashboardListenAddress = ":" + managedDashboardPort
+		options.DashboardOrigin = "http://" + dnsName + ":" + managedDashboardPort
+	}
 }
 
 func waitWorkerRegistration(ctx context.Context, connection grpc.ClientConnInterface, registered <-chan string) error {

@@ -289,6 +289,8 @@ func configurePolicy(ctx context.Context, dir, tailnet string, output io.Writer,
 	}
 	base := setup.DefaultOptions()
 	base.Tailnet, base.PolicyOnly = tailnet, true
+	dashboardPort := 8787
+	base.DashboardPort = &dashboardPort
 	previewDir, err := os.MkdirTemp(dir, "policy-preview-")
 	if err != nil {
 		return err

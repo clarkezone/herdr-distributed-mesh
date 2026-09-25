@@ -50,6 +50,9 @@ func TestControllerHelpShowsSavedJoinCommandWithoutNetwork(t *testing.T) {
 		if !strings.Contains(output.String(), want+"\n") {
 			t.Fatalf("missing exact saved endpoint: %s", &output)
 		}
+		if !strings.Contains(output.String(), "http://herdr-mesh-desktop-1.tail123.ts.net:8787/") {
+			t.Fatalf("missing hosted dashboard endpoint: %s", &output)
+		}
 		for _, unwanted := range []string{"Background runtime only", "No registry", ":50052\n"} {
 			if strings.Contains(output.String(), unwanted) {
 				t.Fatalf("unwanted help text %q", unwanted)

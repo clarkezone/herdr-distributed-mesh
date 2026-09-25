@@ -137,7 +137,16 @@ herdr-mesh doctor
 Confirm both computers are connected and ready to manage Herdr sessions.
 A running background process alone is not evidence that its worker is ready.
 
-For the browser dashboard:
+The managed coordinator hosts a read-only dashboard at
+`http://<actual-coordinator-full-magic-dns-name>:8787/` over tsnet. Run
+`herdr-mesh help` on the coordinator for its exact URL. The browser's Tailscale
+device needs the `tag:herdr-mesh-client` role and TCP 8787 access. Guided
+`init` proposes that grant. For an existing restrictive policy, preview it with
+`herdr-mesh setup tailnet -tailnet <tailnet> -dashboard-port 8787`, then use a
+fresh private output directory and `-apply` after reviewing the proposal.
+This does not expose a host wildcard HTTP listener.
+
+For a browser on the same computer, use the loopback dashboard:
 
 ```powershell
 herdr-mesh dashboard
