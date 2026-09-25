@@ -40,7 +40,7 @@ preview file.
 | `-tag-owner` | `autogroup:admin`; adds an owner without deleting existing owners |
 | `-key-expiry-seconds` | `604800`; range `3600..7776000` |
 | `-keys-per-role` | `2`; range `1..100`, for each of server/node/client |
-| `-dashboard-port` | Absent; explicitly grants client-to-server TCP access on `1..65535` |
+| `-dashboard-port` | Absent; grants Tailscale policy `*` sources TCP access to the server tag on `1..65535`, excluding the mesh RPC port `50052` |
 | `-output-directory` | Windows: `%LOCALAPPDATA%\herdr-mesh\tailnet-setup`; Unix: the user configuration directory's `herdr-mesh/tailnet-setup` |
 | `-apply` | False; explicit remote policy/key changes |
 | `-timeout` | `2m`; positive and at most `30m` |

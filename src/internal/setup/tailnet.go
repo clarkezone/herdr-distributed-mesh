@@ -44,7 +44,7 @@ func (o Options) Normalize() (Options, error) {
 		!environmentName.MatchString(o.ApiTokenEnvironmentVariable) ||
 		o.KeyExpirySeconds < 3600 || o.KeyExpirySeconds > 7776000 || (!o.PolicyOnly && (o.KeysPerRole < 1 || o.KeysPerRole > 100)) ||
 		(o.ExpectedPolicySHA256 != "" && !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(o.ExpectedPolicySHA256)) ||
-		(o.DashboardPort != nil && (*o.DashboardPort < 1 || *o.DashboardPort > 65535)) ||
+		(o.DashboardPort != nil && (*o.DashboardPort < 1 || *o.DashboardPort > 65535 || *o.DashboardPort == 50052)) ||
 		o.Timeout <= 0 || o.Timeout > 30*time.Minute || len(o.OutputDirectory) > 4096 ||
 		strings.ContainsAny(o.OutputDirectory, "\x00\r\n") {
 		return o, &Error{Code: "invalid_options"}

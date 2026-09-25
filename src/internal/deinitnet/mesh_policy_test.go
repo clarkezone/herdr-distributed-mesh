@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const meshPolicy = `{"tagowners":{"tag:herdr-mesh-node":[],"tag:herdr-mesh-client":[],"tag:herdr-mesh-server":[],"tag:unrelated":["autogroup:admin"]},"grants":[{"src":["tag:herdr-mesh-node"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]},{"src":["tag:herdr-mesh-client"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]},{"src":["tag:unrelated"],"dst":["tag:unrelated"],"ip":["tcp:443"]}],"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
+const meshPolicy = `{"tagowners":{"tag:herdr-mesh-node":[],"tag:herdr-mesh-client":[],"tag:herdr-mesh-server":[],"tag:unrelated":["autogroup:admin"]},"grants":[{"src":["tag:herdr-mesh-node"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]},{"src":["tag:herdr-mesh-client"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]},{"src":["*"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:8787"]},{"src":["tag:unrelated"],"dst":["tag:unrelated"],"ip":["tcp:443"]}],"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
 const cleanMeshPolicy = `{"tagowners":{"tag:unrelated":["autogroup:admin"]},"grants":[{"src":["tag:unrelated"],"dst":["tag:unrelated"],"ip":["tcp:443"]}],"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
 
 func TestMeshPolicyRemovalIncludesPreexistingEntries(t *testing.T) {

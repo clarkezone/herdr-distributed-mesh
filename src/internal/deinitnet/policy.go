@@ -524,7 +524,7 @@ func supportedGrants(before, applied map[string]any) bool {
 		dest, dstOK := singleString(grant["dst"])
 		ip, ipOK := singleString(grant["ip"])
 		if !srcOK || !dstOK || !ipOK ||
-			(source != "tag:herdr-mesh-node" && source != "tag:herdr-mesh-client") ||
+			(source != "tag:herdr-mesh-node" && source != "tag:herdr-mesh-client" && source != "*") ||
 			dest != "tag:herdr-mesh-server" || !strings.HasPrefix(ip, "tcp:") {
 			return false
 		}
@@ -532,7 +532,8 @@ func supportedGrants(before, applied map[string]any) bool {
 		if err != nil || port < 1 || port > 65535 || ip != "tcp:"+strconv.Itoa(port) {
 			return false
 		}
-		if source == "tag:herdr-mesh-node" && port != 50052 {
+		if (source == "tag:herdr-mesh-node" && port != 50052) ||
+			(source == "*" && port == 50052) {
 			return false
 		}
 		if port != 50052 {

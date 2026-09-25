@@ -201,10 +201,11 @@ needed. Use the same mesh build on the controller and execution nodes.
 
 The managed coordinator also serves the dashboard on its Tailscale identity at
 `http://<actual-coordinator-full-magic-dns-name>:8787/`. `herdr-mesh help` on
-the coordinator prints the exact address. The browser's Tailscale device must
-have the `tag:herdr-mesh-client` role. Guided `init` proposes the corresponding
-TCP 8787 policy grant. The service uses tsnet; it does not bind a host wildcard
-interface.
+the coordinator prints the exact address. Any peer allowed to reach that port
+by the tailnet policy can use the read-only dashboard; no mesh role tag is
+required. Guided `init` proposes a TCP 8787 grant for Tailscale policy `*`
+sources. The
+service uses tsnet; it does not bind a host wildcard interface.
 
 For a browser on the same computer, keep the mesh controller running, start the
 local dashboard, and open **http://127.0.0.1:8787**:

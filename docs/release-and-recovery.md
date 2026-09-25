@@ -33,12 +33,12 @@ Checksums detect corruption only when obtained through a trusted channel; they
 do not authenticate the publisher. Nothing uploads or publishes a release.
 Code signing and platform notarization require separately managed credentials.
 
-An optional coordinator-hosted dashboard port requires its own client-to-server
+An optional coordinator-hosted dashboard port requires its own all-sources-to-server
 tailnet grant. `herdr-mesh setup tailnet -tailnet '<tailnet-name>'
--dashboard-port <port>` proposes that narrowly scoped grant; omitting the option
+-dashboard-port <port>` proposes that port-specific grant; omitting the option
 preserves the existing RPC-only defaults.
-It does not enable a listener, grant execution-node access to the dashboard, or
-replace the dashboard's connection-peer authentication. Preview is the default;
+It does not enable a listener or change the managed coordinator's runtime.
+Preview is the default;
 inspect the private proposed policy before an explicit `-apply`.
 
 ## Install and upgrade

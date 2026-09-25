@@ -40,6 +40,7 @@ func TestSetupCLIRejectsInvalidFlagsWithoutEchoingSecrets(t *testing.T) {
 	for _, args := range [][]string{
 		{}, {"other"}, {"tailnet"}, {"tailnet", "-tailnet", "example.com", "-dashboard-port", "0"},
 		{"tailnet", "-tailnet", "example.com", "-dashboard-port", "65536"},
+		{"tailnet", "-tailnet", "example.com", "-dashboard-port", "50052"},
 		{"tailnet", "-tailnet", "example.com", "-keys-per-role", "0"},
 		{"tailnet", "-tailnet", "example.com", "-timeout", "31m"},
 		{"tailnet", "-tailnet", "example.com", "-api-token", "tskey-api-secret"},

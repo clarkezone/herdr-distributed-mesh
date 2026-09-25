@@ -22,7 +22,6 @@ func TestHostedCoordinatorOptionsFailBeforeStartup(t *testing.T) {
 	for _, change := range []func(*Options){
 		func(o *Options) { o.DashboardListenAddress = "" },
 		func(o *Options) { o.DashboardOrigin = "" },
-		func(o *Options) { o.RequiredClientTag = "" },
 		func(o *Options) { o.Output = nil },
 		func(o *Options) { o.DashboardListenAddress = "0.0.0.0:8787" },
 		func(o *Options) { o.DashboardListenAddress = ":0" },
@@ -46,31 +45,27 @@ func TestHostedCoordinatorOptionsFailBeforeStartup(t *testing.T) {
 	}
 }
 
-func TestHostedCoordinatorAuthenticatesFreshActualPeer(t *testing.T) {
+func TestHostedCoordinatorAuthenticatesAnyTailnetPeer(t *testing.T) {
 	calls := 0
 	authorize := dashboardPeerAuthorizer(func(_ context.Context, address string) (transport.PeerIdentity, error) {
 		calls++
 		if address != "100.64.0.8:1234" {
 			t.Fatal("lookup did not use actual connection address")
 		}
-		tags := []string{"tag:client"}
-		if calls == 2 {
-			tags = []string{"tag:node"}
-		}
-		return transport.PeerIdentity{StableID: "peer", Tags: tags}, nil
-	}, "tag:client")
+		return transport.PeerIdentity{StableID: "peer"}, nil
+	})
 	if err := authorize(context.Background(), "100.64.0.8:1234"); err != nil {
 		t.Fatal(err)
 	}
-	if err := authorize(context.Background(), "100.64.0.8:1234"); err == nil {
-		t.Fatal("removed role was still trusted")
+	if err := authorize(context.Background(), "100.64.0.8:1234"); err != nil {
+		t.Fatal("untagged tailnet peer was rejected", err)
 	}
 	for _, identity := range []transport.PeerIdentity{
-		{Tags: []string{"tag:client"}}, {StableID: "peer"}, {StableID: "peer", Tags: []string{"tag:node"}},
+		{Tags: []string{"tag:client"}}, {},
 	} {
-		check := dashboardPeerAuthorizer(func(context.Context, string) (transport.PeerIdentity, error) { return identity, nil }, "tag:client")
+		check := dashboardPeerAuthorizer(func(context.Context, string) (transport.PeerIdentity, error) { return identity, nil })
 		if err := check(context.Background(), "actual:1234"); err == nil {
-			t.Fatal("untrusted peer accepted")
+			t.Fatal("peer without Tailscale identity accepted")
 		}
 	}
 }

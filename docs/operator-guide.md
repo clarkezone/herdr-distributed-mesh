@@ -139,9 +139,10 @@ A running background process alone is not evidence that its worker is ready.
 
 The managed coordinator hosts a read-only dashboard at
 `http://<actual-coordinator-full-magic-dns-name>:8787/` over tsnet. Run
-`herdr-mesh help` on the coordinator for its exact URL. The browser's Tailscale
-device needs the `tag:herdr-mesh-client` role and TCP 8787 access. Guided
-`init` proposes that grant. For an existing restrictive policy, preview it with
+`herdr-mesh help` on the coordinator for its exact URL. Any device allowed by
+the tailnet policy to reach TCP 8787 can use it; no mesh role tag is needed.
+Guided `init` proposes a grant for Tailscale policy `*` sources. For an existing
+restrictive policy, preview it with
 `herdr-mesh setup tailnet -tailnet <tailnet> -dashboard-port 8787`, then use a
 fresh private output directory and `-apply` after reviewing the proposal.
 This does not expose a host wildcard HTTP listener.

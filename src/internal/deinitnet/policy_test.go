@@ -80,6 +80,21 @@ func prepare(t *testing.T, c *Client) *PolicyPlan {
 	return plan
 }
 
+func TestOwnedPolicyAllowsWildcardDashboardPortButNotRPCPort(t *testing.T) {
+	before := []byte(`{"grants":[]}`)
+	old, _, _ := parsePolicy(before)
+	for _, tc := range []struct {
+		port string
+		want bool
+	}{{"8787", true}, {"50052", false}} {
+		applied := []byte(`{"grants":[{"src":["*"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:` + tc.port + `"]}]}`)
+		next, _, _ := parsePolicy(applied)
+		if got := supportedAdditions(old, next); got != tc.want {
+			t.Fatalf("wildcard grant on %s accepted=%v, want %v", tc.port, got, tc.want)
+		}
+	}
+}
+
 func TestPolicyPreviewAndApplyExactAdditions(t *testing.T) {
 	c := scriptedClient(t, getPolicy(appliedJSON), emptyDevices(), postPolicy(200, beforeJSON))
 	plan := prepare(t, c)

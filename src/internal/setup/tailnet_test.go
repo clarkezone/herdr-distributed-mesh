@@ -123,6 +123,42 @@ func TestNativePolicyOnlyPreviewAndApply(t *testing.T) {
 	}
 }
 
+func TestNativeDashboardGrantAllowsPolicyWildcardSources(t *testing.T) {
+	o := nativeOptions(t)
+	o.PolicyOnly = true
+	port := 8787
+	o.DashboardPort = &port
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		return apiReply(http.StatusOK, `{"grants":[]}`, `"etag-1"`), nil
+	})
+	report, err := runNative(context.Background(), o, testAPIToken, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := os.ReadFile(report.PolicyProposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Grants []struct {
+			Src []string `json:"src"`
+			Dst []string `json:"dst"`
+			IP  []string `json:"ip"`
+		} `json:"grants"`
+	}
+	if err := json.Unmarshal(proposal, &policy); err != nil {
+		t.Fatal(err)
+	}
+	for _, grant := range policy.Grants {
+		if len(grant.Src) == 1 && grant.Src[0] == "*" &&
+			len(grant.Dst) == 1 && grant.Dst[0] == "tag:herdr-mesh-server" &&
+			len(grant.IP) == 1 && grant.IP[0] == "tcp:8787" {
+			return
+		}
+	}
+	t.Fatal("dashboard wildcard grant missing")
+}
+
 func TestNativeApplyRecognizesExistingLowercaseTagOwners(t *testing.T) {
 	policy := `{"tagowners":{"tag:herdr-mesh-server":["autogroup:admin"],"tag:herdr-mesh-node":["autogroup:admin"],"tag:herdr-mesh-client":["autogroup:admin"]},"grants":[{"src":["tag:herdr-mesh-node"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]},{"src":["tag:herdr-mesh-client"],"dst":["tag:herdr-mesh-server"],"ip":["tcp:50052"]}]}`
 	o := nativeOptions(t)

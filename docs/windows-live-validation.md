@@ -279,7 +279,7 @@ capacity. Separate CLI processes need independent enrollment/state.
 
 For optional prepared-endpoint installation use [bootstrap](node-bootstrap.md).
 For a coordinator-hosted browser use [hosted dashboard](coordinator-dashboard.md),
-whose browser peer needs its own tailnet connectivity and client role. For stopped
+whose browser peer needs tailnet connectivity and policy access to the port. For stopped
 roles use [offline maintenance](journal-maintenance.md). These are modes of the
 same CLI, not separate product scripts.
 

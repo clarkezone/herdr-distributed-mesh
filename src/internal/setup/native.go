@@ -408,7 +408,7 @@ func mergePolicy(policy map[string]any, options Options) ([]string, error) {
 	add(roleTags[1].tag, roleTags[0].tag, 50052)
 	add(roleTags[2].tag, roleTags[0].tag, 50052)
 	if options.DashboardPort != nil {
-		add(roleTags[2].tag, roleTags[0].tag, *options.DashboardPort)
+		add("*", roleTags[0].tag, *options.DashboardPort)
 	}
 	policy["grants"] = grants
 	return warnings, nil
