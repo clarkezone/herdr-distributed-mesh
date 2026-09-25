@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	testToken  = "tskey-api-TEST-DO-NOT-USE"
+	testToken  = "tskey-" + "api-TEST-DO-NOT-USE"
 	testID     = "n292kg92CNTRL"
 	deviceJSON = `{"id":"92960230385","nodeId":"n292kg92CNTRL","hostname":"not-used"}`
 )
@@ -287,7 +287,7 @@ func TestRedirectNeverFollowed(t *testing.T) {
 }
 
 func TestNewCloseAndSafeFormatting(t *testing.T) {
-	for _, token := range []string{"", "tskey-auth-test", "tskey-client-test", "tskey-api-", "tskey-api-x\r\nx: y", "tskey-api-x space"} {
+	for _, token := range []string{"", "tskey-" + "auth-test", "tskey-" + "client-test", "tskey-api-", "tskey-api-x\r\nx: y", "tskey-api-x space"} {
 		if c, err := New([]byte(token), Options{}); c != nil || err == nil {
 			t.Fatal("accepted invalid token")
 		}

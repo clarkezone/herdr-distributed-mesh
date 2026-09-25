@@ -43,10 +43,10 @@ func TestSetupCLIRejectsInvalidFlagsWithoutEchoingSecrets(t *testing.T) {
 		{"tailnet", "-tailnet", "example.com", "-dashboard-port", "50052"},
 		{"tailnet", "-tailnet", "example.com", "-keys-per-role", "0"},
 		{"tailnet", "-tailnet", "example.com", "-timeout", "31m"},
-		{"tailnet", "-tailnet", "example.com", "-api-token", "tskey-api-secret"},
-		{"tailnet", "-tailnet", "example.com", "-timeout", "tskey-api-secret"},
-		{"tailnet", "-tailnet", "example.com", "tskey-api-secret"},
-		{"tailnet", "-tailnet", "example.com", "-api-token-env", "tskey-api-secret"},
+		{"tailnet", "-tailnet", "example.com", "-api-token", "tskey-" + "api-secret"},
+		{"tailnet", "-tailnet", "example.com", "-timeout", "tskey-" + "api-secret"},
+		{"tailnet", "-tailnet", "example.com", "tskey-" + "api-secret"},
+		{"tailnet", "-tailnet", "example.com", "-api-token-env", "tskey-" + "api-secret"},
 	} {
 		var out bytes.Buffer
 		err := runSetup(context.Background(), args, IO{Out: &out, Err: &out}, func(context.Context, setup.Options) (setup.Report, error) {

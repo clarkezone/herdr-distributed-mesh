@@ -30,6 +30,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Reject literal Tailscale credentials
+        shell: bash
+        run: |
+          if git grep -I -q -E 'tskey-(api|auth|client)-[A-Za-z0-9_-]{4,}' -- .; then
+            echo 'A token-shaped Tailscale literal is committed; use synthetic fixtures assembled from parts.' >&2
+            exit 1
+          fi
       - name: Unit and local integration tests
         run: go test ./src/...
       - name: Archived experiment checks

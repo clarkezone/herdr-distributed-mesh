@@ -424,7 +424,7 @@ func TestPolicyPlanClientBindingAndConcurrentUse(t *testing.T) {
 }
 
 func TestTailnetValidationAndExistingPolicyNoChanges(t *testing.T) {
-	for _, tailnet := range []string{"", "-", ".", "..", "../other", "a/b", "a?query", "a#fragment", "tskey-api-secret", "a\r\n", strings.Repeat("a", 254)} {
+	for _, tailnet := range []string{"", "-", ".", "..", "../other", "a/b", "a?query", "a#fragment", "tskey-" + "api-secret", "a\r\n", strings.Repeat("a", 254)} {
 		c := scriptedClient(t)
 		if _, err := c.PreparePolicy(t.Context(), tailnet, []byte("{}"), []byte("{}")); err == nil {
 			t.Fatalf("accepted unsafe tailnet")

@@ -57,7 +57,7 @@ func shutdownFixtureFor(t *testing.T, config meshlocal.Config) (string, Shutdown
 		},
 		Stop:    func(context.Context, string) error { f.calls = append(f.calls, "stop"); return nil },
 		Confirm: func(context.Context, string) (bool, error) { return true, nil },
-		Token:   func(context.Context, string) ([]byte, error) { return []byte("tskey-api-private-test"), nil },
+		Token:   func(context.Context, string) ([]byte, error) { return []byte("tskey-" + "api-private-test"), nil },
 		Remote: func(context.Context, string, meshlocal.Config, meshlocal.ManagedIdentity, bool, []byte) (RemoteCleanup, error) {
 			f.calls = append(f.calls, "preflight")
 			return f, nil

@@ -25,7 +25,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{dir: filepath.Join(t.TempDir(), "managed"), token: []byte("tskey-api-hidden-test")}
+	f := &fixture{dir: filepath.Join(t.TempDir(), "managed"), token: []byte("tskey-" + "api-hidden-test")}
 	f.d = Dependencies{
 		Dir: func() (string, error) { return f.dir, nil },
 		Load: func(string) (meshlocal.Config, error) {
@@ -59,12 +59,12 @@ func newFixture(t *testing.T) *fixture {
 		Browser: func(string) error { f.browsers++; return errors.New("no browser") },
 		Wait:    func(context.Context) error { return nil },
 		Environment: func() []string {
-			return []string{"PATH=provider", "TAILSCALE_API_TOKEN=tskey-api-secret", "TS_AUTHKEY_SERVER=tskey-auth-secret", "CUSTOM=tskey-auth-secret", "ANTHROPIC_API_KEY=provider-secret"}
+			return []string{"PATH=provider", "TAILSCALE_API_TOKEN=tskey-" + "api-secret", "TS_AUTHKEY_SERVER=tskey-" + "auth-secret", "CUSTOM=tskey-" + "auth-secret", "ANTHROPIC_API_KEY=provider-secret"}
 		},
 	}
 	f.d.Policy = func(_ context.Context, o setup.Options, token []byte) (setup.Report, error) {
 		f.policyCalls++
-		if !o.PolicyOnly || o.Tailnet != "example.com" || o.DashboardPort == nil || *o.DashboardPort != 8787 || string(token) != "tskey-api-hidden-test" {
+		if !o.PolicyOnly || o.Tailnet != "example.com" || o.DashboardPort == nil || *o.DashboardPort != 8787 || string(token) != "tskey-"+"api-hidden-test" {
 			t.Fatalf("unsafe policy options=%+v token len=%d", o, len(token))
 		}
 		if err := os.MkdirAll(o.OutputDirectory, 0700); err != nil {
@@ -105,7 +105,7 @@ func TestInitPolicyOnlyThenActualDNSAndExactResume(t *testing.T) {
 		t.Fatal("prompt token buffer retained")
 	}
 	want := "herdr-mesh join --server herdr-mesh-desktop.actual-tail.ts.net"
-	if !strings.Contains(out.String(), want) || strings.Contains(out.String(), ":50052") || strings.Contains(out.String(), "tskey-api-hidden-test") {
+	if !strings.Contains(out.String(), want) || strings.Contains(out.String(), ":50052") || strings.Contains(out.String(), "tskey-"+"api-hidden-test") {
 		t.Fatalf("bad output: %s", &out)
 	}
 	f.d.Running = func(string) (bool, error) { return true, nil }
@@ -167,7 +167,7 @@ func TestPolicyRefusalAndUnknownApplyPreserveState(t *testing.T) {
 				if _, err := os.Stat(filepath.Join(f.dir, "policy-apply-pending")); err != nil {
 					t.Fatal(err)
 				}
-				f.token = []byte("tskey-api-hidden-test")
+				f.token = []byte("tskey-" + "api-hidden-test")
 				calls := f.policyCalls
 				if err := Run(context.Background(), initOptions(), io.Discard, f.d); err == nil || !strings.Contains(err.Error(), "unknown") {
 					t.Fatal(err)
@@ -197,10 +197,10 @@ func TestPendingPolicyRecoveryUsesReadOnlyComparison(t *testing.T) {
 			if err := Run(context.Background(), initOptions(), io.Discard, f.d); err == nil {
 				t.Fatal("first apply should be uncertain")
 			}
-			f.token = []byte("tskey-api-hidden-test")
+			f.token = []byte("tskey-" + "api-hidden-test")
 			calls := f.policyCalls
 			f.d.PolicyRead = func(_ context.Context, tailnet string, token []byte) ([]byte, error) {
-				if tailnet != "example.com" || string(token) != "tskey-api-hidden-test" {
+				if tailnet != "example.com" || string(token) != "tskey-"+"api-hidden-test" {
 					t.Fatal("read-only recovery used wrong tailnet or token")
 				}
 				if applied {
@@ -318,9 +318,9 @@ func TestNamesServerAndRedirectedSecretValidation(t *testing.T) {
 }
 
 func TestNormalizeTerminalTokenForSetupAndDestroy(t *testing.T) {
-	input := []byte("\x1b[200~ tskey-api-private-test \x1b[201~")
+	input := []byte("\x1b[200~ tskey-" + "api-private-test \x1b[201~")
 	got := normalizeTerminalToken(input)
-	if string(got) != "tskey-api-private-test" {
+	if string(got) != "tskey-"+"api-private-test" {
 		t.Fatal("bracketed paste wrapper was not removed")
 	}
 	if !bytes.Equal(input, make([]byte, len(input))) {
