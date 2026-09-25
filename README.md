@@ -1,156 +1,240 @@
-# herdr-distributed-mesh
+# Herdr Tailmesh
 
 Connect computers over embedded Tailscale, discover headless Herdr sessions,
 and run and observe agents against centrally registered project checkouts.
-The mesh is designed for one trusted operator; it is not a multi-tenant service
-or a sandbox for untrusted repositories.
+The mesh is designed for one trusted operator across trusted computers and
+repositories.
 
-## Start here
+## Start here: Linux and Windows
 
-The product has one public executable and command: **`herdr-mesh`**
-(`herdr-mesh.exe` on Windows). Install it on `PATH` and use its subcommands;
-server, node, controller, dashboard, MCP, and maintenance are not separate binaries.
-Start with the [two-computer operator guide](docs/operator-guide.md).
-Managed setup uses one background mesh connection per computer; diagnostics,
-the dashboard, MCP, and commands share it.
+The single executable is `herdr-mesh` on Linux (and macOS) and
+`herdr-mesh.exe` on Windows. It contains the coordinator, node, CLI, dashboard,
+and MCP interfaces. Managed `init` and `join` keep one background mesh
+connection per computer; subsequent commands share it.
 
-On the first computer:
+Install `herdr-mesh` binaries from the **same version or source revision** on
+both computers. Each also needs Herdr, Git, and an installed and authenticated
+agent provider (Copilot by default).
+Use a Herdr version whose native API protocol is supported by this build
+(currently 18, 20, or 22). You need a Tailscale account and the tailnet name.
+The embedded connection does not require the system Tailscale client. If Herdr
+is not on `PATH`, pass `--herdr <absolute-executable-path>` to `init` or `join`.
+
+### Install or build
+
+Use the matching single-binary archive from a trusted distribution channel,
+or build from the repository root with the Go version in [go.mod](go.mod).
+Extract or build into a writable local directory that will also hold this
+computer's private `herdr-mesh-state` directory. Keep the installation outside
+synced folders, and add the executable directory to `PATH`.
+
+Linux (Bash), building into `~/.local/bin`:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+go build -o "$HOME/.local/bin/herdr-mesh" ./src/cmd/herdr-mesh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+If using an extracted Linux archive, copy its `herdr-mesh` into that directory
+and run `chmod +x "$HOME/.local/bin/herdr-mesh"`. The `export` above affects
+only the current shell; add it to your shell configuration if needed. The
+same Unix commands also work on macOS with its matching archive.
+
+Windows (PowerShell), building into `$HOME\bin`:
 
 ```powershell
+New-Item -ItemType Directory -Force "$HOME\bin" | Out-Null
+go build -o "$HOME\bin\herdr-mesh.exe" .\src\cmd\herdr-mesh
+$env:PATH = "$HOME\bin;$env:PATH"
+```
+
+For an extracted Windows archive, copy `herdr-mesh.exe` into `$HOME\bin`.
+The `PATH` change above affects only the current PowerShell session. These
+are local build/install examples; release packaging is described in
+[Release and recovery](docs/release-and-recovery.md).
+
+### Create, join, and use the mesh
+
+On the first computer, run the same command in Bash or PowerShell, replacing
+`example.com` with your real tailnet:
+
+```text
 herdr-mesh init --tailnet example.com --name desktop
 ```
 
-On the second computer, use the exact full MagicDNS address printed by setup:
+`--name` is optional; without it, the mesh derives a portable lowercase label
+from the OS hostname, capped at 40 characters. First-time tailnet setup asks privately for a
+`tskey-api-` access token with policy read/update permission and shows the
+proposed policy before applying it. The token is not saved. Device enrollment
+is a separate browser sign-in; normal managed setup does not require copying
+enrollment keys. Tailnet policy setup runs in Go on Linux and Windows and does
+not require PowerShell or a setup script.
 
-```powershell
+After the coordinator is ready, copy the **exact** join command it prints to
+the second computer. For example:
+
+```text
 herdr-mesh join --server herdr-mesh-desktop.example.ts.net
 ```
 
-The address above is an example, not an address to invent from the hostname.
-On the controller, **`herdr-mesh help`** and **`herdr-mesh status`** show its
-actual assigned join command, including any nondefault port. Help reads saved
-state without starting or enrolling anything. If browser sign-in or device
-approval finishes after setup stops waiting, check `status`, then retrieve
-the join command with `help`; do not recreate the mesh.
+The example address is illustrative; do not construct it from the requested
+hostname. On the coordinator, `herdr-mesh help` or `herdr-mesh status` shows
+the actual full MagicDNS join address and hosted dashboard URL. Help reads
+saved state without starting or enrolling a process. The coordinator must be
+running when another computer joins.
+If browser sign-in or device approval finishes after setup stops waiting,
+check `status`, use `start` if it is stopped, then read the join command with
+`help`. Keep the saved installation.
 
-From either computer afterward:
+From either computer:
 
-```powershell
+```text
 herdr-mesh nodes
 herdr-mesh doctor
-herdr-mesh dashboard
+herdr-mesh status
 ```
 
-Register an existing checkout on the execution computer and launch a task:
+Register an **existing Git checkout on the execution computer**. Use that
+computer's node label from `nodes`, not a guessed hostname.
 
-```powershell
-herdr-mesh project add demo --node laptop --path C:\src\demo
+Linux path example:
+
+```bash
+herdr-mesh project add demo --node laptop --path "$HOME/src/demo"
 herdr-mesh agent start smoke --node laptop --project demo --prompt "Say hello"
 herdr-mesh agent follow smoke --node laptop
 herdr-mesh agent stop smoke --node laptop
 ```
 
-Replace `laptop` with its label from `nodes`. Checkout paths belong to that
-computer. Start ensures a headless `main` Herdr session and an existing-checkout
-workspace, then launches Copilot by default; it does not create a worktree.
-No attached Herdr terminal is required. Canceling follow stops watching, not
-the agent. An agent name remains bound to its original launch: repeat the exact
-start to inspect/retry that request, not to launch a replacement.
-Prompt receipt and provider readiness do not establish task completion or success.
-
-First-time tailnet configuration prompts for an API access token privately.
-Device connection uses browser sign-in; normal setup does not require counting
-or distributing enrollment keys. Herdr, Git, and the intended authenticated
-provider must be installed. Managed `init`, `join`, and `start` run a background
-process on Windows, Linux, and macOS that survives closing the launching terminal.
-Mesh does not use the Windows registry or install sign-in autostart, boot
-services, or scheduled tasks. After reboot or shutdown, start it explicitly.
-
-`--name` is optional for `init` and `join`. By default, the OS hostname is
-normalized to lowercase letters, digits, and hyphens, with a prefix if needed
-to start with a letter and a 40-character cap. Use `--name` to override it;
-the printed join command does not require a name.
-
-Configuration, databases, journals, tsnet identity, and logs live in
-**`herdr-mesh-state` beside the executable**, not in the working directory or
-AppData. Install into a writable, private local directory. An optional global
-override goes **before** the command:
+Windows path example:
 
 ```powershell
-herdr-mesh --state-dir C:\private\mesh-state start
+herdr-mesh project add demo --node laptop --path 'C:\src\demo'
+herdr-mesh agent start smoke --node laptop --project demo --prompt 'Say hello'
+herdr-mesh agent follow smoke --node laptop
+herdr-mesh agent stop smoke --node laptop
 ```
 
-Use the same absolute override for `help`, `init`, `join`, `shutdown`, `status`, `nodes`,
-`dashboard`, `mcp`, `project`, and `agent` when selecting that installation.
-Keep the same path spelling while the daemon runs: a junction/alias and its
-physical path can address the same files but select different local IPC endpoints.
-Do not sync or run copies of tsnet state on multiple computers. A OneDrive copy
-of the binary is a delivery artifact, not a recommended live installation;
-install outside synced folders.
+`agent start` ensures a headless `main` Herdr session and a workspace for that
+checkout, then launches Copilot by default. It does not create a worktree or
+install/sign in to a provider. An attached Herdr window is not required.
+Stopping `follow` stops observation, not the agent. Prompt receipt and provider
+readiness do not prove task success. An agent name stays bound to its original
+launch; repeat the exact `agent start` request to inspect or retry it, and use
+a different name for a different launch. See the
+[two-computer operator guide](docs/operator-guide.md) for task and retry details.
 
-Normal startup and policy setup support installer-managed parent-directory
-links, including Herdr's Windows `bin` junction. The actual state directory and
-private files must remain ordinary directories/files. Managed destruction accepts
-those parent links but rejects linked state descendants. Advanced offline
-maintenance keeps stricter ancestor checks: select a physical, non-aliased path.
+### Dashboards and local state
 
-Stop the managed daemon without destroying any state:
+The managed coordinator hosts a read-only dashboard at
+`http://<actual-coordinator-full-magic-dns-name>:8787/` on its embedded
+Tailscale identity. `herdr-mesh help` prints the exact URL. Any tailnet peer
+whose network policy permits access to TCP 8787 can view it; no mesh client
+tag is required. Guided `init` proposes that port-specific policy grant.
+The service is tsnet-only and does not bind a wildcard host interface.
+
+For a browser on the same computer, run `herdr-mesh dashboard` and open
+`http://127.0.0.1:8787/`. The local dashboard uses the existing managed
+connection, binds to loopback, and stays running until you stop that command.
+
+Managed configuration, journals, databases, logs, and tsnet identity live in
+`herdr-mesh-state` **beside the executable**, independent of the current
+working directory. With the install examples above, that means
+`~/.local/bin/herdr-mesh-state` on Linux and
+`$HOME\bin\herdr-mesh-state` on Windows. Do not sync or copy enrolled state to
+another computer. An optional absolute `--state-dir` goes **before** a managed
+command and must be used consistently for that installation:
+
+```bash
+herdr-mesh --state-dir "$HOME/.local/share/herdr-mesh-state" start
+```
 
 ```powershell
+herdr-mesh --state-dir 'C:\private\mesh-state' start
+```
+
+The same override applies to `help`, `init`, `join`, `shutdown`, `status`,
+`nodes`, `dashboard`, `mcp`, `project`, and `agent`. Use one path spelling while
+the daemon runs; links or aliases can share files while selecting different
+local IPC endpoints. The state directory and its contents must remain ordinary
+private files and directories.
+Installer-managed parent links are supported; managed cleanup refuses links
+inside the state tree. Offline maintenance uses stricter physical-path checks.
+
+### Stop, restart, upgrade, or remove
+
+These commands work in both Bash and PowerShell:
+
+```text
 herdr-mesh shutdown
-```
-
-Resume the saved installation without repeating join, name, or server flags:
-
-```powershell
 herdr-mesh start
 ```
 
-`start` reads the selected saved configuration and launches the current
-executable. After shutdown, replace the binary in place and run `start` to
-upgrade. Copying only the binary elsewhere selects fresh default state; to
-relocate an installation on the same computer, move the whole installation
-directory while stopped or explicitly select its state with the global
-override. The saved state does not depend on the previous executable location.
+`shutdown` stops this computer's managed daemon and retains state, enrollment,
+and journals. `start` resumes its saved configuration without repeating join
+or name flags. The background daemon survives closing the terminal but is not
+installed as a boot service or scheduled task; run `start` after reboot.
+For an upgrade, stop the daemon, replace the binary in place, then start it
+with the same state. Upgrade the coordinator before nodes. Moving only the
+binary selects new default state; move the stopped installation together or
+keep selecting its original state with `--state-dir`.
 
-For deliberate deinitialization and a clean start, use
-`herdr-mesh shutdown --destroy`; add `--remove-policy` on the coordinator to
-remove Herdr mesh policy entries, including pre-existing entries, when no other
-mesh role devices remain. Preview with
-`--dry-run`. Destruction requires typed confirmation (or explicit `--yes`).
-**Client destruction needs no API token:** it stops the client and deletes only
-its local mesh state. It does not revoke the Tailscale device or remove its
-admin-console entry; an administrator can remove that entry separately.
-Controller destruction still requires private Tailscale API authorization,
-retaining recovery data until remote cleanup is confirmed. Herdr sessions, agents, repositories,
-worktrees and other computers are not deleted. See the operator guide for
-partial-cleanup recovery and the distinction from `agent stop`.
-Deleting a local folder alone does not unregister remote Tailscale devices or
-remove tailnet policy. There is no silent AppData migration: shut down and
-destroy an old installation with its old version before a clean setup. This
-version does not read, migrate, or delete old startup registration.
+To preview and perform a deliberate clean removal on a client:
+
+```text
+herdr-mesh shutdown --destroy --dry-run
+herdr-mesh shutdown --destroy
+```
+
+Client destruction requires no API token. It deletes local managed state but
+does not delete that client's Tailscale admin-console device entry. On the
+coordinator, `--destroy` also removes its pinned Tailscale device and requires
+a private API token. Add `--remove-policy` only when retiring its shared Herdr
+mesh policy:
+
+```text
+herdr-mesh shutdown --destroy --remove-policy --dry-run
+herdr-mesh shutdown --destroy --remove-policy
+```
+
+Policy removal includes pre-existing Herdr mesh tag owners and grants when no
+other device uses a Herdr mesh role tag. Unrelated devices and policy remain.
+If local managed state is already gone but mesh policy remains, use
+`herdr-mesh policy cleanup --tailnet <tailnet>`. Destruction asks for the
+displayed node label (or explicit `--yes`); it does not delete Herdr sessions,
+agents, repositories, worktrees, or other computers. Preserve recovery state
+and inspect the remote policy after an uncertain API result. See
+[operator cleanup and recovery](docs/operator-guide.md#6-shut-down-or-destroy-this-installation).
 
 ## Validation and release scope
 
-CI runs production and archived-experiment tests, vet, dashboard model tests,
-and CLI builds on Windows, Linux, and macOS; Linux also runs race checks.
-Windows runs the mocked policy/bootstrap automation boundaries. Releases are
-six single-binary archives (amd64/arm64 for each OS), with checksums.
+CI tests, vets, and builds on Windows, Linux, and macOS; Linux additionally
+runs race checks. Release archives contain one binary each for amd64 and arm64
+on those three systems. The Windows release packaging script is a developer
+tool; it is not a runtime dependency for Linux or Windows tailnet setup.
 
 Windows browser enrollment, managed restart, native Herdr discovery, and
-read-only live controller/dashboard access have been exercised. Automated
-coverage and cross-builds do **not** establish all-platform live acceptance:
-the full two-host disruption/provider matrix, destructive live Tailscale API
-cleanup, and release signing remain release gates. See
-[Windows operational acceptance](docs/windows-live-validation.md).
-Unknown mutation outcomes retain their retry and reconciliation fences; never
-clear journals or change identities/keys to force a retry.
+read-only controller/dashboard access have been exercised. Linux guided
+tailnet setup, policy cleanup, and hosted dashboard access have also been
+exercised. These checks do not establish every live two-host, provider,
+disruption, destructive cleanup, or signing scenario. See
+[release and recovery](docs/release-and-recovery.md) and
+[Windows operational acceptance](docs/windows-live-validation.md) for the
+remaining acceptance work. Unknown mutation outcomes retain retry and
+reconciliation fences; do not clear journals or change identities to force a
+retry.
 
 ## Advanced and developer reference
 
 The remainder describes advanced explicit roles and implementation-level
 validation. It is not a sequence of extra steps required after `init`/`join`.
 See the [advanced operator guide](docs/advanced-operator-guide.md) for those modes.
+The PowerShell snippets in this reference show Windows paths and line
+continuations. The same `herdr-mesh` subcommands and flags run on Linux;
+use `/` paths, `herdr-mesh` in place of `.\herdr-mesh.exe`, and Bash `\` line
+continuations. Linux commands for the main operator journey and source build
+are shown above.
 
 Tailnet setup (`herdr-mesh setup tailnet`) and prepared-endpoint Windows bootstrap
 (`herdr-mesh bootstrap`) are embedded in that same executable. The operator guide
@@ -163,8 +247,9 @@ PowerShell and OpenSSH. Tailnet setup uses native Go on every platform.
 
 `server`, `node`, and `dashboard` are long-running processes. `ctl` and `doctor` are
 short-lived clients. Each advanced role uses a separate persistent local state
-directory under `<executable-directory>\herdr-mesh-state\advanced\<role>` by
-default. These are separate from the shared managed installation. Initial
+directory under `<executable-directory>/herdr-mesh-state/advanced/<role>` by
+default (using native path separators). These are separate from the shared
+managed installation. Initial
 enrollment uses a role-specific environment variable:
 `TS_AUTHKEY_SERVER`, `TS_AUTHKEY_NODE`, or `TS_AUTHKEY_CLIENT`. Server/controller
 credentials must not be distributed to nodes.
@@ -184,7 +269,22 @@ changes, explicit target pins, and restart/recovery checks. Normal first use
 does not require completing that matrix.
 
 The versioned protocol source is
-`api\proto\agentflow\v1\control.proto`. Regenerate Go bindings with:
+`api/proto/agentflow/v1/control.proto`. Regenerate Go bindings only when
+changing that protocol. On Linux, install `protoc` and the pinned Go plugins,
+add the Go binary directory to `PATH`, then run:
+
+```bash
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+export PATH="$(go env GOPATH)/bin:$PATH"
+protoc --proto_path=api/proto --go_out=. \
+  --go_opt=module=github.com/clarkezone/herdr-distributed-mesh \
+  --go-grpc_out=. \
+  --go-grpc_opt=module=github.com/clarkezone/herdr-distributed-mesh \
+  api/proto/agentflow/v1/control.proto
+```
+
+On Windows, use the repository's PowerShell wrapper:
 
 ```powershell
 winget install --id Google.Protobuf --exact
@@ -204,13 +304,12 @@ The managed coordinator also serves the dashboard on its Tailscale identity at
 the coordinator prints the exact address. Any peer allowed to reach that port
 by the tailnet policy can use the read-only dashboard; no mesh role tag is
 required. Guided `init` proposes a TCP 8787 grant for Tailscale policy `*`
-sources. The
-service uses tsnet; it does not bind a host wildcard interface.
+sources. The service uses tsnet; it does not bind a host wildcard interface.
 
 For a browser on the same computer, keep the mesh controller running, start the
 local dashboard, and open **http://127.0.0.1:8787**:
 
-```powershell
+```text
 herdr-mesh dashboard
 ```
 
@@ -251,9 +350,9 @@ JSON or MCP interfaces rather than parse human text.
 
 Dashboard checks (frontend tests use only Node's built-in test runner):
 
-```powershell
+```text
 go test ./src/internal/dashboard ./src/internal/app
-node --test src\internal\dashboard\web\model.test.mjs
+node --test src/internal/dashboard/web/model.test.mjs
 ```
 
 For an isolated browser check, set `HERDR_MESH_DASHBOARD_FIXTURE=127.0.0.1:18787`
@@ -278,7 +377,18 @@ Upgrade/restart the mesh server before starting an integration-enabled node;
 the node rejects servers that do not advertise the required observation and
 agent-control capabilities (`herdr.read.v1` and `herdr.agent-control.v1`).
 
-Build the binary, then restart your node with the same enrolled identity/state:
+Build the binary, then restart your advanced node with the same enrolled
+identity and state. Linux example using the installed Herdr executable:
+
+```bash
+go build -o ./herdr-mesh ./src/cmd/herdr-mesh
+./herdr-mesh node \
+  -server '<server-magic-dns-name>:50052' \
+  -state-dir "$HOME/.local/share/herdr-mesh-validation/node" \
+  -herdr-executable "$(command -v herdr)"
+```
+
+Windows example:
 
 ```powershell
 go build -o .\herdr-mesh.exe .\src\cmd\herdr-mesh
@@ -288,8 +398,8 @@ go build -o .\herdr-mesh.exe .\src\cmd\herdr-mesh
   -herdr-socket "$env:APPDATA\herdr\herdr.sock"
 ```
 
-Stop processes before overwriting their binary on Windows, or build to another
-filename and use that executable for the restarted roles.
+Stop the intended process before replacing its binary on either platform, or
+build to another filename and use that executable for the restarted role.
 
 Use your existing node hostname if it was explicitly configured. Do not run
 two processes sharing a state directory. On Windows the socket argument is
@@ -299,7 +409,19 @@ named headless sessions, configure `-herdr-executable` as described below;
 that mode can start with no default socket at all. Workspace creation uses
 the centrally registered project checkouts described below.
 
-Query from a client-tagged identity (reuse your enrolled controller state):
+Query from a separately enrolled client-tagged identity. These examples use
+a dedicated private client state directory; first enrollment needs
+`TS_AUTHKEY_CLIENT` supplied privately, and concurrent processes need
+different enrolled state:
+
+```bash
+./herdr-mesh ctl nodes \
+  -server '<server-magic-dns-name>:50052' \
+  -state-dir "$HOME/.local/share/herdr-mesh-validation/doctor" \
+  -json
+```
+
+Windows:
 
 ```powershell
 .\herdr-mesh.exe ctl nodes `
@@ -375,8 +497,19 @@ Git ownership checks remain enforced, with no implicit `safe.directory` override
 ### Native discovery diagnostics
 
 If a joined node is connected but Herdr is not live, collect these read-only
-diagnostics on the affected Windows computer. `herdr` here is the installed
-native prerequisite, not another mesh executable:
+diagnostics on the affected computer. `herdr` here is the installed native
+prerequisite, not another mesh executable. Linux:
+
+```bash
+herdr-mesh version
+command -v herdr
+herdr --version
+herdr session list --json
+herdr status server --json
+tail -n 200 "$HOME/.local/bin/herdr-mesh-state/daemon.log"
+```
+
+Windows:
 
 ```powershell
 herdr-mesh version
@@ -413,7 +546,8 @@ bound identity.
 
 ## Durable coordinator state
 
-The server stores its database at `<server-state-dir>\coordinator\mesh.db`.
+The server stores its database at
+`<server-state-dir>/coordinator/mesh.db` (using native path separators).
 It uses a pure-Go SQLite driver, so no database service or C compiler is needed.
 Restart only the server with the new binary and its existing `-state-dir` to
 enable this storage; existing read-only nodes and dashboard clients remain
@@ -448,23 +582,37 @@ is not supported: it would ignore bindings learned by the SQLite-backed server.
 
 Durability and recovery checks:
 
-```powershell
+```text
 go test ./src/internal/state ./src/internal/server
 ```
 
-Local automated coverage and optional read-only checks against a running Herdr:
+Local automated coverage:
+
+```text
+go test ./src/internal/...
+```
+
+For the optional read-only checks against a running Herdr, set
+`HERDR_MESH_TEST_SOCKET` to its actual local socket marker. Linux:
+
+```bash
+HERDR_MESH_TEST_SOCKET='<actual-Herdr-socket-marker>' \
+  go test ./src/internal/herdr ./src/internal/node ./src/internal/server -run Live -count=1
+```
+
+Windows:
 
 ```powershell
-go test ./src/internal/...
 $env:HERDR_MESH_TEST_SOCKET = "$env:APPDATA\herdr\herdr.sock"
 go test ./src/internal/herdr ./src/internal/node ./src/internal/server -run Live -count=1
 Remove-Item Env:\HERDR_MESH_TEST_SOCKET
 ```
 
-The full two-host restart/NIC/sleep/hostname-collision runbook is
-`docs\windows-live-validation.md`. That release-acceptance gate is not claimed
-complete. Durable event history and automatic reconciliation of unknown effects
-are not implemented; standalone CLI and MCP control are available.
+The Windows two-host restart/NIC/sleep/hostname-collision runbook is
+[Windows live validation](docs/windows-live-validation.md). That release
+acceptance gate is not claimed complete. Durable event history and automatic
+reconciliation of unknown effects are not implemented; standalone CLI and MCP
+control are available.
 
 ## Journaled command-safety probe
 
@@ -480,7 +628,8 @@ offline backup before upgrading.
 Restart the node with the new binary, its existing hostname/state/socket flags,
 and **`-enable-probes`**. Probes are off by default and do not require Herdr.
 An enabled node requires a coordinator advertising `commands.node-ping.v1`.
-Its protected journal lives at `<node-state-dir>\commands\journal.db`.
+Its protected journal lives at
+`<node-state-dir>/commands/journal.db` (using native path separators).
 
 Probe-enabled nodes and probe CLI clients verify the actual connected peer has
 `tag:herdr-mesh-server`, including every reconnect. Change this only with
@@ -549,8 +698,9 @@ For managed installations, preserve the complete stopped installation instead.
 
 The durable audit covers **admitted command transitions**, not all denied
 requests. Denials are not a durable security audit. Probe-only nodes cannot
-perform Herdr mutations. This is not arbitrary mutation authorization,
-automatic reconciliation, the fuller CLI, or MCP.
+perform Herdr mutations. Agent and workspace operations use their own
+capability checks and durable command paths; unknown effects are not
+automatically reconciled.
 
 ## Named headless sessions
 
@@ -738,7 +888,7 @@ Project registration below uses the same authenticated client role, without
 additional per-project actor allowlists.
 
 Headless compatibility evidence and the opt-in live fixture are documented in
-`docs\windows-live-validation.md`.
+[Windows live validation](docs/windows-live-validation.md).
 
 ## Central project configuration
 
@@ -951,7 +1101,7 @@ checks, so do not concurrently replace checkout/root directories or create
 the same target. This does not claim atomic filesystem confinement against
 hostile local processes or exactly-once Herdr execution.
 
-Windows integration coverage uses isolated temporary Git repositories, fake
+Integration coverage uses isolated temporary Git repositories, fake
 local Herdr IPC, the real node runtime, and both SQLite journals. Actual Herdr
 worktree mutation on the live mesh and the full two-host disruption gate
 remain unvalidated. CLI and MCP expose these operations without changing their
