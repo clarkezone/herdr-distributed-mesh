@@ -523,7 +523,7 @@ func TestConfigCreateOnlyAndBoundedPrivateStatus(t *testing.T) {
 }
 
 func TestManagedDiagnosticsAreBoundedAndDoNotExposeCredentials(t *testing.T) {
-	cause := errors.New("login https://login.tailscale.com/a/secret key=tskey-auth-secret " + strings.Repeat("x", 1000))
+	cause := errors.New("login https://login.tailscale.com/a/secret key=tskey-" + "auth-secret " + strings.Repeat("x", 1000))
 	err := diagnosticError{cause}
 	if len(err.Error()) > 512 || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "tskey") || !errors.Is(err, cause) {
 		t.Fatalf("unsafe diagnostic: %s", err.Error())

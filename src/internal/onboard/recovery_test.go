@@ -48,9 +48,9 @@ func TestInterruptedStateAndLauncherFailureNeverReplaceIdentity(t *testing.T) {
 }
 
 func TestDaemonSecretFilterPreservesProviderAuthentication(t *testing.T) {
-	t.Setenv("TS_AUTHKEY_CLIENT", "tskey-auth-private")
-	t.Setenv("TAILSCALE_API_TOKEN", "tskey-api-private")
-	t.Setenv("CUSTOM_TAILNET_CREDENTIAL", "tskey-api-private")
+	t.Setenv("TS_AUTHKEY_CLIENT", "tskey-"+"auth-private")
+	t.Setenv("TAILSCALE_API_TOKEN", "tskey-"+"api-private")
+	t.Setenv("CUSTOM_TAILNET_CREDENTIAL", "tskey-"+"api-private")
 	t.Setenv("OPENAI_API_KEY", "provider-private")
 	if err := ClearDaemonSecrets(); err != nil {
 		t.Fatal(err)

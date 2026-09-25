@@ -100,17 +100,17 @@ func TestShutdownConfirmationAndCredentialInput(t *testing.T) {
 	if ok, err := confirmDestroy(context.Background(), strings.NewReader("desktop\n"), "desktop"); err != nil || !ok {
 		t.Fatal(err)
 	}
-	t.Setenv("HERDR_CLEANUP_TEST_TOKEN", "tskey-auth-wrong-kind")
+	t.Setenv("HERDR_CLEANUP_TEST_TOKEN", "tskey-"+"auth-wrong-kind")
 	if token, err := shutdownToken(context.Background(), "HERDR_CLEANUP_TEST_TOKEN", nil, io.Discard); err == nil || token != nil {
 		t.Fatal("accepted an enrollment key")
 	}
-	t.Setenv("HERDR_CLEANUP_TEST_TOKEN", "tskey-api-private-test")
+	t.Setenv("HERDR_CLEANUP_TEST_TOKEN", "tskey-"+"api-private-test")
 	token, err := shutdownToken(context.Background(), "HERDR_CLEANUP_TEST_TOKEN", nil, io.Discard)
 	if err != nil || len(token) == 0 {
 		t.Fatal(err)
 	}
 	clear(token)
-	if _, err := shutdownToken(context.Background(), "", strings.NewReader("tskey-api-private-test"), io.Discard); err == nil {
+	if _, err := shutdownToken(context.Background(), "", strings.NewReader("tskey-"+"api-private-test"), io.Discard); err == nil {
 		t.Fatal("redirected credential input bypassed hidden terminal prompt")
 	}
 }

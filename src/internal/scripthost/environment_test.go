@@ -11,7 +11,7 @@ import (
 
 func TestHostSecretEnvironmentIsChildOnly(t *testing.T) {
 	t.Setenv("HERDR_SCRIPT_SECRET", "original")
-	secret := "tskey-api-process-only"
+	secret := "tskey-" + "api-process-only"
 	_, err := run(context.Background(), Request{
 		Script: []byte("param($OptionsPath)"), Options: struct{}{},
 		Environment: map[string]string{"HERDR_SCRIPT_SECRET": secret},

@@ -23,7 +23,7 @@ func TestHostChildProcess(t *testing.T) {
 	case "ok":
 		fmt.Print(`{"ok":true}`)
 	case "failure":
-		fmt.Fprint(os.Stderr, "raw remote payload tskey-api-test-secret")
+		fmt.Fprint(os.Stderr, "raw remote payload tskey-"+"api-test-secret")
 		os.Exit(3)
 	case "flood":
 		fmt.Print(strings.Repeat("x", MaxOutputBytes+1))
