@@ -2,6 +2,7 @@ package onboard
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -53,7 +54,8 @@ func DefaultDependencies(input io.Reader, output io.Writer) Dependencies {
 		Executable: os.Executable, Start: startDaemon, Browser: openBrowser,
 		Token:   func(ctx context.Context) ([]byte, error) { return ReadToken(ctx, input, output) },
 		Confirm: func(ctx context.Context) (bool, error) { return confirm(ctx, input) },
-		Policy:  setup.RunWithToken, Wait: wait, Environment: os.Environ,
+		Policy:  setup.RunWithToken, PolicyRead: setup.CurrentPolicy,
+		Wait: wait, Environment: os.Environ,
 	}
 }
 
@@ -91,8 +93,23 @@ func ReadToken(ctx context.Context, input io.Reader, output io.Writer) (token []
 		return nil, ctx.Err()
 	case r := <-ready:
 		fmt.Fprintln(output)
-		return r.token, r.err
+		if r.err != nil {
+			clear(r.token)
+			return nil, r.err
+		}
+		return normalizeTerminalToken(r.token), nil
 	}
+}
+
+func normalizeTerminalToken(value []byte) []byte {
+	trimmed := bytes.TrimSpace(value)
+	start, end := []byte("\x1b[200~"), []byte("\x1b[201~")
+	if bytes.HasPrefix(trimmed, start) && bytes.HasSuffix(trimmed, end) {
+		trimmed = bytes.TrimSpace(trimmed[len(start) : len(trimmed)-len(end)])
+	}
+	normalized := bytes.Clone(trimmed)
+	clear(value)
+	return normalized
 }
 
 func confirm(ctx context.Context, input io.Reader) (bool, error) {

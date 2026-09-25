@@ -4,18 +4,32 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
 )
 
 func readOwnedPolicy(dir string) ([]byte, []byte, error) {
-	if _, err := os.Lstat(filepath.Join(dir, "policy-complete")); err != nil {
+	receipt, err := meshlocal.ReadPrivateArtifact(dir, filepath.Join(dir, "policy-complete"), 256)
+	if err != nil {
 		return nil, nil, errors.New("policy cleanup requires the original completed init policy receipt")
 	}
 	if _, err := os.Lstat(filepath.Join(dir, "policy-apply-pending")); !errors.Is(err, os.ErrNotExist) {
 		return nil, nil, errors.New("policy application is pending or unknown; reconcile it before policy cleanup")
 	}
-	backups, err := filepath.Glob(filepath.Join(dir, "policy-preview-*", "apply", "policy-before-*.json"))
+	previewName := "policy-preview-*"
+	if strings.Contains(string(receipt), "apply-preview=") {
+		lines := strings.Split(string(receipt), "\n")
+		if len(lines) != 3 || lines[0] != "Policy-only setup completed; no device keys created." || lines[2] != "" ||
+			!strings.HasPrefix(lines[1], "apply-preview=") {
+			return nil, nil, errors.New("completed policy receipt is malformed; policy and local recovery data retained")
+		}
+		previewName = strings.TrimPrefix(lines[1], "apply-preview=")
+		if !validPolicyPreviewName(previewName) {
+			return nil, nil, errors.New("completed policy receipt has an invalid preview name; policy and local recovery data retained")
+		}
+	}
+	backups, err := filepath.Glob(filepath.Join(dir, previewName, "apply", "policy-before-*.json"))
 	if err != nil || len(backups) != 1 {
 		return nil, nil, errors.New("cannot prove policy ownership from a unique completed apply backup; policy and local recovery data retained")
 	}

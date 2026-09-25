@@ -40,6 +40,7 @@ type Dependencies struct {
 	Token         func(context.Context) ([]byte, error)
 	Confirm       func(context.Context) (bool, error)
 	Policy        func(context.Context, setup.Options, []byte) (setup.Report, error)
+	PolicyRead    func(context.Context, string, []byte) ([]byte, error)
 	Wait          func(context.Context) error
 	Environment   func() []string
 }
@@ -254,21 +255,37 @@ func checkAdvanced(root string) error {
 
 func configurePolicy(ctx context.Context, dir, tailnet string, output io.Writer, d Dependencies) error {
 	done, pending := filepath.Join(dir, "policy-complete"), filepath.Join(dir, "policy-apply-pending")
-	if _, err := os.Lstat(done); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	_, doneErr := os.Lstat(done)
+	if doneErr != nil && !errors.Is(doneErr, os.ErrNotExist) {
+		return doneErr
 	}
-	if _, err := os.Lstat(pending); err == nil {
-		return fmt.Errorf("previous policy application is pending or its remote effects are unknown; inspect the Tailscale policy and private policy backups in %s before retrying. After explicitly reconciling the policy, remove only %s and rerun init for a fresh preview; no automatic mutation retry was performed", dir, pending)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	_, pendingErr := os.Lstat(pending)
+	if pendingErr != nil && !errors.Is(pendingErr, os.ErrNotExist) {
+		return pendingErr
+	}
+	pendingExists := pendingErr == nil
+	if doneErr == nil && !pendingExists {
+		return nil
+	}
+	if pendingExists {
+		fmt.Fprintln(output, "A previous policy apply has an unknown result. Checking the live policy against the saved snapshots before continuing...")
 	}
 	fmt.Fprintln(output, "Enter a Tailscale API access token (tskey-api-) with permission to read and update this tailnet's policy. It is used for this setup only and is not saved.")
 	token, err := d.Token(ctx)
 	defer clear(token)
 	if err != nil {
 		return err
+	}
+	if pendingExists {
+		applied, err := reconcilePendingPolicy(ctx, dir, tailnet, pending, done, token, d.PolicyRead)
+		if err != nil {
+			return fmt.Errorf("previous policy application is pending or its remote effects are unknown; %w", err)
+		}
+		if applied {
+			fmt.Fprintln(output, "The live policy matches the reviewed proposal; policy setup is complete.")
+			return nil
+		}
+		fmt.Fprintln(output, "The live policy matches the pre-apply backup; continuing with a fresh preview.")
 	}
 	base := setup.DefaultOptions()
 	base.Tailnet, base.PolicyOnly = tailnet, true
@@ -316,14 +333,14 @@ func configurePolicy(ctx context.Context, dir, tailnet string, output io.Writer,
 	base.ExpectedPolicySHA256 = hex.EncodeToString(hash[:])
 	base.OutputDirectory = filepath.Join(previewDir, "apply")
 	base.Apply = true
-	if err := createMarker(pending, []byte("Policy application may have remote effects. Inspect before retrying.\n")); err != nil {
+	if err := createMarker(pending, []byte(pendingPolicyText)); err != nil {
 		return err
 	}
 	fmt.Fprintln(output, "Applying the reviewed policy...")
 	if _, err := d.Policy(ctx, base, token); err != nil {
 		return fmt.Errorf("policy application did not complete; pending state retained at %s; inspect and reconcile remote policy before removing this marker and rerunning init: %w", pending, err)
 	}
-	if err := createMarker(done, []byte("Policy-only setup completed; no device keys created.\n")); err != nil {
+	if err := writePolicyComplete(done, filepath.Base(previewDir)); err != nil {
 		return err
 	}
 	if err := os.Remove(pending); err != nil {

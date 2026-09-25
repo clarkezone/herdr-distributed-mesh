@@ -24,7 +24,7 @@ func runShutdownWith(ctx context.Context, args []string, streams IO, run func(co
 	flags.SetOutput(streams.Err)
 	var options onboard.ShutdownOptions
 	flags.BoolVar(&options.Destroy, "destroy", false, "delete local mesh state; controllers also remove their Tailscale device using API authorization")
-	flags.BoolVar(&options.RemovePolicy, "remove-policy", false, "with --destroy, remove only provably owned and unused coordinator policy additions")
+	flags.BoolVar(&options.RemovePolicy, "remove-policy", false, "with --destroy, remove Herdr mesh policy when no other mesh role devices remain")
 	flags.BoolVar(&options.DryRun, "dry-run", false, "show the exact local target and requested actions without changing anything")
 	flags.BoolVar(&options.Yes, "yes", false, "explicitly skip typed destruction confirmation (automation only)")
 	flags.StringVar(&options.TokenEnv, "api-token-env", "", "controller only: environment variable holding a Tailscale API token; otherwise prompt privately")
@@ -35,7 +35,7 @@ func runShutdownWith(ctx context.Context, args []string, streams IO, run func(co
 Stop this computer's mesh connection, NOT a Herdr agent.
 Default: retain all state and enrollment; resume with herdr-mesh start.
 --destroy: permanently remove this computer's managed installation.
---remove-policy: additionally retire its owned shared policy (coordinator only).
+--remove-policy: remove Herdr mesh policy if no other mesh role devices remain (coordinator only).
 Herdr sessions, provider agents, repositories and other computers are never deleted.
 
 Examples:

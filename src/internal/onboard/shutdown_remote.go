@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/deinitnet"
 	"github.com/clarkezone/herdr-distributed-mesh/src/internal/meshlocal"
@@ -63,21 +62,8 @@ func prepareCleanupWithClient(ctx context.Context, dir string, cfg meshlocal.Con
 	if !removePolicy {
 		return remote, nil
 	}
-	record, err := meshlocal.ReadDestroyState(dir)
-	if err == nil && record.PolicyRemoved && record.Identity.DeviceID == identity.DeviceID {
-		// Policy artifacts may already be gone after an interrupted local purge.
-		return remote, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	before, applied, err := readOwnedPolicy(dir)
-	if err != nil {
-		return nil, err
-	}
-	defer clear(before)
-	defer clear(applied)
-	remote.policy, err = client.PreparePolicy(ctx, cfg.Tailnet, before, applied)
+	var err error
+	remote.policy, err = client.PrepareMeshPolicyRemoval(ctx, cfg.Tailnet)
 	if err != nil {
 		return nil, err
 	}

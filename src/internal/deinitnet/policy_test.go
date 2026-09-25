@@ -114,6 +114,24 @@ func TestPolicyPreviewAndApplyExactAdditions(t *testing.T) {
 	}
 }
 
+func TestSupportedAdditionsWithLowercaseTagOwners(t *testing.T) {
+	old, _, err := parsePolicy([]byte(strings.ReplaceAll(beforeJSON, `"tagOwners"`, `"tagowners"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _, err := parsePolicy([]byte(strings.ReplaceAll(appliedJSON, `"tagOwners"`, `"tagowners"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !supportedAdditions(old, next) {
+		t.Fatal("lowercase tagowners from Tailscale API was rejected")
+	}
+	next["tagOwners"] = next["tagowners"]
+	if supportedAdditions(old, next) {
+		t.Fatal("ambiguous case-variant tag owner sections were accepted")
+	}
+}
+
 func TestPolicyAlreadyClean(t *testing.T) {
 	c := scriptedClient(t, getPolicy(beforeJSON), getPolicy(beforeJSON))
 	plan := prepare(t, c)

@@ -115,7 +115,8 @@ override. The saved state does not depend on the previous executable location.
 
 For deliberate deinitialization and a clean start, use
 `herdr-mesh shutdown --destroy`; add `--remove-policy` on the coordinator to
-request removal of provably owned, unused policy additions. Preview with
+remove Herdr mesh policy entries, including pre-existing entries, when no other
+mesh role devices remain. Preview with
 `--dry-run`. Destruction requires typed confirmation (or explicit `--yes`).
 **Client destruction needs no API token:** it stops the client and deletes only
 its local mesh state. It does not revoke the Tailscale device or remove its
@@ -156,9 +157,9 @@ Tailnet setup (`herdr-mesh setup tailnet`) and prepared-endpoint Windows bootstr
 uses installed CLI commands; source build/test examples below are developer
 instructions, not additional product entrypoints. Durable agent launch/stop is
 available through `ctl agent start` and `ctl agent stop`; real operator/provider
-and platform acceptance remain separate gates. Herdr, Git,
-PowerShell, OpenSSH, and provider runtimes remain explicit dependencies where
-needed; their existence does not create another mesh CLI product.
+and platform acceptance remain separate gates. Herdr, Git, and provider
+runtimes remain execution prerequisites; optional Windows bootstrap requires
+PowerShell and OpenSSH. Tailnet setup uses native Go on every platform.
 
 `server`, `node`, and `dashboard` are long-running processes. `ctl` and `doctor` are
 short-lived clients. Each advanced role uses a separate persistent local state

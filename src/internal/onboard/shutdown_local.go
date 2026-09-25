@@ -105,3 +105,8 @@ func shutdownToken(ctx context.Context, name string, input io.Reader, output io.
 	}
 	return token, nil
 }
+
+// CleanupToken reads a private API token for standalone policy recovery.
+func CleanupToken(ctx context.Context, name string, input io.Reader, output io.Writer) ([]byte, error) {
+	return shutdownToken(ctx, name, input, output)
+}

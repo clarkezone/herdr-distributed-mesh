@@ -40,11 +40,10 @@ jobs:
         run: node --test src/internal/dashboard/web/model.test.mjs
       - name: Build production CLI
         run: go build ./src/cmd/herdr-mesh
-      - name: Windows automation boundaries
+      - name: Windows bootstrap automation boundary
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          .\scripts\test-configure-tailnet.ps1
           .\scripts\test-bootstrap-node.ps1
       - name: Race checks
         if: runner.os == 'Linux'

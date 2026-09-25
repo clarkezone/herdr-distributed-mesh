@@ -70,7 +70,7 @@ func newFixture(t *testing.T) *fixture {
 		if err := os.MkdirAll(o.OutputDirectory, 0700); err != nil {
 			return setup.Report{}, err
 		}
-		backup, proposal := filepath.Join(o.OutputDirectory, "backup.json"), filepath.Join(o.OutputDirectory, "proposal.json")
+		backup, proposal := filepath.Join(o.OutputDirectory, "policy-before-test.json"), filepath.Join(o.OutputDirectory, "policy-proposed.json")
 		if err := os.WriteFile(backup, []byte(`{"unrelated":"preserved"}`), 0600); err != nil {
 			return setup.Report{}, err
 		}
@@ -146,6 +146,9 @@ func TestPolicyRefusalAndUnknownApplyPreserveState(t *testing.T) {
 			f := newFixture(t)
 			if uncertain {
 				policy := f.d.Policy
+				f.d.PolicyRead = func(context.Context, string, []byte) ([]byte, error) {
+					return []byte(`{"unrelated":"changed"}`), nil
+				}
 				f.d.Policy = func(ctx context.Context, o setup.Options, token []byte) (setup.Report, error) {
 					if o.Apply {
 						f.policyCalls++
@@ -164,13 +167,62 @@ func TestPolicyRefusalAndUnknownApplyPreserveState(t *testing.T) {
 				if _, err := os.Stat(filepath.Join(f.dir, "policy-apply-pending")); err != nil {
 					t.Fatal(err)
 				}
+				f.token = []byte("tskey-api-hidden-test")
 				calls := f.policyCalls
 				if err := Run(context.Background(), initOptions(), io.Discard, f.d); err == nil || !strings.Contains(err.Error(), "unknown") {
 					t.Fatal(err)
 				}
-				if f.policyCalls != calls || f.prompts != 1 {
-					t.Fatal("retried unknown mutation")
+				if f.policyCalls != calls || f.prompts != 2 {
+					t.Fatal("recovery attempted a mutation despite policy mismatch")
 				}
+			}
+		})
+	}
+}
+
+func TestPendingPolicyRecoveryUsesReadOnlyComparison(t *testing.T) {
+	for _, applied := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unchanged", true: "applied"}[applied], func(t *testing.T) {
+			f := newFixture(t)
+			original := f.d.Policy
+			failFirstApply := true
+			f.d.Policy = func(ctx context.Context, o setup.Options, token []byte) (setup.Report, error) {
+				report, err := original(ctx, o, token)
+				if err == nil && o.Apply && failFirstApply {
+					failFirstApply = false
+					return report, &setup.Error{Code: "api_update_failed", RemoteEffectsUnknown: true}
+				}
+				return report, err
+			}
+			if err := Run(context.Background(), initOptions(), io.Discard, f.d); err == nil {
+				t.Fatal("first apply should be uncertain")
+			}
+			f.token = []byte("tskey-api-hidden-test")
+			calls := f.policyCalls
+			f.d.PolicyRead = func(_ context.Context, tailnet string, token []byte) ([]byte, error) {
+				if tailnet != "example.com" || string(token) != "tskey-api-hidden-test" {
+					t.Fatal("read-only recovery used wrong tailnet or token")
+				}
+				if applied {
+					return []byte(`{"unrelated":"preserved","grants":["preview"]}`), nil
+				}
+				return []byte(`{"unrelated":"preserved"}`), nil
+			}
+			if err := Run(context.Background(), initOptions(), io.Discard, f.d); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(filepath.Join(f.dir, "policy-apply-pending")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("verified pending marker remained")
+			}
+			if _, err := os.Stat(filepath.Join(f.dir, "policy-complete")); err != nil || f.prompts != 2 || f.starts != 1 {
+				t.Fatalf("recovery did not finish: %v prompts=%d starts=%d", err, f.prompts, f.starts)
+			}
+			wantCalls := calls
+			if !applied {
+				wantCalls += 2 // Fresh preview and one explicitly confirmed apply.
+			}
+			if f.policyCalls != wantCalls {
+				t.Fatalf("policy calls=%d want=%d", f.policyCalls, wantCalls)
 			}
 		})
 	}
@@ -262,5 +314,16 @@ func TestNamesServerAndRedirectedSecretValidation(t *testing.T) {
 		if ValidAuthURL(u) {
 			t.Fatalf("unsafe browser URL %s", u)
 		}
+	}
+}
+
+func TestNormalizeTerminalTokenForSetupAndDestroy(t *testing.T) {
+	input := []byte("\x1b[200~ tskey-api-private-test \x1b[201~")
+	got := normalizeTerminalToken(input)
+	if string(got) != "tskey-api-private-test" {
+		t.Fatal("bracketed paste wrapper was not removed")
+	}
+	if !bytes.Equal(input, make([]byte, len(input))) {
+		t.Fatal("original terminal buffer was not cleared")
 	}
 }

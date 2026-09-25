@@ -31,7 +31,7 @@ func runSetup(ctx context.Context, args []string, streams IO, run func(context.C
 	port := flags.Int("dashboard-port", 0, "optional explicit client-to-server dashboard TCP grant, 1..65535")
 	flags.StringVar(&options.OutputDirectory, "output-directory", "", "private local artifacts directory; existing files are never overwritten")
 	flags.BoolVar(&options.Apply, "apply", false, "explicitly update remote policy and create keys; default is PREVIEW")
-	flags.DurationVar(&options.Timeout, "timeout", options.Timeout, "bounded PowerShell operation deadline, at most 30m")
+	flags.DurationVar(&options.Timeout, "timeout", options.Timeout, "bounded API operation deadline, at most 30m")
 	asJSON := flags.Bool("json", false, "emit a safe structured report without keys or remote payloads")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

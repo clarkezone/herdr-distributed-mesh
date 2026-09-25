@@ -11,7 +11,7 @@ func TestSetupTopLevelRouteHelpNeedsNoRuntime(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	err := Run(context.Background(), []string{"setup", "tailnet", "-h"}, IO{Out: &out, Err: &diagnostics})
 	if err != nil || !strings.Contains(out.String(), "api-token-env") || !strings.Contains(out.String(), "apply") {
-		t.Fatalf("embedded setup help is not routed: %v", err)
+		t.Fatalf("setup help is not routed: %v", err)
 	}
 
 	for _, args := range [][]string{{"setup"}, {"setup", "unknown"}, {"setup", "tailnet", "-unknown"}} {

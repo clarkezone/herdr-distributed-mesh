@@ -9,7 +9,10 @@ import (
 )
 
 func TestCoordinatorCannotStartNetworkBeforeCompletedPolicy(t *testing.T) {
-	for _, record := range []string{"", "pending", "Policy-only setup completed", policyCompleteRecord + "extra"} {
+	for _, record := range []string{"", "pending", "Policy-only setup completed", policyCompleteRecord + "extra",
+		policyCompleteRecord + "apply-preview=../other\n",
+		policyCompleteRecord + "apply-preview=policy-preview-123\nextra",
+		policyCompleteRecord + "apply-preview=policy-preview-abc\n"} {
 		t.Run(record, func(t *testing.T) {
 			dir := canonicalTempDir(t)
 			if err := Save(dir, Config{Version: 1, Name: "desktop", Tailnet: "example.test", Coordinator: true}); err != nil {
@@ -39,16 +42,20 @@ func TestCoordinatorCannotStartNetworkBeforeCompletedPolicy(t *testing.T) {
 }
 
 func TestCompletedPolicyRecordAuthorizesStartupDespitePendingCleanup(t *testing.T) {
-	dir, err := privateDir(canonicalTempDir(t), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, marker := range []string{"policy-complete", "policy-apply-pending"} {
-		if err := os.WriteFile(filepath.Join(dir, marker), []byte(policyCompleteRecord), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := requirePolicyComplete(dir); err != nil {
-		t.Fatal(err)
+	for _, record := range []string{policyCompleteRecord, policyCompleteRecord + "apply-preview=policy-preview-3070615905\n"} {
+		t.Run(record, func(t *testing.T) {
+			dir, err := privateDir(canonicalTempDir(t), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, marker := range []string{"policy-complete", "policy-apply-pending"} {
+				if err := os.WriteFile(filepath.Join(dir, marker), []byte(record), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := requirePolicyComplete(dir); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
