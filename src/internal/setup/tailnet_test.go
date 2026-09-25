@@ -277,6 +277,42 @@ func TestNativeKeyFailureRevokesKnownKeys(t *testing.T) {
 	}
 }
 
+func TestNativeKeyCleanupSurvivesSetupCancellation(t *testing.T) {
+	o := nativeOptions(t)
+	o.Apply, o.KeysPerRole = true, 1
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	created, revoked := 0, 0
+	client := apiClientFor(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.Method == http.MethodGet:
+			return apiReply(http.StatusOK, testPolicy, `"etag-1"`), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/acl"):
+			return apiReply(http.StatusOK, "{}", ""), nil
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/keys"):
+			created++
+			if created == 2 {
+				cancel()
+				return nil, context.Canceled
+			}
+			return apiReply(http.StatusOK, `{"id":"key-1","key":"tskey-auth-fake-1"}`, ""), nil
+		case request.Method == http.MethodDelete && strings.HasSuffix(request.URL.Path, "/keys/key-1"):
+			if request.Context().Err() != nil {
+				t.Fatal("revocation inherited the expired setup context")
+			}
+			revoked++
+			return apiReply(http.StatusNoContent, "", ""), nil
+		}
+		t.Fatal("unexpected API request")
+		return nil, nil
+	})
+	_, err := runNative(ctx, o, testAPIToken, client)
+	setupErrorCode(t, err, "key_creation_failed", true)
+	if created != 2 || revoked != 1 || !pathAbsent(filepath.Join(o.OutputDirectory, "server-key-1.ps1")) {
+		t.Fatalf("cleanup after cancellation: created=%d revoked=%d", created, revoked)
+	}
+}
+
 func TestNativeSetupRejectsBadInputBeforeMutation(t *testing.T) {
 	for _, test := range []struct {
 		name, token, policy, etag, hash, code string
@@ -375,7 +411,7 @@ func TestCurrentPolicyRecoveryOnlyReads(t *testing.T) {
 
 func TestNativeSetupRejectsLinkedOutputAndExistingProposal(t *testing.T) {
 	o := nativeOptions(t)
-	if err := os.Mkdir(o.OutputDirectory, 0700); err != nil {
+	if err := prepareOutputDirectory(o.OutputDirectory); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(o.OutputDirectory, "policy-proposed.json"), []byte("existing"), 0600); err != nil {

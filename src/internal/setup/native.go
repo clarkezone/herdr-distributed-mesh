@@ -469,9 +469,13 @@ func createRoleKeys(ctx context.Context, client apiClient, token, base string, o
 	var aliases []string
 	var warnings []string
 	cleanup := func(original error) (int, []string, error) {
+		// The setup deadline may already have expired. Give known keys a bounded
+		// chance to be revoked before returning the original failure.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
 		revocationFailed, cleanupFailed := false, false
 		for _, key := range created {
-			response, err := requestAPI(ctx, client, token, http.MethodDelete, base+"/keys/"+url.PathEscape(key.id), nil, "", 64<<10)
+			response, err := requestAPI(cleanupCtx, client, token, http.MethodDelete, base+"/keys/"+url.PathEscape(key.id), nil, "", 64<<10)
 			if err != nil || response.status != http.StatusOK && response.status != http.StatusNoContent {
 				revocationFailed = true
 			}
