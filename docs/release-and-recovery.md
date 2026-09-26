@@ -16,12 +16,16 @@ On Windows with the repository's Go toolchain and PowerShell:
 
 The script produces ZIP archives for Windows, Linux, and macOS, each for amd64
 and arm64, plus `SHA256SUMS`, under `dist\<release-version>`. It embeds the version,
-uses the existing production entry point/assets, and disables CGO. Use `-Targets`
-to select a subset and `-OutputDirectory` for a different destination. Existing
-target directories/archives/manifests are not overwritten. A failed build leaves
-its explicitly named partial artifacts for inspection and produces no new
-checksum manifest. Build from the intended clean source revision for release;
-Go VCS metadata remains available with `go version -m`.
+uses the existing production entry point/assets, disables CGO, and pins
+`GOFIPS140=v1.0.0`. The FIPS build avoids the Go 1.27 ML-DSA ClientHello
+advertisement that some enterprise TLS-inspection appliances reset; see
+[golang/go#81199](https://github.com/golang/go/issues/81199). The script verifies
+the embedded Go build metadata before packaging. Use `-Targets` to select a
+subset and `-OutputDirectory` for a different destination. Existing target
+directories/archives/manifests are not overwritten. A failed build leaves its
+explicitly named partial artifacts for inspection and produces no new checksum
+manifest. Build from the intended clean source revision for release; Go VCS
+metadata remains available with `go version -m`.
 
 Each ZIP is checked to contain exactly one public executable, `herdr-mesh`
 (`herdr-mesh.exe` on Windows). Production has one CLI entrypoint; role-specific,

@@ -18,6 +18,8 @@ $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $originalGOOS = $env:GOOS
 $originalGOARCH = $env:GOARCH
 $originalCGO = $env:CGO_ENABLED
+$originalGOFIPS140 = $env:GOFIPS140
+$releaseGOFIPS140 = 'v1.0.0'
 $targetsUnique = @($Targets | Select-Object -Unique)
 if ($targetsUnique.Count -ne $Targets.Count) {
     throw 'Release targets must be unique.'
@@ -39,6 +41,7 @@ Push-Location $repositoryRoot
 try {
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $env:CGO_ENABLED = '0'
+    $env:GOFIPS140 = $releaseGOFIPS140
     $checksums = [Collections.Generic.List[string]]::new()
     foreach ($target in $Targets) {
         $osName, $architecture = $target.Split('-')
@@ -52,6 +55,10 @@ try {
             -o $binary .\src\cmd\herdr-mesh
         if ($LASTEXITCODE -ne 0) {
             throw "Build failed for $target. Partial artifacts remain for inspection; no checksum manifest was published."
+        }
+        $metadata = (& go version -m $binary 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0 -or $metadata -notmatch "(?m)^\s*build\s+GOFIPS140=$([regex]::Escape($releaseGOFIPS140))(?:-|$)") {
+            throw "Release contract violated: $target was not built with GOFIPS140=$releaseGOFIPS140."
         }
         $archiveName = "herdr-mesh-$Version-$target.zip"
         $archive = Join-Path $OutputDirectory $archiveName
@@ -73,5 +80,6 @@ try {
     $env:GOOS = $originalGOOS
     $env:GOARCH = $originalGOARCH
     $env:CGO_ENABLED = $originalCGO
+    $env:GOFIPS140 = $originalGOFIPS140
     Pop-Location
 }

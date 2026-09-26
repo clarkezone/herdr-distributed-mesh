@@ -47,6 +47,14 @@ jobs:
         run: node --test src/internal/dashboard/web/model.test.mjs
       - name: Build production CLI
         run: go build ./src/cmd/herdr-mesh
+      - name: Release build policy
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\scripts\build-release.ps1 `
+            -Version ci `
+            -Targets windows-arm64 `
+            -OutputDirectory "$env:RUNNER_TEMP\herdr-mesh-release"
       - name: Windows bootstrap automation boundary
         if: runner.os == 'Windows'
         shell: pwsh
